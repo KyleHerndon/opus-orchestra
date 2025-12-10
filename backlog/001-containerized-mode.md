@@ -80,11 +80,20 @@ Debian/Ubuntu slim with:
 - CPU limit (default 2 cores)
 - Read-only root filesystem (except /tmp and worktree)
 - No access to host paths except mounted worktree
+- **No access to host credentials** (~/.ssh, ~/.aws, ~/.config/gh, etc.)
 
 **Volume Mounts**:
 - Worktree directory (read-write)
-- Claude config for authentication (read-only)
+- Claude config for authentication (read-only, Claude API key only)
 - Optional: package cache for faster installs
+
+**Explicitly NOT Mounted** (credential isolation):
+- `~/.ssh` - No SSH keys
+- `~/.aws` - No AWS credentials
+- `~/.config/gh` - No GitHub CLI auth
+- `~/.gitconfig` - No git credentials
+- `~/.netrc` - No stored passwords
+- Any credential helpers or keychains
 
 ### Settings
 
@@ -212,7 +221,9 @@ opus-orchestra.session-id=<session-id>
 |--------|------------|
 | Arbitrary code execution | Contained, isolated from host |
 | Data exfiltration | No network by default |
-| Credential theft | No access to ~/.ssh, ~/.aws, ~/.config (except Claude auth) |
+| Credential theft | No access to ~/.ssh, ~/.aws, ~/.config/gh, ~/.gitconfig, ~/.netrc |
+| GitHub token theft | gh CLI auth explicitly not mounted |
+| SSH key theft | ~/.ssh explicitly not mounted |
 | Resource exhaustion | Memory/CPU limits enforced |
 | Container escape | Unprivileged, no capabilities, seccomp profile |
 | Persistent malware | Container destroyed after use |

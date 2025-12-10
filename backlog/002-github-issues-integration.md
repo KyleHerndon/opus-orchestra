@@ -138,9 +138,20 @@ All GitHub integration settings exposed in a dedicated settings panel:
 
 ### Authentication
 
+**IMPORTANT: Extension-Only Access**
+
+GitHub API access is handled by the **extension only**, not by agents. Agents never have direct access to GitHub credentials or the `gh` CLI authentication.
+
 Options presented in settings UI:
-1. **GitHub CLI** (`gh`): Recommended - uses existing auth
-2. **Personal Access Token**: Stored securely in VS Code secrets
+1. **GitHub CLI** (`gh`): Extension uses `gh` to make API calls on behalf of the user
+2. **Personal Access Token**: Stored securely in VS Code secrets, used by extension only
+
+**Security Model**:
+- Extension makes all GitHub API calls
+- Agents cannot run `gh` commands that use your auth
+- Agents cannot access `~/.config/gh/hosts.yml`
+- Containerized agents have no access to host credentials
+- Standard agents should have `gh` commands blocked or require approval
 
 Token input shows:
 - Masked input field with show/hide toggle

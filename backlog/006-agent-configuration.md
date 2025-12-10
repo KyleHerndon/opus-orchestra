@@ -71,8 +71,16 @@ Sane defaults that ship with Opus Orchestra:
     "commitMessagePrefix": "[Agent-{n}]"
   },
   "restrictions": {
-    "blockedCommands": ["rm -rf /", "sudo", "chmod 777"],
-    "blockedPaths": [".env", "*.pem", "*.key", "credentials.*"],
+    "blockedCommands": [
+      "rm -rf /", "sudo", "chmod 777",
+      "gh auth *", "gh api *", "gh pr create", "gh issue *",
+      "cat ~/.config/gh/*", "cat ~/.ssh/*", "cat ~/.aws/*",
+      "cat ~/.netrc", "cat ~/.gitconfig"
+    ],
+    "blockedPaths": [
+      ".env", "*.pem", "*.key", "credentials.*",
+      "~/.config/gh/*", "~/.ssh/*", "~/.aws/*", "~/.netrc"
+    ],
     "maxFileSize": "1MB"
   }
 }
@@ -357,8 +365,34 @@ Profiles can include instructions added to CLAUDE.md:
 - Container mode (see 001-containerized-mode.md) for containerized profile
 - Conductor agent (see 004-conductor-agent.md) for conductor profile
 
+## Credential Isolation
+
+**Agents must NEVER have access to user credentials.**
+
+All default profiles include blocks for:
+- `gh` CLI commands (GitHub auth)
+- SSH key access (`~/.ssh/*`)
+- AWS credentials (`~/.aws/*`)
+- Git credentials (`~/.gitconfig`, `~/.netrc`)
+- Any credential stores
+
+**Why this matters**:
+- Agents could push to repos as you
+- Agents could access private repos/APIs
+- Agents could exfiltrate credentials
+- Compromised agents become full account compromise
+
+**Implementation**:
+- Default blockedCommands includes `gh *`, credential file access
+- Default blockedPaths includes credential directories
+- Containerized mode explicitly doesn't mount credential paths
+- GitHub operations go through extension, not agents
+
+Users CAN override these blocks, but must do so explicitly and understand the risk.
+
 ## Risks
 
 - Config complexity → good defaults, simple UI
 - Merge conflicts → clear precedence rules
 - Security bypass → restrictions are advisory in non-container mode
+- Credential exposure → strong defaults, explicit opt-in for overrides
