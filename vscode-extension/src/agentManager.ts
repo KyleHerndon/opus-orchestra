@@ -3,49 +3,38 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { execSync, exec } from 'child_process';
 import { agentPath } from './pathUtils';
-import { ContainerManager, IsolationTier, ContainerConfig, ContainerInfo } from './containerManager';
+import { ContainerManager } from './containerManager';
 
-// Re-export isolation types for use by other modules
-export { IsolationTier, ContainerInfo };
+// Import types from centralized types module
+import {
+    Agent,
+    AgentStatus,
+    PersistedAgent,
+    DiffStats,
+    PendingApproval,
+    IsolationTier,
+    ContainerInfo,
+    ContainerConfig,
+    TerminalType,
+    AGENT_NAMES,
+    STATUS_ICONS,
+    AGENTS_STORAGE_KEY,
+} from './types';
 
-export type AgentStatus = 'idle' | 'working' | 'waiting-input' | 'waiting-approval' | 'stopped' | 'error';
+// Import services
+import {
+    getConfigService,
+    getGitService,
+    getTerminalService,
+    getStatusService,
+    getEventBus,
+    getLogger,
+    isLoggerInitialized,
+    getTerminalIcon,
+} from './services';
 
-export interface DiffStats {
-    insertions: number;
-    deletions: number;
-    filesChanged: number;
-}
-
-// Persisted agent data (saved to disk)
-export interface PersistedAgent {
-    id: number;
-    name: string;
-    sessionId: string;  // Claude session UUID for resuming
-    branch: string;
-    worktreePath: string;
-    repoPath: string;
-    taskFile: string | null;
-    isolationTier?: IsolationTier;  // Isolation tier for this agent
-}
-
-// Runtime agent data (includes terminal reference)
-export interface Agent extends PersistedAgent {
-    terminal: vscode.Terminal | null;
-    status: AgentStatus;
-    statusIcon: string;
-    pendingApproval: string | null;
-    lastInteractionTime: Date;
-    diffStats: DiffStats;
-    containerInfo?: ContainerInfo;  // Container/sandbox info if isolated
-}
-
-export interface PendingApproval {
-    agentId: number;
-    description: string;
-    timestamp: Date;
-}
-
-type TerminalType = 'wsl' | 'powershell' | 'cmd' | 'gitbash' | 'bash';
+// Re-export types for backward compatibility
+export { Agent, AgentStatus, PersistedAgent, DiffStats, PendingApproval, IsolationTier, ContainerInfo };
 
 export class AgentManager {
     private agents: Map<number, Agent> = new Map();
