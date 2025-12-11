@@ -6,6 +6,7 @@ import { BacklogTreeProvider } from './backlogTreeView';
 import { StatusBarManager } from './statusBar';
 import { AgentPanel } from './agentPanel';
 import { SettingsPanel } from './settingsPanel';
+import { initLogger, initPersistenceService } from './services';
 
 let agentManager: AgentManager;
 let agentTreeProvider: AgentTreeProvider;
@@ -14,6 +15,12 @@ let backlogTreeProvider: BacklogTreeProvider;
 let statusBarManager: StatusBarManager;
 
 export function activate(context: vscode.ExtensionContext) {
+    // Initialize services
+    initLogger(context.extensionPath);
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+    const persistenceService = initPersistenceService(workspaceRoot);
+    persistenceService.setContext(context);
+
     // Initialize managers
     agentManager = new AgentManager(context.extensionPath);
     agentManager.setContext(context);  // Enable persistence

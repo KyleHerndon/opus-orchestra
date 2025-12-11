@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { AgentManager, Agent } from './agentManager';
+import { formatTimeSince } from './types';
 
 export class AgentPanel {
     public static currentPanel: AgentPanel | undefined;
@@ -680,7 +681,7 @@ export class AgentPanel {
     }
 
     private _getAgentCard(agent: Agent): string {
-        const timeSince = this._formatTimeSince(agent.lastInteractionTime);
+        const timeSince = formatTimeSince(agent.lastInteractionTime, true);
         const isWaiting = agent.status === 'waiting-input' || agent.status === 'waiting-approval';
         const needsApproval = agent.status === 'waiting-approval';
         const statusClass = agent.status === 'working' ? 'status-working'
@@ -744,22 +745,6 @@ export class AgentPanel {
                 ` : ''}
             </div>
         `;
-    }
-
-    private _formatTimeSince(date: Date): string {
-        const now = new Date();
-        const diffMs = now.getTime() - date.getTime();
-        const diffSec = Math.floor(diffMs / 1000);
-        const diffMin = Math.floor(diffSec / 60);
-        const diffHour = Math.floor(diffMin / 60);
-
-        if (diffHour > 0) {
-            return `${diffHour}h ${diffMin % 60}m ago`;
-        }
-        if (diffMin > 0) {
-            return `${diffMin}m ago`;
-        }
-        return `${diffSec}s ago`;
     }
 
     private _escapeHtml(text: string): string {

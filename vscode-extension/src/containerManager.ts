@@ -1,101 +1,32 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { exec, execSync, spawn, ChildProcess } from 'child_process';
+import { exec, execSync, ChildProcess } from 'child_process';
 import { agentPath } from './pathUtils';
 
-/**
- * Isolation tiers for sandboxed agents.
- * Higher tiers = more isolation = more autonomy can be granted safely.
- */
-export type IsolationTier = 'standard' | 'sandbox' | 'docker' | 'gvisor' | 'firecracker';
+// Import types from centralized types module
+import {
+    IsolationTier,
+    ContainerState,
+    ContainerConfig,
+    ContainerInfo,
+    PersistedContainerInfo,
+    CONTAINER_LABELS,
+    BLOCKED_HOST_PATHS,
+} from './types';
 
-/**
- * Container/sandbox state
- */
-export type ContainerState = 'creating' | 'running' | 'stopped' | 'error' | 'not_created';
+// Import services
+import {
+    getConfigService,
+    getEventBus,
+    getLogger,
+    isLoggerInitialized,
+    getPersistenceService,
+    isPersistenceServiceInitialized,
+} from './services';
 
-/**
- * Container configuration for a repository
- */
-export interface ContainerConfig {
-    // Minimum required tier (won't run with less isolation)
-    minimumTier?: IsolationTier;
-    // Recommended tier
-    recommendedTier?: IsolationTier;
-    // Custom image
-    image?: string;
-    // Dockerfile path (relative to repo)
-    dockerfile?: string;
-    // Network allowlist additions
-    allowedDomains?: string[];
-    // Resource limits
-    memoryLimit?: string;
-    cpuLimit?: string;
-    // Additional mounts
-    additionalMounts?: Array<{
-        source: string;
-        target: string;
-        readonly?: boolean;
-    }>;
-    // Environment variables (non-sensitive only)
-    environment?: Record<string, string>;
-}
-
-/**
- * Runtime container/sandbox info
- */
-export interface ContainerInfo {
-    id: string;  // Container ID or process ID
-    tier: IsolationTier;
-    state: ContainerState;
-    agentId: number;
-    worktreePath: string;
-    proxyPort?: number;
-    createdAt: Date;
-    // Resource usage (updated periodically)
-    memoryUsageMB?: number;
-    cpuPercent?: number;
-}
-
-/**
- * Persisted container data (saved to workspace state)
- */
-export interface PersistedContainerInfo {
-    id: string;
-    tier: IsolationTier;
-    agentId: number;
-    worktreePath: string;
-    proxyPort?: number;
-    createdAt: string;
-}
-
-/**
- * Labels applied to containers for identification
- */
-const CONTAINER_LABELS = {
-    managed: 'opus-orchestra.managed=true',
-    agentId: (id: number) => `opus-orchestra.agent-id=${id}`,
-    worktree: (path: string) => `opus-orchestra.worktree-path=${path}`,
-};
-
-/**
- * Default sandbox image
- */
-const DEFAULT_IMAGE = 'ghcr.io/kyleherndon/opus-orchestra-sandbox:latest';
-
-/**
- * Paths that are explicitly NOT mounted into containers (credential isolation)
- */
-const BLOCKED_HOST_PATHS = [
-    '~/.ssh',
-    '~/.aws',
-    '~/.config/gh',
-    '~/.gitconfig',
-    '~/.netrc',
-    '~/.docker/config.json',
-    '~/.kube/config',
-];
+// Re-export types for backward compatibility
+export { IsolationTier, ContainerState, ContainerConfig, ContainerInfo, PersistedContainerInfo };
 
 /**
  * ContainerManager handles lifecycle of isolated agent environments.
@@ -121,12 +52,12 @@ export class ContainerManager {
     }
 
     /**
-     * Debug logging
+     * Debug logging via Logger service
      */
     private debugLog(message: string): void {
-        const logFile = path.join(this.extensionPath, 'debug.log');
-        const timestamp = new Date().toISOString();
-        fs.appendFileSync(logFile, `[${timestamp}] [ContainerManager] ${message}\n`);
+        if (isLoggerInitialized()) {
+            getLogger().child('ContainerManager').debug(message);
+        }
     }
 
     // ========== Tier Availability Checks ==========
@@ -200,8 +131,7 @@ export class ContainerManager {
 
     private async checkFirecrackerAvailable(): Promise<boolean> {
         try {
-            const config = vscode.workspace.getConfiguration('claudeAgents');
-            const firecrackerPath = config.get<string>('firecrackerPath', '');
+            const firecrackerPath = getConfigService().firecrackerPath;
             if (!firecrackerPath) {
                 return false;
             }
@@ -280,6 +210,9 @@ export class ContainerManager {
         this.containers.set(agentId, containerInfo);
         await this.saveContainers();
 
+        // Emit container created event
+        getEventBus().emit('container:created', { containerInfo });
+
         return containerInfo;
     }
 
@@ -305,14 +238,14 @@ export class ContainerManager {
         config?: ContainerConfig,
         useGvisor: boolean = false
     ): Promise<string> {
-        const vsConfig = vscode.workspace.getConfiguration('claudeAgents');
+        const appConfig = getConfigService();
 
         // Determine image
-        const image = config?.image || vsConfig.get<string>('containerImage', DEFAULT_IMAGE);
+        const image = config?.image || appConfig.containerImage;
 
         // Resource limits
-        const memoryLimit = config?.memoryLimit || vsConfig.get<string>('containerMemoryLimit', '4g');
-        const cpuLimit = config?.cpuLimit || vsConfig.get<string>('containerCpuLimit', '2');
+        const memoryLimit = config?.memoryLimit || appConfig.containerMemoryLimit;
+        const cpuLimit = config?.cpuLimit || appConfig.containerCpuLimit;
 
         // Convert worktree path for Docker (needs to be accessible from Docker daemon)
         const dockerWorktreePath = this.toDockerPath(worktreePath);
@@ -452,6 +385,9 @@ export class ContainerManager {
 
         this.containers.delete(agentId);
         await this.saveContainers();
+
+        // Emit container removed event
+        getEventBus().emit('container:removed', { agentId });
     }
 
     /**
@@ -559,36 +495,18 @@ export class ContainerManager {
 
     // ========== Persistence ==========
 
-    private getStorageKey(): string {
-        return 'claudeAgents.containers';
-    }
-
     private async saveContainers(): Promise<void> {
-        if (!this.context) {
-            return;
+        if (isPersistenceServiceInitialized()) {
+            getPersistenceService().saveContainers(this.containers);
         }
-
-        const persisted: PersistedContainerInfo[] = [];
-        for (const container of this.containers.values()) {
-            persisted.push({
-                id: container.id,
-                tier: container.tier,
-                agentId: container.agentId,
-                worktreePath: container.worktreePath,
-                proxyPort: container.proxyPort,
-                createdAt: container.createdAt.toISOString(),
-            });
-        }
-
-        await this.context.workspaceState.update(this.getStorageKey(), persisted);
     }
 
     private async restoreContainers(): Promise<void> {
-        if (!this.context) {
+        if (!isPersistenceServiceInitialized()) {
             return;
         }
 
-        const persisted = this.context.workspaceState.get<PersistedContainerInfo[]>(this.getStorageKey(), []);
+        const persisted = getPersistenceService().loadPersistedContainers();
 
         for (const p of persisted) {
             // Check if container is still running
