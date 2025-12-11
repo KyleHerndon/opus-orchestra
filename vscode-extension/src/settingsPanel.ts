@@ -1,5 +1,8 @@
 import * as vscode from 'vscode';
 
+// Get extension version from package.json
+const EXTENSION_VERSION = require('../package.json').version;
+
 // Settings keys with their default values (must match SETTINGS_SCHEMA in webview JS)
 const SETTINGS_KEYS: Record<string, any> = {
     repositoryPaths: [],
@@ -286,6 +289,21 @@ export class SettingsPanel {
             font-family: inherit;
             font-size: 13px;
         }
+        .version-footer {
+            margin-top: 32px;
+            padding-top: 16px;
+            border-top: 1px solid var(--vscode-widget-border);
+            text-align: center;
+            color: var(--vscode-descriptionForeground);
+            font-size: 12px;
+        }
+        .version-footer a {
+            color: var(--vscode-textLink-foreground);
+            text-decoration: none;
+        }
+        .version-footer a:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
@@ -386,6 +404,10 @@ export class SettingsPanel {
     <div class="actions">
         <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
         <button class="btn btn-secondary" onclick="resetToDefaults()">Reset to Defaults</button>
+    </div>
+
+    <div class="version-footer">
+        Claude Agents v${EXTENSION_VERSION}
     </div>
 
     <script>
