@@ -82,7 +82,8 @@ suite('AgentPanel HTML Test Suite', () => {
         const path = require('path');
 
         const srcPath = path.resolve(__dirname, '../../../src/agentPanel.ts');
-        const content = fs.readFileSync(srcPath, 'utf-8');
+        // Normalize line endings for cross-platform compatibility
+        const content = fs.readFileSync(srcPath, 'utf-8').replace(/\r\n/g, '\n');
 
         // Find the _getAgentCard method - look for the entire method including its return
         const cardMethodStart = content.indexOf('private _getAgentCard(');
@@ -146,7 +147,8 @@ suite('AgentPanel HTML Test Suite', () => {
         const path = require('path');
 
         const srcPath = path.resolve(__dirname, '../../../src/agentPanel.ts');
-        const content = fs.readFileSync(srcPath, 'utf-8');
+        // Normalize line endings for cross-platform compatibility
+        const content = fs.readFileSync(srcPath, 'utf-8').replace(/\r\n/g, '\n');
 
         // Find the _getAgentCard method
         const cardMethodStart = content.indexOf('private _getAgentCard(');
