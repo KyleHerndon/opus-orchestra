@@ -62,7 +62,7 @@ export class CommandService implements ICommandService {
             const platform = os.platform();
 
             let fullCommand: string;
-            let execOptions: { cwd?: string; encoding: 'utf-8'; shell?: string } = { encoding: 'utf-8' };
+            const execOptions: { cwd?: string; encoding: 'utf-8'; shell?: string } = { encoding: 'utf-8' };
 
             // If running on Linux (e.g., WSL VS Code), execute directly
             if (platform !== 'win32') {
