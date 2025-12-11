@@ -464,10 +464,18 @@ export class AgentManager {
 
         const claudeCmd = getConfigService().claudeCommand;
 
-        // Start Claude with session ID for this agent
-        const cmd = `${claudeCmd} --session-id "${agent.sessionId}"`;
+        // Use -r to resume if session was previously started, otherwise create new with --session-id
+        const cmd = agent.sessionStarted
+            ? `${claudeCmd} -r "${agent.sessionId}"`
+            : `${claudeCmd} --session-id "${agent.sessionId}"`;
         agent.terminal!.show();
         agent.terminal!.sendText(cmd);
+
+        // Mark session as started so future calls will resume
+        if (!agent.sessionStarted) {
+            agent.sessionStarted = true;
+            this.saveAgents();
+        }
 
         // Set initial status to waiting-input (Claude starts waiting for user input)
         agent.status = 'waiting-input';

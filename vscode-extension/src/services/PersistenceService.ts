@@ -71,6 +71,7 @@ export class PersistenceService {
                 repoPath: agent.repoPath,
                 taskFile: agent.taskFile,
                 isolationTier: agent.isolationTier,
+                sessionStarted: agent.sessionStarted,
             });
         }
 

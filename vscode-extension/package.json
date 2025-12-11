@@ -2,7 +2,7 @@
   "name": "claude-agents",
   "displayName": "Claude Agents",
   "description": "Manage multiple Claude Code agents in parallel with git worktrees",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "your-publisher-id",
   "engines": {
     "vscode": "^1.85.0"

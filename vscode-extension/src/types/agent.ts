@@ -41,6 +41,8 @@ export interface PersistedAgent {
     repoPath: string;
     taskFile: string | null;
     isolationTier?: IsolationTier;
+    /** Whether Claude has been started with this sessionId (use -r to resume if true) */
+    sessionStarted?: boolean;
 }
 
 /**
