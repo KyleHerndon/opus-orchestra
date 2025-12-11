@@ -393,7 +393,7 @@
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts",
     "test": "npm run compile && node ./out/test/runTest.js",
-    "test:unit": "npm run compile && mocha ./out/test/suite/*.test.js"
+    "test:unit": "npm run compile && mocha --ui tdd ./out/test/suite/agentPanel.test.js"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
