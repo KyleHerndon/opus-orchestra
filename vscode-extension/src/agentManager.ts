@@ -605,13 +605,20 @@ export class AgentManager {
 
     sendToAgent(agentId: number, text: string): void {
         const agent = this.agents.get(agentId);
-        if (agent?.terminal) {
-            agent.terminal.sendText(text);
-            agent.pendingApproval = null;
-            agent.status = 'working';
-            agent.lastInteractionTime = new Date();
-            this.updateAgentIcon(agent);
+        if (!agent) {
+            this.debugLog(`[sendToAgent] Agent ${agentId} not found`);
+            return;
         }
+        if (!agent.terminal) {
+            this.debugLog(`[sendToAgent] Agent ${agentId} (${agent.name}) has no terminal`);
+            return;
+        }
+        this.debugLog(`[sendToAgent] Sending "${text}" to agent ${agentId} (${agent.name})`);
+        agent.terminal.sendText(text);
+        agent.pendingApproval = null;
+        agent.status = 'working';
+        agent.lastInteractionTime = new Date();
+        this.updateAgentIcon(agent);
     }
 
     handleTerminalClosed(terminal: vscode.Terminal): void {

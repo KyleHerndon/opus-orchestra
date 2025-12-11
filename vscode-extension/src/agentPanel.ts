@@ -480,7 +480,7 @@ export class AgentPanel {
                         vscode.postMessage({ command: 'startClaude', agentId: agentIdNum });
                         break;
                     case 'sendKey':
-                        const key = e.target.getAttribute('data-key');
+                        const key = button.getAttribute('data-key');
                         vscode.postMessage({ command: 'sendKey', agentId: agentIdNum, key: key });
                         break;
                     case 'deleteAgent':
