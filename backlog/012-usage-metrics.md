@@ -2,7 +2,7 @@
 
 ## Summary
 
-Track Claude Code usage metrics across all agents including token consumption, costs, session statistics, and integration with tools like `ccusage`. Supports both subscription plans (Pro/Max) and API key usage.
+Track Claude Code usage metrics across all agents including token consumption, costs, session statistics, and integration with tools like `ccusage` and `ccflare`. Supports subscription plans (Pro/Max), API key usage, and multi-account load balancing.
 
 ## Motivation
 
@@ -65,6 +65,35 @@ User has both subscription and API key.
 - Separate tracking per source
 - Combined view option
 - Cost comparison
+
+### Mode 4: Multi-Account with ccflare
+
+User has multiple Claude accounts (Free, Pro, Team) and uses [ccflare](https://github.com/snipeship/ccflare) to load balance across them.
+
+**ccflare Features**:
+- Distribute requests across multiple accounts
+- Automatic failover when rate-limited
+- Session-based routing (5-hour context windows)
+- Per-account usage tracking
+- OAuth token refresh handling
+- Web dashboard at `localhost:8080/dashboard`
+
+**Use Cases**:
+- Run many agents without hitting single-account rate limits
+- Mix Free + Pro accounts for cost optimization
+- Team environments with multiple seats
+- High-throughput batch operations
+
+**Integration**:
+- Set `ANTHROPIC_BASE_URL=http://localhost:8080`
+- ccflare proxies to appropriate account
+- Opus Orchestra reads ccflare's analytics API
+
+**Tracking**:
+- Per-account usage breakdown
+- Rate limit status per account
+- Aggregate across all accounts
+- Cost distribution
 
 ## Design
 
@@ -202,6 +231,7 @@ Resets: 18 days
 │ │ ● Subscription only (Pro/Max plan)                  │ │
 │ │ ○ API key only                                      │ │
 │ │ ○ Both (subscription + API fallback)                │ │
+│ │ ○ Multi-account (ccflare proxy)                     │ │
 │ └─────────────────────────────────────────────────────┘ │
 │                                                         │
 │ Subscription Settings:                                  │

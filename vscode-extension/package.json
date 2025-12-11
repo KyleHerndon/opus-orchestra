@@ -97,6 +97,18 @@
         "title": "Refresh Backlog",
         "category": "Claude Agents",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "claudeAgents.checkIsolation",
+        "title": "Check Isolation Tiers",
+        "category": "Claude Agents",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "claudeAgents.runSetup",
+        "title": "Run Setup Script",
+        "category": "Claude Agents",
+        "icon": "$(tools)"
       }
     ],
     "viewsContainers": {
@@ -298,6 +310,77 @@
           "minimum": 0.75,
           "maximum": 1.5,
           "description": "UI scale factor for the dashboard (0.75 to 1.5)"
+        },
+        "claudeAgents.isolationTier": {
+          "type": "string",
+          "enum": [
+            "standard",
+            "sandbox",
+            "docker",
+            "gvisor",
+            "firecracker"
+          ],
+          "default": "standard",
+          "enumDescriptions": [
+            "Standard - Manual approval for all operations, no isolation",
+            "Sandbox Runtime - Lightweight OS-level isolation using bubblewrap/sandbox-exec",
+            "Docker Container - Container isolation with hardened security options",
+            "gVisor - Kernel-level isolation via userspace syscall interception",
+            "Firecracker VM - Full VM isolation with dedicated kernel"
+          ],
+          "description": "Default isolation tier for new agents. Higher tiers provide more isolation and allow more autonomous operation."
+        },
+        "claudeAgents.containerImage": {
+          "type": "string",
+          "default": "ghcr.io/kyleherndon/opus-orchestra-sandbox:latest",
+          "description": "Docker image for containerized agents"
+        },
+        "claudeAgents.containerMemoryLimit": {
+          "type": "string",
+          "default": "4g",
+          "description": "Memory limit for containers/VMs (e.g., 2g, 4g, 8g)"
+        },
+        "claudeAgents.containerCpuLimit": {
+          "type": "string",
+          "default": "2",
+          "description": "CPU limit for containers/VMs"
+        },
+        "claudeAgents.containerPidsLimit": {
+          "type": "number",
+          "default": 100,
+          "description": "Maximum number of processes in container (prevents fork bombs)"
+        },
+        "claudeAgents.gvisorEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use gVisor runtime (runsc) for Docker containers"
+        },
+        "claudeAgents.firecrackerPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to Firecracker binary. Leave empty if not available."
+        },
+        "claudeAgents.allowedDomains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "api.anthropic.com",
+            "registry.npmjs.org",
+            "pypi.org"
+          ],
+          "description": "Domains that isolated agents can access through the proxy"
+        },
+        "claudeAgents.proxyPort": {
+          "type": "number",
+          "default": 8377,
+          "description": "Port for the isolation proxy service"
+        },
+        "claudeAgents.autoSwitchToApiOnRateLimit": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically switch to API key when subscription is rate-limited"
         }
       }
     }

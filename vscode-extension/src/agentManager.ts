@@ -3,6 +3,10 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { execSync, exec } from 'child_process';
 import { agentPath } from './pathUtils';
+import { ContainerManager, IsolationTier, ContainerConfig, ContainerInfo } from './containerManager';
+
+// Re-export isolation types for use by other modules
+export { IsolationTier, ContainerInfo };
 
 export type AgentStatus = 'idle' | 'working' | 'waiting-input' | 'waiting-approval' | 'stopped' | 'error';
 
@@ -21,6 +25,7 @@ export interface PersistedAgent {
     worktreePath: string;
     repoPath: string;
     taskFile: string | null;
+    isolationTier?: IsolationTier;  // Isolation tier for this agent
 }
 
 // Runtime agent data (includes terminal reference)
@@ -31,6 +36,7 @@ export interface Agent extends PersistedAgent {
     pendingApproval: string | null;
     lastInteractionTime: Date;
     diffStats: DiffStats;
+    containerInfo?: ContainerInfo;  // Container/sandbox info if isolated
 }
 
 export interface PendingApproval {
@@ -47,18 +53,26 @@ export class AgentManager {
     private worktreeDir: string;
     private extensionPath: string;
     private context: vscode.ExtensionContext | null = null;
+    private containerManager: ContainerManager;
 
     constructor(extensionPath: string) {
         this.workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
         this.extensionPath = extensionPath;
         const config = vscode.workspace.getConfiguration('claudeAgents');
         this.worktreeDir = config.get<string>('worktreeDirectory', '.worktrees');
+        this.containerManager = new ContainerManager(extensionPath);
     }
 
     // Must be called after construction to enable persistence
     setContext(context: vscode.ExtensionContext): void {
         this.context = context;
+        this.containerManager.setContext(context);
         this.restoreAgents();
+    }
+
+    // Get the container manager for external access
+    getContainerManager(): ContainerManager {
+        return this.containerManager;
     }
 
     // Get the storage key for persisted agents
@@ -115,7 +129,8 @@ export class AgentManager {
                 branch: agent.branch,
                 worktreePath: agent.worktreePath,
                 repoPath: agent.repoPath,
-                taskFile: agent.taskFile
+                taskFile: agent.taskFile,
+                isolationTier: agent.isolationTier
             });
         }
 
@@ -144,6 +159,9 @@ export class AgentManager {
 
             this.debugLog(`[restoreAgents] Found terminal: ${existingTerminal ? existingTerminal.name : 'none'}`);
 
+            // Get container info if this agent is containerized
+            const containerInfo = this.containerManager.getContainer(persisted.id);
+
             const agent: Agent = {
                 ...persisted,
                 // Generate sessionId for old agents that don't have one
@@ -153,7 +171,8 @@ export class AgentManager {
                 statusIcon: existingTerminal ? 'circle-filled' : 'circle-outline',
                 pendingApproval: null,
                 lastInteractionTime: new Date(),
-                diffStats: { insertions: 0, deletions: 0, filesChanged: 0 }
+                diffStats: { insertions: 0, deletions: 0, filesChanged: 0 },
+                containerInfo
             };
 
             this.agents.set(agent.id, agent);
@@ -375,7 +394,7 @@ export class AgentManager {
         }
     }
 
-    async createAgents(count: number, repoPath?: string): Promise<void> {
+    async createAgents(count: number, repoPath?: string, isolationTier?: IsolationTier): Promise<void> {
         const repoPaths = this.getRepositoryPaths();
 
         if (repoPaths.length === 0) {
@@ -406,6 +425,26 @@ export class AgentManager {
         } catch {
             vscode.window.showErrorMessage(`Not a git repository: ${targetRepo}`);
             return;
+        }
+
+        // Get default isolation tier from settings if not specified
+        const config = vscode.workspace.getConfiguration('claudeAgents');
+        const defaultTier = isolationTier || config.get<IsolationTier>('isolationTier', 'standard');
+
+        // Load repo-specific container config
+        const repoConfig = this.containerManager.loadRepoConfig(targetRepo);
+
+        // Validate isolation tier is available
+        const availableTiers = await this.containerManager.getAvailableTiers();
+        if (!availableTiers.includes(defaultTier)) {
+            const fallback = availableTiers[availableTiers.length - 1];  // Highest available
+            const useAlternative = await vscode.window.showWarningMessage(
+                `Isolation tier '${defaultTier}' is not available. Use '${fallback}' instead?`,
+                'Yes', 'No'
+            );
+            if (useAlternative !== 'Yes') {
+                return;
+            }
         }
 
         const baseBranch = this.execCommand('git branch --show-current', targetRepo).trim();
@@ -462,7 +501,8 @@ export class AgentManager {
                         statusIcon: 'circle-outline',
                         pendingApproval: null,
                         lastInteractionTime: new Date(),
-                        diffStats: { insertions: 0, deletions: 0, filesChanged: 0 }
+                        diffStats: { insertions: 0, deletions: 0, filesChanged: 0 },
+                        isolationTier: defaultTier
                     };
 
                     this.agents.set(nextId, agent);
@@ -471,6 +511,24 @@ export class AgentManager {
 
                     // Copy coordination files (slash commands, etc.) to the worktree
                     this.copyCoordinationToWorktree(agent);
+
+                    // Create container/sandbox if not standard mode
+                    if (defaultTier !== 'standard') {
+                        try {
+                            const containerInfo = await this.containerManager.createContainer(
+                                nextId,
+                                worktreePath,
+                                defaultTier,
+                                repoConfig
+                            );
+                            agent.containerInfo = containerInfo;
+                        } catch (containerError) {
+                            vscode.window.showWarningMessage(
+                                `Failed to create container for agent ${agentName}: ${containerError}. Running in standard mode.`
+                            );
+                            agent.isolationTier = 'standard';
+                        }
+                    }
 
                     // Create terminal for this agent
                     this.createTerminalForAgent(agent);
@@ -486,17 +544,40 @@ export class AgentManager {
         // Persist agents to storage
         this.saveAgents();
 
-        vscode.window.showInformationMessage(`Created ${createdCount} agent worktrees`);
+        const tierInfo = defaultTier !== 'standard' ? ` (${defaultTier} isolation)` : '';
+        vscode.window.showInformationMessage(`Created ${createdCount} agent worktrees${tierInfo}`);
+    }
+
+    // Get available isolation tiers
+    async getAvailableIsolationTiers(): Promise<IsolationTier[]> {
+        return this.containerManager.getAvailableTiers();
     }
 
     private createTerminalForAgent(agent: Agent, resumeSession: boolean = false): void {
         // VS Code terminal needs Windows path for cwd
         const windowsCwd = this.toWindowsPath(agent.worktreePath);
 
+        // Determine icon based on isolation tier
+        let iconPath: vscode.ThemeIcon;
+        switch (agent.isolationTier) {
+            case 'docker':
+            case 'gvisor':
+                iconPath = new vscode.ThemeIcon('package');  // Container icon
+                break;
+            case 'sandbox':
+                iconPath = new vscode.ThemeIcon('shield');  // Shield for sandbox
+                break;
+            case 'firecracker':
+                iconPath = new vscode.ThemeIcon('vm');  // VM icon
+                break;
+            default:
+                iconPath = new vscode.ThemeIcon('hubot');  // Standard agent
+        }
+
         const terminal = vscode.window.createTerminal({
             name: agent.name,
             cwd: windowsCwd,
-            iconPath: new vscode.ThemeIcon('hubot')
+            iconPath
         });
 
         agent.terminal = terminal;
@@ -507,14 +588,31 @@ export class AgentManager {
 
         if (autoStart) {
             const claudeCmd = config.get<string>('claudeCommand', 'claude');
-            // Longer delay to let terminal fully initialize (especially on WSL)
-            setTimeout(() => {
-                if (resumeSession && agent.sessionId) {
-                    terminal.sendText(`${claudeCmd} --resume "${agent.sessionId}"`);
-                } else {
-                    terminal.sendText(`${claudeCmd} --session-id "${agent.sessionId}"`);
-                }
-            }, 1000);
+
+            // For containerized agents, we need to exec into the container
+            if (agent.containerInfo && agent.isolationTier !== 'standard') {
+                // Longer delay for container startup
+                setTimeout(() => {
+                    const containerId = agent.containerInfo!.id;
+                    let claudeArgs = resumeSession && agent.sessionId
+                        ? `--resume "${agent.sessionId}"`
+                        : `--session-id "${agent.sessionId}"`;
+
+                    // Add --dangerously-skip-permissions for containerized agents
+                    claudeArgs += ' --dangerously-skip-permissions';
+
+                    terminal.sendText(`docker exec -it ${containerId} ${claudeCmd} ${claudeArgs}`);
+                }, 2000);
+            } else {
+                // Standard mode - run directly
+                setTimeout(() => {
+                    if (resumeSession && agent.sessionId) {
+                        terminal.sendText(`${claudeCmd} --resume "${agent.sessionId}"`);
+                    } else {
+                        terminal.sendText(`${claudeCmd} --session-id "${agent.sessionId}"`);
+                    }
+                }, 1000);
+            }
         }
     }
 
@@ -864,10 +962,14 @@ export class AgentManager {
     }
 
     async cleanup(): Promise<void> {
-        // Close all terminals
+        // Close all terminals and containers
         for (const agent of this.agents.values()) {
             if (agent.terminal) {
                 agent.terminal.dispose();
+            }
+            // Remove container if exists
+            if (agent.containerInfo) {
+                await this.containerManager.removeContainer(agent.id);
             }
         }
 
@@ -899,6 +1001,11 @@ export class AgentManager {
         // Close terminal if open
         if (agent.terminal) {
             agent.terminal.dispose();
+        }
+
+        // Remove container if exists
+        if (agent.containerInfo) {
+            await this.containerManager.removeContainer(agentId);
         }
 
         // Remove worktree and branch

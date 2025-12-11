@@ -305,6 +305,54 @@ export class AgentPanel {
             background: var(--vscode-inputValidation-errorBackground);
             color: var(--vscode-inputValidation-errorForeground);
         }
+        /* Isolation tier badges */
+        .isolation-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: calc(2px * var(--ui-scale)) calc(6px * var(--ui-scale));
+            border-radius: calc(4px * var(--ui-scale));
+            font-size: calc(10px * var(--ui-scale));
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+        .isolation-standard {
+            background: var(--vscode-badge-background);
+            color: var(--vscode-badge-foreground);
+        }
+        .isolation-sandbox {
+            background: rgba(100, 149, 237, 0.2);
+            color: cornflowerblue;
+            border: 1px solid cornflowerblue;
+        }
+        .isolation-docker {
+            background: rgba(0, 149, 237, 0.2);
+            color: #2196F3;
+            border: 1px solid #2196F3;
+        }
+        .isolation-gvisor {
+            background: rgba(156, 39, 176, 0.2);
+            color: #9C27B0;
+            border: 1px solid #9C27B0;
+        }
+        .isolation-firecracker {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4CAF50;
+            border: 1px solid #4CAF50;
+        }
+        /* Containerized agent card styling */
+        .agent-card.containerized {
+            border-left: 3px solid #2196F3;
+        }
+        .agent-card.containerized.tier-sandbox {
+            border-left-color: cornflowerblue;
+        }
+        .agent-card.containerized.tier-gvisor {
+            border-left-color: #9C27B0;
+        }
+        .agent-card.containerized.tier-firecracker {
+            border-left-color: #4CAF50;
+        }
         .approval-label {
             font-size: calc(12px * var(--ui-scale));
             color: var(--vscode-inputValidation-warningForeground);
@@ -558,6 +606,7 @@ export class AgentPanel {
             a.status === 'waiting-input' || a.status === 'waiting-approval'
         ).length;
         const workingCount = agents.filter(a => a.status === 'working').length;
+        const containerizedCount = agents.filter(a => a.isolationTier && a.isolationTier !== 'standard').length;
 
         return `
             <div class="stats-bar">
@@ -573,6 +622,12 @@ export class AgentPanel {
                     <div class="stat-value">${waitingCount}</div>
                     <div class="stat-label">Waiting</div>
                 </div>
+                ${containerizedCount > 0 ? `
+                <div class="stat">
+                    <div class="stat-value" style="color: #2196F3;">📦 ${containerizedCount}</div>
+                    <div class="stat-label">Containerized</div>
+                </div>
+                ` : ''}
                 <div class="stat">
                     <div class="stat-value diff-add">+${totalInsertions}</div>
                     <div class="stat-label">Insertions</div>
@@ -637,14 +692,27 @@ export class AgentPanel {
         // Display name (agent.name is already without "claude-" prefix)
         const displayName = agent.name;
 
+        // Isolation tier info
+        const tier = agent.isolationTier || 'standard';
+        const isContainerized = tier !== 'standard';
+        const tierClass = `tier-${tier}`;
+        const tierIcon = tier === 'docker' || tier === 'gvisor' ? '📦'
+            : tier === 'sandbox' ? '🛡️'
+            : tier === 'firecracker' ? '🖥️'
+            : '';
+        const tierLabel = tier === 'gvisor' ? 'gVisor' : tier.charAt(0).toUpperCase() + tier.slice(1);
+
         // Check setting for showing all permission options
         const config = vscode.workspace.getConfiguration('claudeAgents');
         const showAllOptions = config.get<boolean>('showAllPermissionOptions', false);
 
         return `
-            <div class="agent-card ${isWaiting ? 'waiting' : ''}">
+            <div class="agent-card ${isWaiting ? 'waiting' : ''} ${isContainerized ? 'containerized ' + tierClass : ''}">
                 <div class="agent-header">
-                    <input type="text" class="agent-title-input" value="${displayName}" data-agent-id="${agent.id}" data-original="${displayName}" title="Click to rename">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="text" class="agent-title-input" value="${displayName}" data-agent-id="${agent.id}" data-original="${displayName}" title="Click to rename">
+                        ${isContainerized ? `<span class="isolation-badge isolation-${tier}" title="Running in ${tierLabel} isolation">${tierIcon} ${tierLabel}</span>` : ''}
+                    </div>
                     <span class="agent-status ${statusClass}">${agent.status}</span>
                 </div>
                 <div class="agent-stats">

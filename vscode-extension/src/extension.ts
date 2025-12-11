@@ -248,6 +248,54 @@ export function activate(context: vscode.ExtensionContext) {
                     vscode.window.showErrorMessage('Failed to cleanup completed tasks');
                 }
             }
+        }),
+
+        // Check available isolation tiers
+        vscode.commands.registerCommand('claudeAgents.checkIsolation', async () => {
+            const tiers = await agentManager.getAvailableIsolationTiers();
+            const config = vscode.workspace.getConfiguration('claudeAgents');
+            const currentTier = config.get<string>('isolationTier', 'standard');
+
+            const tierDescriptions: Record<string, string> = {
+                'standard': 'No isolation - manual approval for all operations',
+                'sandbox': 'Lightweight OS-level isolation (bubblewrap/sandbox-exec)',
+                'docker': 'Container isolation with hardened security options',
+                'gvisor': 'Kernel-level isolation via userspace syscall interception',
+                'firecracker': 'Full VM isolation with dedicated kernel'
+            };
+
+            const items = tiers.map(tier => ({
+                label: `$(${tier === currentTier ? 'check' : 'circle-outline'}) ${tier}`,
+                description: tier === currentTier ? '(current)' : '',
+                detail: tierDescriptions[tier] || tier,
+                tier
+            }));
+
+            const selected = await vscode.window.showQuickPick(items, {
+                placeHolder: `Available isolation tiers (current: ${currentTier})`,
+                title: 'Isolation Tiers'
+            });
+
+            if (selected && selected.tier !== currentTier) {
+                await config.update('isolationTier', selected.tier, vscode.ConfigurationTarget.Global);
+                vscode.window.showInformationMessage(`Isolation tier set to: ${selected.tier}`);
+            }
+        }),
+
+        // Run setup script
+        vscode.commands.registerCommand('claudeAgents.runSetup', async () => {
+            const terminal = vscode.window.createTerminal({
+                name: 'Opus Orchestra Setup',
+                cwd: context.extensionPath
+            });
+            terminal.show();
+
+            // Detect platform and run appropriate script
+            if (process.platform === 'win32') {
+                terminal.sendText('powershell -ExecutionPolicy Bypass -File scripts/setup.ps1');
+            } else {
+                terminal.sendText('./scripts/setup.sh');
+            }
         })
     );
 
