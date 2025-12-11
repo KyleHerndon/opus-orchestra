@@ -1,74 +1,31 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { exec, execSync, spawn, ChildProcess } from 'child_process';
+import { ChildProcess } from 'child_process';
 import { agentPath } from './pathUtils';
 
-/**
- * Isolation tiers for sandboxed agents.
- * Higher tiers = more isolation = more autonomy can be granted safely.
- */
-export type IsolationTier = 'standard' | 'sandbox' | 'docker' | 'gvisor' | 'firecracker';
+// Import types from centralized types module
+import {
+    IsolationTier,
+    ContainerState,
+    ContainerConfig,
+    ContainerInfo,
+    PersistedContainerInfo,
+} from './types';
 
-/**
- * Container/sandbox state
- */
-export type ContainerState = 'creating' | 'running' | 'stopped' | 'error' | 'not_created';
+// Import services
+import {
+    getConfigService,
+    getCommandService,
+    getEventBus,
+    getLogger,
+    isLoggerInitialized,
+    getPersistenceService,
+    isPersistenceServiceInitialized,
+} from './services';
 
-/**
- * Container configuration for a repository
- */
-export interface ContainerConfig {
-    // Minimum required tier (won't run with less isolation)
-    minimumTier?: IsolationTier;
-    // Recommended tier
-    recommendedTier?: IsolationTier;
-    // Custom image
-    image?: string;
-    // Dockerfile path (relative to repo)
-    dockerfile?: string;
-    // Network allowlist additions
-    allowedDomains?: string[];
-    // Resource limits
-    memoryLimit?: string;
-    cpuLimit?: string;
-    // Additional mounts
-    additionalMounts?: Array<{
-        source: string;
-        target: string;
-        readonly?: boolean;
-    }>;
-    // Environment variables (non-sensitive only)
-    environment?: Record<string, string>;
-}
-
-/**
- * Runtime container/sandbox info
- */
-export interface ContainerInfo {
-    id: string;  // Container ID or process ID
-    tier: IsolationTier;
-    state: ContainerState;
-    agentId: number;
-    worktreePath: string;
-    proxyPort?: number;
-    createdAt: Date;
-    // Resource usage (updated periodically)
-    memoryUsageMB?: number;
-    cpuPercent?: number;
-}
-
-/**
- * Persisted container data (saved to workspace state)
- */
-export interface PersistedContainerInfo {
-    id: string;
-    tier: IsolationTier;
-    agentId: number;
-    worktreePath: string;
-    proxyPort?: number;
-    createdAt: string;
-}
+// Re-export types for backward compatibility
+export { IsolationTier, ContainerState, ContainerConfig, ContainerInfo, PersistedContainerInfo };
 
 /**
  * Labels applied to containers for identification

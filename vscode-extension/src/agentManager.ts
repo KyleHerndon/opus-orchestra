@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { execSync, exec } from 'child_process';
 import { agentPath } from './pathUtils';
 import { ContainerManager } from './containerManager';
 
@@ -14,16 +13,14 @@ import {
     PendingApproval,
     IsolationTier,
     ContainerInfo,
-    ContainerConfig,
-    TerminalType,
     AGENT_NAMES,
     STATUS_ICONS,
-    AGENTS_STORAGE_KEY,
 } from './types';
 
 // Import services
 import {
     getConfigService,
+    getCommandService,
     getGitService,
     getTerminalService,
     getStatusService,
@@ -31,6 +28,8 @@ import {
     getLogger,
     isLoggerInitialized,
     getTerminalIcon,
+    getPersistenceService,
+    isPersistenceServiceInitialized,
 } from './services';
 
 // Re-export types for backward compatibility
@@ -39,22 +38,22 @@ export { Agent, AgentStatus, PersistedAgent, DiffStats, PendingApproval, Isolati
 export class AgentManager {
     private agents: Map<number, Agent> = new Map();
     private workspaceRoot: string;
-    private worktreeDir: string;
     private extensionPath: string;
-    private context: vscode.ExtensionContext | null = null;
     private containerManager: ContainerManager;
 
     constructor(extensionPath: string) {
         this.workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
         this.extensionPath = extensionPath;
-        const config = vscode.workspace.getConfiguration('claudeAgents');
-        this.worktreeDir = config.get<string>('worktreeDirectory', '.worktrees');
         this.containerManager = new ContainerManager(extensionPath);
+    }
+
+    // Convenience getter for worktree directory
+    private get worktreeDir(): string {
+        return getConfigService().worktreeDirectory;
     }
 
     // Must be called after construction to enable persistence
     setContext(context: vscode.ExtensionContext): void {
-        this.context = context;
         this.containerManager.setContext(context);
         this.restoreAgents();
     }
@@ -64,16 +63,11 @@ export class AgentManager {
         return this.containerManager;
     }
 
-    // Get the storage key for persisted agents
-    private getStorageKey(): string {
-        return `claudeAgents.agents.${this.workspaceRoot}`;
-    }
-
-    // Debug logging to file (console.log output is not accessible)
+    // Debug logging via Logger service
     private debugLog(message: string): void {
-        const logFile = path.join(this.extensionPath, 'debug.log');
-        const timestamp = new Date().toISOString();
-        fs.appendFileSync(logFile, `[${timestamp}] ${message}\n`);
+        if (isLoggerInitialized()) {
+            getLogger().child('AgentManager').debug(message);
+        }
     }
 
     // Generate a UUID for Claude session
@@ -85,165 +79,54 @@ export class AgentManager {
         });
     }
 
-    // Word-based names for agents (NATO phonetic alphabet inspired, easy to distinguish)
-    private readonly agentNames = [
-        'alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot', 'golf', 'hotel',
-        'india', 'juliet', 'kilo', 'lima', 'mike', 'november', 'oscar', 'papa',
-        'quebec', 'romeo', 'sierra', 'tango', 'uniform', 'victor', 'whiskey',
-        'xray', 'yankee', 'zulu'
-    ];
-
+    // Get agent name from NATO phonetic alphabet
     private getAgentName(id: number): string {
-        if (id <= this.agentNames.length) {
-            return this.agentNames[id - 1];
+        if (id <= AGENT_NAMES.length) {
+            return AGENT_NAMES[id - 1];
         }
         // For IDs beyond the list, use name + number (e.g., alpha-2)
-        const baseIndex = (id - 1) % this.agentNames.length;
-        const suffix = Math.floor((id - 1) / this.agentNames.length) + 1;
-        return `${this.agentNames[baseIndex]}-${suffix}`;
+        const baseIndex = (id - 1) % AGENT_NAMES.length;
+        const suffix = Math.floor((id - 1) / AGENT_NAMES.length) + 1;
+        return `${AGENT_NAMES[baseIndex]}-${suffix}`;
     }
 
-    // Save agents to persistent storage
+    // Save agents to persistent storage via PersistenceService
     private saveAgents(): void {
-        if (!this.context) {
-            return;
+        if (isPersistenceServiceInitialized()) {
+            getPersistenceService().saveAgents(this.agents);
         }
-
-        const persistedAgents: PersistedAgent[] = [];
-        for (const agent of this.agents.values()) {
-            persistedAgents.push({
-                id: agent.id,
-                name: agent.name,
-                sessionId: agent.sessionId,
-                branch: agent.branch,
-                worktreePath: agent.worktreePath,
-                repoPath: agent.repoPath,
-                taskFile: agent.taskFile,
-                isolationTier: agent.isolationTier
-            });
-        }
-
-        this.context.workspaceState.update(this.getStorageKey(), persistedAgents);
     }
 
-    // Restore agents from persistent storage
+    // Restore agents from persistent storage via PersistenceService
     private restoreAgents(): void {
-        if (!this.context) {
+        if (!isPersistenceServiceInitialized()) {
             return;
         }
 
-        const persistedAgents = this.context.workspaceState.get<PersistedAgent[]>(this.getStorageKey(), []);
-
-        // Debug: log available terminals
-        const terminalNames = vscode.window.terminals.map(t => t.name);
-        this.debugLog(`[restoreAgents] Available terminals: ${JSON.stringify(terminalNames)}`);
-
-        for (const persisted of persistedAgents) {
-            this.debugLog(`[restoreAgents] Looking for terminal matching agent name: "${persisted.name}"`);
-
-            // Try to find existing terminal for this agent
-            const existingTerminal = vscode.window.terminals.find(
-                t => t.name === persisted.name
-            );
-
-            this.debugLog(`[restoreAgents] Found terminal: ${existingTerminal ? existingTerminal.name : 'none'}`);
-
-            // Get container info if this agent is containerized
-            const containerInfo = this.containerManager.getContainer(persisted.id);
-
-            const agent: Agent = {
-                ...persisted,
-                // Generate sessionId for old agents that don't have one
-                sessionId: persisted.sessionId || this.generateSessionId(),
-                terminal: existingTerminal || null,
-                status: 'idle',
-                statusIcon: existingTerminal ? 'circle-filled' : 'circle-outline',
-                pendingApproval: null,
-                lastInteractionTime: new Date(),
-                diffStats: { insertions: 0, deletions: 0, filesChanged: 0 },
-                containerInfo
-            };
-
-            this.agents.set(agent.id, agent);
-        }
-    }
-
-    // Get configured terminal type
-    private getTerminalType(): TerminalType {
-        const config = vscode.workspace.getConfiguration('claudeAgents');
-        return config.get<TerminalType>('terminalType', 'wsl');
+        this.agents = getPersistenceService().restoreAgents(
+            () => this.generateSessionId(),
+            (agentId) => this.containerManager.getContainer(agentId)
+        );
     }
 
     // Convert a path to the format expected by the configured terminal
-    // Uses AgentPath for consistent cross-platform handling
     private toTerminalPath(inputPath: string): string {
         return agentPath(inputPath).forTerminal();
     }
 
     // Convert any path format to Windows path (for VS Code APIs like terminal cwd)
-    // Uses AgentPath for consistent cross-platform handling
     private toWindowsPath(inputPath: string): string {
         return agentPath(inputPath).forNodeFs();
     }
 
-    // Execute a command in the configured terminal environment
+    // Execute a command using CommandService
     private execCommand(command: string, cwd: string): string {
-        const terminalType = this.getTerminalType();
-        const terminalPath = this.toTerminalPath(cwd);
-
-        switch (terminalType) {
-            case 'wsl':
-                // Run through WSL
-                const escapedCmd = command.replace(/'/g, "'\\''");
-                const wslCommand = `wsl bash -c "cd '${terminalPath}' && ${escapedCmd}"`;
-                return execSync(wslCommand, { encoding: 'utf-8' });
-
-            case 'gitbash':
-                // Run through Git Bash
-                const gitBashCmd = `"C:\\Program Files\\Git\\bin\\bash.exe" -c "cd '${terminalPath}' && ${command.replace(/'/g, "'\\''")}"`;
-                return execSync(gitBashCmd, { encoding: 'utf-8' });
-
-            case 'bash':
-                // Run directly with bash (macOS/Linux)
-                return execSync(command, { cwd: terminalPath, encoding: 'utf-8', shell: '/bin/bash' });
-
-            case 'powershell':
-            case 'cmd':
-            default:
-                // Run directly with Windows path
-                return execSync(command, { cwd: terminalPath, encoding: 'utf-8' });
-        }
+        return getCommandService().exec(command, cwd);
     }
 
-    // Execute a command silently (ignore errors and output)
+    // Execute a command silently using CommandService
     private execCommandSilent(command: string, cwd: string): void {
-        try {
-            const terminalType = this.getTerminalType();
-            const terminalPath = this.toTerminalPath(cwd);
-
-            switch (terminalType) {
-                case 'wsl':
-                    const escapedCmd = command.replace(/'/g, "'\\''");
-                    execSync(`wsl bash -c "cd '${terminalPath}' && ${escapedCmd}"`, { stdio: 'ignore' });
-                    break;
-
-                case 'gitbash':
-                    execSync(`"C:\\Program Files\\Git\\bin\\bash.exe" -c "cd '${terminalPath}' && ${command.replace(/'/g, "'\\''")}"`, { stdio: 'ignore' });
-                    break;
-
-                case 'bash':
-                    execSync(command, { cwd: terminalPath, stdio: 'ignore', shell: '/bin/bash' });
-                    break;
-
-                case 'powershell':
-                case 'cmd':
-                default:
-                    execSync(command, { cwd: terminalPath, stdio: 'ignore' });
-                    break;
-            }
-        } catch {
-            // Ignore errors
-        }
+        getCommandService().execSilent(command, cwd);
     }
 
     // Recursively copy a directory
@@ -264,11 +147,9 @@ export class AgentManager {
     }
 
     getRepositoryPaths(): string[] {
-        const config = vscode.workspace.getConfiguration('claudeAgents');
-        const configuredPaths = config.get<string[]>('repositoryPaths', []);
+        const configuredPaths = getConfigService().repositoryPaths;
 
         if (configuredPaths.length > 0) {
-            // Return original paths for display, conversion happens when needed
             return configuredPaths;
         }
 
@@ -278,8 +159,8 @@ export class AgentManager {
 
     // Copy coordination files (slash commands, etc.) to a worktree
     private copyCoordinationToWorktree(agent: Agent): void {
-        const config = vscode.workspace.getConfiguration('claudeAgents');
-        const coordinationPath = config.get<string>('coordinationScriptsPath', '');
+        const config = getConfigService();
+        const coordinationPath = config.coordinationScriptsPath;
 
         try {
             // Use AgentPath for consistent path handling
@@ -368,7 +249,7 @@ export class AgentManager {
             }
 
             // Symlink or copy the backlog directory so agents can access tasks
-            const backlogPathSetting = config.get<string>('backlogPath', '');
+            const backlogPathSetting = config.backlogPath;
             if (backlogPathSetting) {
                 const backlogPathObj = agentPath(backlogPathSetting);
                 const worktreeBacklogDir = `${worktreeAgentsDir}/backlog`;
@@ -425,8 +306,7 @@ export class AgentManager {
         }
 
         // Get default isolation tier from settings if not specified
-        const config = vscode.workspace.getConfiguration('claudeAgents');
-        const defaultTier = isolationTier || config.get<IsolationTier>('isolationTier', 'standard');
+        const defaultTier = isolationTier || getConfigService().isolationTier;
 
         // Load repo-specific container config
         const repoConfig = this.containerManager.loadRepoConfig(targetRepo);
@@ -530,6 +410,9 @@ export class AgentManager {
                     // Create terminal for this agent
                     this.createTerminalForAgent(agent);
 
+                    // Emit agent created event
+                    getEventBus().emit('agent:created', { agent });
+
                 } catch (error) {
                     vscode.window.showErrorMessage(`Failed to create agent ${nextId}: ${error}`);
                 }
@@ -551,66 +434,23 @@ export class AgentManager {
     }
 
     private createTerminalForAgent(agent: Agent, resumeSession: boolean = false): void {
-        // VS Code terminal needs Windows path for cwd
-        const windowsCwd = this.toWindowsPath(agent.worktreePath);
+        const config = getConfigService();
+        const terminalService = getTerminalService();
 
-        // Determine icon based on isolation tier
-        let iconPath: vscode.ThemeIcon;
-        switch (agent.isolationTier) {
-            case 'docker':
-            case 'gvisor':
-                iconPath = new vscode.ThemeIcon('package');  // Container icon
-                break;
-            case 'sandbox':
-                iconPath = new vscode.ThemeIcon('shield');  // Shield for sandbox
-                break;
-            case 'firecracker':
-                iconPath = new vscode.ThemeIcon('vm');  // VM icon
-                break;
-            default:
-                iconPath = new vscode.ThemeIcon('hubot');  // Standard agent
-        }
-
-        const terminal = vscode.window.createTerminal({
-            name: agent.name,
-            cwd: windowsCwd,
-            iconPath
-        });
+        const terminal = terminalService.createAgentTerminal(
+            agent.name,
+            agent.worktreePath,
+            agent.isolationTier,
+            {
+                autoStartClaude: config.autoStartClaude,
+                claudeCommand: config.claudeCommand,
+                sessionId: agent.sessionId,
+                resumeSession,
+                containerId: agent.containerInfo?.id,
+            }
+        );
 
         agent.terminal = terminal;
-
-        // Auto-start Claude if configured
-        const config = vscode.workspace.getConfiguration('claudeAgents');
-        const autoStart = config.get<boolean>('autoStartClaude', true);
-
-        if (autoStart) {
-            const claudeCmd = config.get<string>('claudeCommand', 'claude');
-
-            // For containerized agents, we need to exec into the container
-            if (agent.containerInfo && agent.isolationTier !== 'standard') {
-                // Longer delay for container startup
-                setTimeout(() => {
-                    const containerId = agent.containerInfo!.id;
-                    let claudeArgs = resumeSession && agent.sessionId
-                        ? `--resume "${agent.sessionId}"`
-                        : `--session-id "${agent.sessionId}"`;
-
-                    // Add --dangerously-skip-permissions for containerized agents
-                    claudeArgs += ' --dangerously-skip-permissions';
-
-                    terminal.sendText(`docker exec -it ${containerId} ${claudeCmd} ${claudeArgs}`);
-                }, 2000);
-            } else {
-                // Standard mode - run directly
-                setTimeout(() => {
-                    if (resumeSession && agent.sessionId) {
-                        terminal.sendText(`${claudeCmd} --resume "${agent.sessionId}"`);
-                    } else {
-                        terminal.sendText(`${claudeCmd} --session-id "${agent.sessionId}"`);
-                    }
-                }, 1000);
-            }
-        }
     }
 
     async startClaudeInAgent(agentId: number): Promise<void> {
@@ -622,8 +462,7 @@ export class AgentManager {
         // Ensure terminal exists (but don't auto-start Claude)
         this.ensureTerminalExists(agent);
 
-        const config = vscode.workspace.getConfiguration('claudeAgents');
-        const claudeCmd = config.get<string>('claudeCommand', 'claude');
+        const claudeCmd = getConfigService().claudeCommand;
 
         // Start Claude with session ID for this agent
         const cmd = `${claudeCmd} --session-id "${agent.sessionId}"`;
@@ -637,33 +476,27 @@ export class AgentManager {
 
     // Ensure agent has a terminal (without starting Claude)
     private ensureTerminalExists(agent: Agent): void {
+        const terminalService = getTerminalService();
+
         // Check if we have a valid terminal that still exists
-        if (agent.terminal) {
-            const stillExists = vscode.window.terminals.some(t => t === agent.terminal);
-            if (stillExists) {
-                return;
-            }
-            agent.terminal = null;
+        if (agent.terminal && terminalService.isTerminalAlive(agent.terminal)) {
+            return;
         }
+        agent.terminal = null;
 
         // Try to find existing terminal by name
-        const existingTerminal = vscode.window.terminals.find(
-            t => t.name === agent.name
-        );
-
+        const existingTerminal = terminalService.findTerminalByName(agent.name);
         if (existingTerminal) {
             agent.terminal = existingTerminal;
             return;
         }
 
         // Create terminal without starting Claude
-        const windowsCwd = this.toWindowsPath(agent.worktreePath);
-        const terminal = vscode.window.createTerminal({
+        agent.terminal = terminalService.createTerminal({
             name: agent.name,
-            cwd: windowsCwd,
-            iconPath: new vscode.ThemeIcon('hubot')
+            cwd: agent.worktreePath,
+            iconPath: getTerminalIcon(agent.isolationTier),
         });
-        agent.terminal = terminal;
     }
 
     getAgents(): Agent[] {
@@ -693,11 +526,16 @@ export class AgentManager {
     sendToAgent(agentId: number, text: string): void {
         const agent = this.agents.get(agentId);
         if (agent?.terminal) {
+            const hadPendingApproval = agent.pendingApproval !== null;
             agent.terminal.sendText(text);
             agent.pendingApproval = null;
             agent.status = 'working';
             agent.lastInteractionTime = new Date();
             this.updateAgentIcon(agent);
+
+            if (hadPendingApproval) {
+                getEventBus().emit('approval:resolved', { agentId });
+            }
         }
     }
 
@@ -707,6 +545,7 @@ export class AgentManager {
                 agent.terminal = null;
                 agent.status = 'idle';
                 this.updateAgentIcon(agent);
+                getEventBus().emit('agent:terminalClosed', { agentId: agent.id });
                 break;
             }
         }
@@ -721,105 +560,37 @@ export class AgentManager {
         }
     }
 
-    // Read status from hook-generated files
-    // Looks for ANY status file in the worktree's status directory (most recent wins)
+    // Read status from hook-generated files using StatusService
     private checkHookStatus(agent: Agent): void {
-        try {
-            // Use AgentPath for proper cross-platform path handling
-            const agentPathObj = agentPath(agent.worktreePath);
-            const statusDir = agentPathObj.join('.claude-agents', 'status').forNodeFs();
+        const parsedStatus = getStatusService().checkStatus(agent.worktreePath);
+        if (parsedStatus) {
+            const previousStatus = agent.status;
+            const hadApproval = agent.pendingApproval !== null;
 
-            // Debug logging
-            this.debugLog(`[checkHookStatus] agent: ${agent.name}, worktreePath: ${agent.worktreePath}, statusDir: ${statusDir}, exists: ${fs.existsSync(statusDir)}`);
+            agent.status = parsedStatus.status;
+            agent.pendingApproval = parsedStatus.pendingApproval;
 
-            if (!fs.existsSync(statusDir)) {
-                return;
+            // Emit status change event if status actually changed
+            if (previousStatus !== agent.status) {
+                getEventBus().emit('agent:statusChanged', { agent, previousStatus });
             }
 
-            // Find the most recently modified status file
-            const files = fs.readdirSync(statusDir);
-            if (files.length === 0) {
-                return;
-            }
-
-            let latestFile = '';
-            let latestTime = 0;
-            for (const file of files) {
-                // Use forward slashes for path joining (works on Windows Node.js)
-                const filePath = `${statusDir}/${file}`;
-                try {
-                    const stat = fs.statSync(filePath);
-                    if (stat.mtimeMs > latestTime) {
-                        latestTime = stat.mtimeMs;
-                        latestFile = filePath;
+            // Emit approval pending event if new approval appeared
+            if (!hadApproval && agent.pendingApproval !== null) {
+                getEventBus().emit('approval:pending', {
+                    approval: {
+                        agentId: agent.id,
+                        description: agent.pendingApproval,
+                        timestamp: new Date(),
                     }
-                } catch {
-                    // Skip files we can't stat
-                }
+                });
             }
-
-            if (!latestFile) {
-                return;
-            }
-
-            const content = fs.readFileSync(latestFile, 'utf-8').trim();
-            this.debugLog(`[checkHookStatus] agent: ${agent.name}, content length: ${content.length}`);
-
-            // Try to parse as JSON (raw hook output)
-            if (content.startsWith('{')) {
-                try {
-                    const data = JSON.parse(content);
-
-                    // Check for PermissionRequest hook (has tool_name)
-                    if (data.tool_name) {
-                        agent.status = 'waiting-approval';
-                        // Extract context based on tool type
-                        let context = '';
-                        if (data.tool_input) {
-                            if (data.tool_name === 'Bash' && data.tool_input.command) {
-                                context = data.tool_input.command;
-                            } else if ((data.tool_name === 'Write' || data.tool_name === 'Edit') && data.tool_input.file_path) {
-                                context = data.tool_input.file_path;
-                            }
-                        }
-                        agent.pendingApproval = context ? `${data.tool_name}: ${context}` : data.tool_name;
-                        this.debugLog(`[checkHookStatus] agent: ${agent.name}, permission request: ${agent.pendingApproval}`);
-                        return;
-                    }
-
-                    // Check for other hook types by session_id presence
-                    if (data.session_id) {
-                        // Could be Stop, UserPromptSubmit, etc. - check for specific markers
-                        // For now, if it's JSON with session_id but no tool_name, treat as working
-                        agent.status = 'working';
-                        agent.pendingApproval = null;
-                        return;
-                    }
-                } catch (e) {
-                    this.debugLog(`[checkHookStatus] agent: ${agent.name}, JSON parse error: ${e}`);
-                }
-            }
-
-            // Legacy format parsing (simple status strings)
-            if (content === 'working') {
-                agent.status = 'working';
-                agent.pendingApproval = null;
-            } else if (content === 'waiting') {
-                agent.status = 'waiting-input';
-                agent.pendingApproval = null;
-            } else if (content === 'stopped') {
-                agent.status = 'stopped';
-                agent.pendingApproval = null;
-            }
-        } catch {
-            // Ignore errors reading status
         }
     }
 
     // Separate async diff refresh - call this on a longer interval
     async refreshDiffStats(): Promise<void> {
-        const config = vscode.workspace.getConfiguration('claudeAgents');
-        const diffInterval = config.get<number>('diffPollingInterval', 60000);
+        const diffInterval = getConfigService().diffPollingInterval;
 
         // If disabled, skip
         if (diffInterval === 0) {
@@ -838,107 +609,30 @@ export class AgentManager {
 
     private async getDiffStatsAsync(agent: Agent): Promise<void> {
         try {
-            const baseBranch = await this.getBaseBranchAsync(agent.repoPath);
-            const output = await this.execCommandAsync(
-                `git diff --shortstat ${baseBranch}...HEAD`,
-                agent.worktreePath
-            );
-
-            if (!output.trim()) {
-                agent.diffStats = { insertions: 0, deletions: 0, filesChanged: 0 };
-                return;
-            }
-
-            const filesMatch = output.match(/(\d+) files? changed/);
-            const insertMatch = output.match(/(\d+) insertions?\(\+\)/);
-            const deleteMatch = output.match(/(\d+) deletions?\(-\)/);
-
-            agent.diffStats = {
-                filesChanged: filesMatch ? parseInt(filesMatch[1]) : 0,
-                insertions: insertMatch ? parseInt(insertMatch[1]) : 0,
-                deletions: deleteMatch ? parseInt(deleteMatch[1]) : 0
-            };
+            const gitService = getGitService();
+            const baseBranch = await gitService.getBaseBranch(agent.repoPath);
+            agent.diffStats = await gitService.getDiffStats(agent.worktreePath, baseBranch);
         } catch {
             // Keep existing stats on error
         }
     }
 
     private async getBaseBranchAsync(repoPath?: string): Promise<string> {
-        try {
-            const cwd = repoPath || this.workspaceRoot;
-            const branches = await this.execCommandAsync('git branch -l main master', cwd);
-
-            if (branches.includes('main')) {
-                return 'main';
-            }
-            if (branches.includes('master')) {
-                return 'master';
-            }
-            return 'HEAD~1';
-        } catch {
-            return 'HEAD~1';
-        }
+        const cwd = repoPath || this.workspaceRoot;
+        return getGitService().getBaseBranch(cwd);
     }
 
     private execCommandAsync(command: string, cwd: string): Promise<string> {
-        return new Promise((resolve, reject) => {
-            const terminalType = this.getTerminalType();
-            const terminalPath = this.toTerminalPath(cwd);
-
-            let fullCommand: string;
-            let execOptions: { cwd?: string; encoding: 'utf-8'; shell?: string } = { encoding: 'utf-8' };
-
-            switch (terminalType) {
-                case 'wsl':
-                    const escapedCmd = command.replace(/'/g, "'\\''");
-                    fullCommand = `wsl bash -c "cd '${terminalPath}' && ${escapedCmd}"`;
-                    break;
-                case 'gitbash':
-                    fullCommand = `"C:\\Program Files\\Git\\bin\\bash.exe" -c "cd '${terminalPath}' && ${command.replace(/'/g, "'\\''")}"`;
-                    break;
-                case 'bash':
-                    fullCommand = command;
-                    execOptions.cwd = terminalPath;
-                    execOptions.shell = '/bin/bash';
-                    break;
-                case 'powershell':
-                case 'cmd':
-                default:
-                    fullCommand = command;
-                    execOptions.cwd = terminalPath;
-                    break;
-            }
-
-            exec(fullCommand, execOptions, (error, stdout) => {
-                if (error) {
-                    reject(error);
-                } else {
-                    resolve(stdout);
-                }
-            });
-        });
+        return getCommandService().execAsync(command, cwd);
     }
 
 
     private updateAgentIcon(agent: Agent): void {
-        switch (agent.status) {
-            case 'working':
-                agent.statusIcon = 'sync~spin';
-                break;
-            case 'waiting-input':
-                agent.statusIcon = 'bell';
-                break;
-            case 'waiting-approval':
-                agent.statusIcon = 'question';
-                break;
-            case 'stopped':
-                agent.statusIcon = 'debug-stop';
-                break;
-            case 'error':
-                agent.statusIcon = 'error';
-                break;
-            default:
-                agent.statusIcon = agent.terminal ? 'circle-filled' : 'circle-outline';
+        if (agent.status === 'idle') {
+            // Idle status depends on terminal state
+            agent.statusIcon = agent.terminal ? 'circle-filled' : 'circle-outline';
+        } else {
+            agent.statusIcon = STATUS_ICONS[agent.status];
         }
     }
 
@@ -1023,6 +717,7 @@ export class AgentManager {
 
         this.agents.delete(agentId);
         this.saveAgents();
+        getEventBus().emit('agent:deleted', { agentId });
         vscode.window.showInformationMessage(`Agent ${agent.name || agentId} deleted`);
         return true;
     }
@@ -1058,6 +753,8 @@ export class AgentManager {
             }
         }
 
+        const previousName = agent.name;
+
         try {
             // Close terminal if open
             if (agent.terminal) {
@@ -1083,6 +780,7 @@ export class AgentManager {
             this.copyCoordinationToWorktree(agent);
 
             this.saveAgents();
+            getEventBus().emit('agent:renamed', { agent, previousName });
             vscode.window.showInformationMessage(`Agent renamed to "${sanitizedName}"`);
             return true;
         } catch (error) {
@@ -1219,17 +917,8 @@ export class AgentManager {
         const backlogPath = `${terminalPath}/.claude-agents/backlog`.replace(/\\/g, '/');
 
         try {
-            // For file system operations, we need to handle the path based on terminal type
-            const terminalType = this.getTerminalType();
-            let fsPath: string;
-
-            if (terminalType === 'wsl') {
-                // WSL paths work with Node's fs on Windows
-                fsPath = backlogPath;
-            } else {
-                // For Windows terminals, use Windows path
-                fsPath = backlogPath.replace(/\//g, '\\');
-            }
+            // Convert to Windows path for fs operations
+            const fsPath = agentPath(backlogPath).forNodeFs();
 
             const files = fs.readdirSync(fsPath);
             return files
@@ -1310,6 +999,7 @@ export class AgentManager {
             this.agents.set(agentId, agent);
             this.saveAgents();
             this.createTerminalForAgent(agent);
+            getEventBus().emit('agent:created', { agent });
 
             vscode.window.showInformationMessage(`Created agent for task: ${taskName}`);
             return agent;
@@ -1335,8 +1025,7 @@ export class AgentManager {
             fs.mkdirSync(claudeSkillsDir, { recursive: true });
 
             // Copy coordination script
-            const config = vscode.workspace.getConfiguration('claudeAgents');
-            const coordinationPath = config.get<string>('coordinationScriptsPath', '');
+            const coordinationPath = getConfigService().coordinationScriptsPath;
 
             if (coordinationPath) {
                 const windowsCoordPath = this.toWindowsPath(coordinationPath);
