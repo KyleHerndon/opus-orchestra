@@ -77,8 +77,9 @@ export {
     IEventBus,
 } from './events';
 
-// UI types
+// UI types and utilities
 export {
+    formatTimeSince,
     AgentPanelMessageType,
     AgentPanelMessage,
 } from './ui';

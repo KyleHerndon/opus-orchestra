@@ -11,6 +11,8 @@ import {
     ContainerConfig,
     ContainerInfo,
     PersistedContainerInfo,
+    CONTAINER_LABELS,
+    BLOCKED_HOST_PATHS,
 } from './types';
 
 // Import services
@@ -25,33 +27,6 @@ import {
 
 // Re-export types for backward compatibility
 export { IsolationTier, ContainerState, ContainerConfig, ContainerInfo, PersistedContainerInfo };
-
-/**
- * Labels applied to containers for identification
- */
-const CONTAINER_LABELS = {
-    managed: 'opus-orchestra.managed=true',
-    agentId: (id: number) => `opus-orchestra.agent-id=${id}`,
-    worktree: (path: string) => `opus-orchestra.worktree-path=${path}`,
-};
-
-/**
- * Default sandbox image
- */
-const DEFAULT_IMAGE = 'ghcr.io/kyleherndon/opus-orchestra-sandbox:latest';
-
-/**
- * Paths that are explicitly NOT mounted into containers (credential isolation)
- */
-const BLOCKED_HOST_PATHS = [
-    '~/.ssh',
-    '~/.aws',
-    '~/.config/gh',
-    '~/.gitconfig',
-    '~/.netrc',
-    '~/.docker/config.json',
-    '~/.kube/config',
-];
 
 /**
  * ContainerManager handles lifecycle of isolated agent environments.

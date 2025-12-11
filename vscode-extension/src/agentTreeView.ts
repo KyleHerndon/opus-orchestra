@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { AgentManager, Agent } from './agentManager';
+import { formatTimeSince } from './types';
 
 export class AgentTreeProvider implements vscode.TreeDataProvider<AgentTreeItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<AgentTreeItem | undefined | null | void> =
@@ -63,7 +64,7 @@ export class AgentTreeProvider implements vscode.TreeDataProvider<AgentTreeItem>
     }
 
     private getStatusDescription(agent: Agent): string {
-        const timeStr = this.formatTimeSince(agent.lastInteractionTime);
+        const timeStr = formatTimeSince(agent.lastInteractionTime);
         const diffStr = this.formatDiffStats(agent);
 
         switch (agent.status) {
@@ -78,22 +79,6 @@ export class AgentTreeProvider implements vscode.TreeDataProvider<AgentTreeItem>
             default:
                 return `Idle ${timeStr} ${diffStr}`;
         }
-    }
-
-    private formatTimeSince(date: Date): string {
-        const now = new Date();
-        const diffMs = now.getTime() - date.getTime();
-        const diffSec = Math.floor(diffMs / 1000);
-        const diffMin = Math.floor(diffSec / 60);
-        const diffHour = Math.floor(diffMin / 60);
-
-        if (diffHour > 0) {
-            return `${diffHour}h${diffMin % 60}m`;
-        }
-        if (diffMin > 0) {
-            return `${diffMin}m`;
-        }
-        return `${diffSec}s`;
     }
 
     private formatDiffStats(agent: Agent): string {

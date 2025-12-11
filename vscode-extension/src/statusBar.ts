@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { AgentManager } from './agentManager';
+import { formatTimeSince } from './types';
 
 export class StatusBarManager implements vscode.Disposable {
     private statusBarItem: vscode.StatusBarItem;
@@ -61,7 +62,7 @@ export class StatusBarManager implements vscode.Disposable {
         md.appendMarkdown(`|-------|--------|------|--------|\n`);
 
         for (const agent of agents) {
-            const timeStr = this.formatTimeSince(agent.lastInteractionTime);
+            const timeStr = formatTimeSince(agent.lastInteractionTime);
             const diffStr = agent.diffStats.insertions > 0 || agent.diffStats.deletions > 0
                 ? `+${agent.diffStats.insertions}/-${agent.diffStats.deletions}`
                 : '-';
@@ -70,22 +71,6 @@ export class StatusBarManager implements vscode.Disposable {
 
         md.appendMarkdown(`\n*Click to view approval queue*`);
         return md;
-    }
-
-    private formatTimeSince(date: Date): string {
-        const now = new Date();
-        const diffMs = now.getTime() - date.getTime();
-        const diffSec = Math.floor(diffMs / 1000);
-        const diffMin = Math.floor(diffSec / 60);
-        const diffHour = Math.floor(diffMin / 60);
-
-        if (diffHour > 0) {
-            return `${diffHour}h${diffMin % 60}m`;
-        }
-        if (diffMin > 0) {
-            return `${diffMin}m`;
-        }
-        return `${diffSec}s`;
     }
 
     dispose(): void {
