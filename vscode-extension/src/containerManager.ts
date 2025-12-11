@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { ChildProcess } from 'child_process';
+import { exec, execSync, ChildProcess } from 'child_process';
 import { agentPath } from './pathUtils';
 
 // Import types from centralized types module
@@ -16,7 +16,6 @@ import {
 // Import services
 import {
     getConfigService,
-    getCommandService,
     getEventBus,
     getLogger,
     isLoggerInitialized,
@@ -78,12 +77,12 @@ export class ContainerManager {
     }
 
     /**
-     * Debug logging
+     * Debug logging via Logger service
      */
     private debugLog(message: string): void {
-        const logFile = path.join(this.extensionPath, 'debug.log');
-        const timestamp = new Date().toISOString();
-        fs.appendFileSync(logFile, `[${timestamp}] [ContainerManager] ${message}\n`);
+        if (isLoggerInitialized()) {
+            getLogger().child('ContainerManager').debug(message);
+        }
     }
 
     // ========== Tier Availability Checks ==========
@@ -157,8 +156,7 @@ export class ContainerManager {
 
     private async checkFirecrackerAvailable(): Promise<boolean> {
         try {
-            const config = vscode.workspace.getConfiguration('claudeAgents');
-            const firecrackerPath = config.get<string>('firecrackerPath', '');
+            const firecrackerPath = getConfigService().firecrackerPath;
             if (!firecrackerPath) {
                 return false;
             }
@@ -237,6 +235,9 @@ export class ContainerManager {
         this.containers.set(agentId, containerInfo);
         await this.saveContainers();
 
+        // Emit container created event
+        getEventBus().emit('container:created', { containerInfo });
+
         return containerInfo;
     }
 
@@ -262,14 +263,14 @@ export class ContainerManager {
         config?: ContainerConfig,
         useGvisor: boolean = false
     ): Promise<string> {
-        const vsConfig = vscode.workspace.getConfiguration('claudeAgents');
+        const appConfig = getConfigService();
 
         // Determine image
-        const image = config?.image || vsConfig.get<string>('containerImage', DEFAULT_IMAGE);
+        const image = config?.image || appConfig.containerImage;
 
         // Resource limits
-        const memoryLimit = config?.memoryLimit || vsConfig.get<string>('containerMemoryLimit', '4g');
-        const cpuLimit = config?.cpuLimit || vsConfig.get<string>('containerCpuLimit', '2');
+        const memoryLimit = config?.memoryLimit || appConfig.containerMemoryLimit;
+        const cpuLimit = config?.cpuLimit || appConfig.containerCpuLimit;
 
         // Convert worktree path for Docker (needs to be accessible from Docker daemon)
         const dockerWorktreePath = this.toDockerPath(worktreePath);
@@ -409,6 +410,9 @@ export class ContainerManager {
 
         this.containers.delete(agentId);
         await this.saveContainers();
+
+        // Emit container removed event
+        getEventBus().emit('container:removed', { agentId });
     }
 
     /**
@@ -516,36 +520,18 @@ export class ContainerManager {
 
     // ========== Persistence ==========
 
-    private getStorageKey(): string {
-        return 'claudeAgents.containers';
-    }
-
     private async saveContainers(): Promise<void> {
-        if (!this.context) {
-            return;
+        if (isPersistenceServiceInitialized()) {
+            getPersistenceService().saveContainers(this.containers);
         }
-
-        const persisted: PersistedContainerInfo[] = [];
-        for (const container of this.containers.values()) {
-            persisted.push({
-                id: container.id,
-                tier: container.tier,
-                agentId: container.agentId,
-                worktreePath: container.worktreePath,
-                proxyPort: container.proxyPort,
-                createdAt: container.createdAt.toISOString(),
-            });
-        }
-
-        await this.context.workspaceState.update(this.getStorageKey(), persisted);
     }
 
     private async restoreContainers(): Promise<void> {
-        if (!this.context) {
+        if (!isPersistenceServiceInitialized()) {
             return;
         }
 
-        const persisted = this.context.workspaceState.get<PersistedContainerInfo[]>(this.getStorageKey(), []);
+        const persisted = getPersistenceService().loadPersistedContainers();
 
         for (const p of persisted) {
             // Check if container is still running
