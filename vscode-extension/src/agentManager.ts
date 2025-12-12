@@ -90,23 +90,89 @@ export class AgentManager {
         return `${AGENT_NAMES[baseIndex]}-${suffix}`;
     }
 
-    // Save agents to persistent storage via PersistenceService
+    // Save agents to persistent storage (both VS Code state and worktree metadata)
     private saveAgents(): void {
+        // Save to VS Code workspace state
         if (isPersistenceServiceInitialized()) {
             getPersistenceService().saveAgents(this.agents);
         }
+
+        // Save to worktree metadata files (source of truth)
+        for (const agent of this.agents.values()) {
+            this.saveAgentToWorktree(agent);
+        }
     }
 
-    // Restore agents from persistent storage via PersistenceService
+    // Restore agents from worktree metadata (primary) and VS Code state (fallback)
     private restoreAgents(): void {
-        if (!isPersistenceServiceInitialized()) {
-            return;
+        this.debugLog(`[restoreAgents] Starting agent restoration`);
+
+        // First, scan worktrees for agents (this is the source of truth)
+        const repoPaths = this.getRepositoryPaths();
+        const worktreeAgents = new Map<string, PersistedAgent>();
+
+        for (const repoPath of repoPaths) {
+            const agents = this.scanWorktreesForAgents(repoPath);
+            for (const agent of agents) {
+                // Use worktreePath as unique key
+                worktreeAgents.set(agent.worktreePath, agent);
+            }
         }
 
-        this.agents = getPersistenceService().restoreAgents(
-            () => this.generateSessionId(),
-            (agentId) => this.containerManager.getContainer(agentId)
-        );
+        this.debugLog(`[restoreAgents] Found ${worktreeAgents.size} agents in worktrees`);
+
+        // Also load from VS Code state as fallback (for agents without worktree metadata)
+        let vscodeAgents: PersistedAgent[] = [];
+        if (isPersistenceServiceInitialized()) {
+            vscodeAgents = getPersistenceService().loadPersistedAgents();
+            this.debugLog(`[restoreAgents] Found ${vscodeAgents.length} agents in VS Code state`);
+        }
+
+        // Merge: worktree metadata takes priority
+        const allAgents = new Map<string, PersistedAgent>();
+
+        // Add VS Code state agents first
+        for (const agent of vscodeAgents) {
+            allAgents.set(agent.worktreePath, agent);
+        }
+
+        // Override with worktree metadata (source of truth)
+        for (const [path, agent] of worktreeAgents) {
+            allAgents.set(path, agent);
+        }
+
+        // Log available terminals for debugging
+        const terminalNames = vscode.window.terminals.map(t => t.name);
+        this.debugLog(`[restoreAgents] Available terminals: ${JSON.stringify(terminalNames)}`);
+
+        // Create Agent objects from persisted data
+        for (const persisted of allAgents.values()) {
+            // Try to find existing terminal for this agent
+            const existingTerminal = vscode.window.terminals.find(
+                t => t.name === persisted.name
+            );
+
+            // Get container info if this agent is containerized
+            const containerInfo = this.containerManager.getContainer(persisted.id);
+
+            const agent: Agent = {
+                ...persisted,
+                // Generate sessionId for old agents that don't have one
+                sessionId: persisted.sessionId || this.generateSessionId(),
+                terminal: existingTerminal || null,
+                status: 'idle',
+                statusIcon: existingTerminal ? 'circle-filled' : 'circle-outline',
+                pendingApproval: null,
+                lastInteractionTime: new Date(),
+                diffStats: { insertions: 0, deletions: 0, filesChanged: 0 },
+                containerInfo,
+            };
+
+            this.agents.set(agent.id, agent);
+            this.debugLog(`[restoreAgents] Restored agent ${agent.name} (id=${agent.id})`);
+        }
+
+        this.debugLog(`[restoreAgents] Restored ${this.agents.size} total agents`);
     }
 
     // Convert a path to the format expected by the configured terminal
@@ -155,6 +221,119 @@ export class AgentManager {
 
         // Fall back to workspace root
         return this.workspaceRoot ? [this.workspaceRoot] : [];
+    }
+
+    // ========================================================================
+    // Worktree Metadata Persistence
+    // ========================================================================
+
+    private readonly METADATA_DIR = '.opus-orchestra';
+    private readonly METADATA_FILE = 'agent.json';
+
+    /**
+     * Save agent metadata to the worktree for persistence across sessions
+     */
+    private saveAgentToWorktree(agent: Agent): void {
+        try {
+            const worktreePath = agentPath(agent.worktreePath);
+            const metadataDir = worktreePath.join(this.METADATA_DIR).forNodeFs();
+            const metadataFile = `${metadataDir}/${this.METADATA_FILE}`;
+
+            fs.mkdirSync(metadataDir, { recursive: true });
+
+            const metadata: PersistedAgent = {
+                id: agent.id,
+                name: agent.name,
+                sessionId: agent.sessionId,
+                branch: agent.branch,
+                worktreePath: agent.worktreePath,
+                repoPath: agent.repoPath,
+                taskFile: agent.taskFile,
+                isolationTier: agent.isolationTier,
+                sessionStarted: agent.sessionStarted,
+            };
+
+            fs.writeFileSync(metadataFile, JSON.stringify(metadata, null, 2));
+            this.debugLog(`Saved agent metadata to ${metadataFile}`);
+        } catch (error) {
+            this.debugLog(`Failed to save agent metadata: ${error}`);
+        }
+    }
+
+    /**
+     * Load agent metadata from a worktree
+     */
+    private loadAgentFromWorktree(worktreePath: string): PersistedAgent | null {
+        try {
+            const wtPath = agentPath(worktreePath);
+            const metadataFile = wtPath.join(this.METADATA_DIR, this.METADATA_FILE).forNodeFs();
+
+            if (!fs.existsSync(metadataFile)) {
+                return null;
+            }
+
+            const content = fs.readFileSync(metadataFile, 'utf-8');
+            const metadata = JSON.parse(content) as PersistedAgent;
+            this.debugLog(`Loaded agent metadata from ${metadataFile}`);
+            return metadata;
+        } catch (error) {
+            this.debugLog(`Failed to load agent metadata from ${worktreePath}: ${error}`);
+            return null;
+        }
+    }
+
+    /**
+     * Scan worktrees directory for existing agents and restore them
+     */
+    private scanWorktreesForAgents(repoPath: string): PersistedAgent[] {
+        const agents: PersistedAgent[] = [];
+        const repoTerminalPath = this.toTerminalPath(repoPath);
+        const worktreesDir = agentPath(`${repoTerminalPath}/${this.worktreeDir}`).forNodeFs();
+
+        this.debugLog(`Scanning worktrees directory: ${worktreesDir}`);
+
+        if (!fs.existsSync(worktreesDir)) {
+            this.debugLog(`Worktrees directory does not exist`);
+            return agents;
+        }
+
+        try {
+            const entries = fs.readdirSync(worktreesDir, { withFileTypes: true });
+
+            for (const entry of entries) {
+                if (!entry.isDirectory()) {
+                    continue;
+                }
+
+                // Only look at directories that look like agent worktrees (claude-* or agent-*)
+                if (!entry.name.startsWith('claude-') && !entry.name.startsWith('agent-')) {
+                    continue;
+                }
+
+                const worktreePath = `${repoTerminalPath}/${this.worktreeDir}/${entry.name}`;
+                const metadata = this.loadAgentFromWorktree(worktreePath);
+
+                if (metadata) {
+                    // Update worktreePath in case it was moved
+                    metadata.worktreePath = worktreePath;
+                    metadata.repoPath = repoPath;
+                    agents.push(metadata);
+                    this.debugLog(`Found agent in worktree: ${entry.name}`);
+                }
+            }
+        } catch (error) {
+            this.debugLog(`Failed to scan worktrees: ${error}`);
+        }
+
+        return agents;
+    }
+
+    /**
+     * Check if a worktree exists at the given path
+     */
+    private worktreeExists(worktreePath: string): boolean {
+        const fsPath = agentPath(worktreePath).forNodeFs();
+        return fs.existsSync(fsPath);
     }
 
     // Copy coordination files (slash commands, etc.) to a worktree
@@ -267,6 +446,17 @@ export class AgentManager {
                     this.copyDirRecursive(backlogPathObj.forNodeFs(), worktreeBacklogDir);
                 }
             }
+
+            // Ensure .opus-orchestra is in .gitignore so agent metadata isn't committed
+            const gitignorePath = worktreePath.join('.gitignore').forNodeFs();
+            let gitignoreContent = '';
+            if (fs.existsSync(gitignorePath)) {
+                gitignoreContent = fs.readFileSync(gitignorePath, 'utf-8');
+            }
+            if (!gitignoreContent.includes('.opus-orchestra')) {
+                const newLine = gitignoreContent.length > 0 && !gitignoreContent.endsWith('\n') ? '\n' : '';
+                fs.writeFileSync(gitignorePath, gitignoreContent + newLine + '.opus-orchestra/\n');
+            }
         } catch (error) {
             console.error('[Claude Agents] Failed to copy coordination files:', error);
         }
@@ -336,13 +526,14 @@ export class AgentManager {
         }
 
         let createdCount = 0;
+        let restoredCount = 0;
         await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
             title: 'Creating agent worktrees',
             cancellable: false
         }, async (progress) => {
             let nextId = 1;
-            while (createdCount < count) {
+            while (createdCount + restoredCount < count) {
                 // Find next available ID
                 while (existingIds.has(nextId)) {
                     nextId++;
@@ -355,14 +546,52 @@ export class AgentManager {
                 const worktreePath = `${repoTerminalPath}/${this.worktreeDir}/claude-${agentName}`.replace(/\\/g, '/');
 
                 try {
-                    // Remove existing worktree if present
-                    this.execCommandSilent(`git worktree remove "${worktreePath}" --force`, targetRepo);
+                    // Check if worktree already exists - NEVER delete existing worktrees
+                    if (this.worktreeExists(worktreePath)) {
+                        // Try to restore from existing worktree metadata
+                        const existingMetadata = this.loadAgentFromWorktree(worktreePath);
 
-                    // Delete branch if exists
-                    this.execCommandSilent(`git branch -D "${branchName}"`, targetRepo);
+                        if (existingMetadata) {
+                            this.debugLog(`Restoring existing agent from worktree: ${agentName}`);
 
-                    // Create worktree with new branch
-                    this.execCommand(`git worktree add -b "${branchName}" "${worktreePath}" "${baseBranch}"`, targetRepo);
+                            const agent: Agent = {
+                                id: existingMetadata.id || nextId,
+                                name: existingMetadata.name || agentName,
+                                sessionId: existingMetadata.sessionId || this.generateSessionId(),
+                                branch: existingMetadata.branch || branchName,
+                                worktreePath,
+                                repoPath: targetRepo,
+                                taskFile: existingMetadata.taskFile || null,
+                                terminal: null,
+                                status: 'idle',
+                                statusIcon: 'circle-outline',
+                                pendingApproval: null,
+                                lastInteractionTime: new Date(),
+                                diffStats: { insertions: 0, deletions: 0, filesChanged: 0 },
+                                isolationTier: existingMetadata.isolationTier || defaultTier,
+                                sessionStarted: existingMetadata.sessionStarted,
+                            };
+
+                            this.agents.set(agent.id, agent);
+                            existingIds.add(agent.id);
+                            restoredCount++;
+
+                            // Create terminal for this agent
+                            this.createTerminalForAgent(agent, agent.sessionStarted);
+
+                            // Emit agent created event
+                            getEventBus().emit('agent:created', { agent });
+
+                            nextId++;
+                            continue;
+                        } else {
+                            // Worktree exists but no metadata - create metadata for it
+                            this.debugLog(`Worktree exists without metadata, adopting: ${agentName}`);
+                        }
+                    } else {
+                        // Create new worktree (don't delete branch - it might have commits)
+                        this.execCommand(`git worktree add -B "${branchName}" "${worktreePath}" "${baseBranch}"`, targetRepo);
+                    }
 
                     // Create agent entry with new session ID
                     const agent: Agent = {
@@ -388,6 +617,9 @@ export class AgentManager {
 
                     // Copy coordination files (slash commands, etc.) to the worktree
                     this.copyCoordinationToWorktree(agent);
+
+                    // Save agent metadata to worktree for persistence
+                    this.saveAgentToWorktree(agent);
 
                     // Create container/sandbox if not standard mode
                     if (defaultTier !== 'standard') {
@@ -421,11 +653,14 @@ export class AgentManager {
             }
         });
 
-        // Persist agents to storage
+        // Persist agents to storage (both VS Code state and worktree metadata)
         this.saveAgents();
 
         const tierInfo = defaultTier !== 'standard' ? ` (${defaultTier} isolation)` : '';
-        vscode.window.showInformationMessage(`Created ${createdCount} agent worktrees${tierInfo}`);
+        const message = restoredCount > 0
+            ? `Created ${createdCount} new, restored ${restoredCount} existing agent worktrees${tierInfo}`
+            : `Created ${createdCount} agent worktrees${tierInfo}`;
+        vscode.window.showInformationMessage(message);
     }
 
     // Get available isolation tiers
