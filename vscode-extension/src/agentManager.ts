@@ -63,6 +63,63 @@ export class AgentManager {
         return this.containerManager;
     }
 
+    // Get available isolation tiers from container manager
+    async getAvailableIsolationTiers(): Promise<IsolationTier[]> {
+        return this.containerManager.getAvailableTiers();
+    }
+
+    // Change isolation tier for an existing agent
+    async changeAgentIsolationTier(agentId: number, newTier: IsolationTier): Promise<boolean> {
+        const agent = this.agents.get(agentId);
+        if (!agent) {
+            this.debugLog(`Cannot change tier: agent ${agentId} not found`);
+            return false;
+        }
+
+        const currentTier = agent.isolationTier || 'standard';
+        if (currentTier === newTier) {
+            this.debugLog(`Agent ${agentId} already at tier ${newTier}`);
+            return true;
+        }
+
+        this.debugLog(`Changing agent ${agentId} isolation from ${currentTier} to ${newTier}`);
+
+        try {
+            // Remove existing container if containerized
+            if (currentTier !== 'standard') {
+                await this.containerManager.removeContainer(agentId);
+            }
+
+            // Create new container if not going to standard
+            if (newTier !== 'standard') {
+                const repoConfig = this.containerManager.loadRepoConfig(agent.repoPath);
+                const containerInfo = await this.containerManager.createContainer(
+                    agentId,
+                    agent.worktreePath,
+                    newTier,
+                    repoConfig
+                );
+                agent.containerInfo = containerInfo;
+            } else {
+                agent.containerInfo = undefined;
+            }
+
+            agent.isolationTier = newTier;
+            this.saveAgents();
+
+            return true;
+        } catch (error) {
+            this.debugLog(`Failed to change isolation tier: ${error}`);
+            vscode.window.showErrorMessage(`Failed to change isolation tier: ${error}`);
+            return false;
+        }
+    }
+
+    // Get container stats for an agent
+    async getAgentContainerStats(agentId: number): Promise<{ memoryMB: number; cpuPercent: number } | null> {
+        return this.containerManager.getContainerStats(agentId);
+    }
+
     // Debug logging via Logger service
     private debugLog(message: string): void {
         if (isLoggerInitialized()) {
@@ -661,11 +718,6 @@ export class AgentManager {
             ? `Created ${createdCount} new, restored ${restoredCount} existing agent worktrees${tierInfo}`
             : `Created ${createdCount} agent worktrees${tierInfo}`;
         vscode.window.showInformationMessage(message);
-    }
-
-    // Get available isolation tiers
-    async getAvailableIsolationTiers(): Promise<IsolationTier[]> {
-        return this.containerManager.getAvailableTiers();
     }
 
     private createTerminalForAgent(agent: Agent, resumeSession: boolean = false): void {

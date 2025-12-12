@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { AgentManager, Agent } from './agentManager';
+import { AgentManager, Agent, IsolationTier } from './agentManager';
 import { formatTimeSince } from './types';
 import { getTodoService, TodoItem, TodoState } from './services';
 
@@ -9,10 +9,16 @@ export class AgentPanel {
     private readonly _agentManager: AgentManager;
     private _disposables: vscode.Disposable[] = [];
     private _updateInterval: NodeJS.Timeout | undefined;
+    private _availableTiers: IsolationTier[] = ['standard'];
+    private _containerStats: Map<number, { memoryMB: number; cpuPercent: number }> = new Map();
+    private _lastStatsUpdate: number = 0;
 
     private constructor(panel: vscode.WebviewPanel, agentManager: AgentManager) {
         this._panel = panel;
         this._agentManager = agentManager;
+
+        // Fetch available tiers immediately
+        this._fetchAvailableTiers();
 
         this._update();
 
@@ -82,7 +88,13 @@ export class AgentPanel {
             case 'createAgents':
                 const repoPaths = this._agentManager.getRepositoryPaths();
                 const selectedRepo = repoPaths[message.repoIndex] || repoPaths[0];
-                await this._agentManager.createAgents(message.count, selectedRepo);
+                const tier = message.isolationTier as IsolationTier || 'standard';
+                await this._agentManager.createAgents(message.count, selectedRepo, tier);
+                break;
+            case 'changeIsolation':
+                if (agentId !== undefined && message.tier) {
+                    await this._agentManager.changeAgentIsolationTier(agentId, message.tier as IsolationTier);
+                }
                 break;
             case 'deleteAgent':
                 if (agentId !== undefined) {
@@ -122,8 +134,41 @@ export class AgentPanel {
         this._update();
     }
 
+    private async _fetchAvailableTiers(): Promise<void> {
+        try {
+            this._availableTiers = await this._agentManager.getAvailableIsolationTiers();
+        } catch {
+            this._availableTiers = ['standard'];
+        }
+    }
+
+    private async _fetchContainerStats(agents: Agent[]): Promise<void> {
+        // Only update stats every 5 seconds to avoid performance issues
+        const now = Date.now();
+        if (now - this._lastStatsUpdate < 5000) {
+            return;
+        }
+        this._lastStatsUpdate = now;
+
+        // Fetch stats for all containerized agents
+        for (const agent of agents) {
+            if (agent.isolationTier && agent.isolationTier !== 'standard') {
+                try {
+                    const stats = await this._agentManager.getAgentContainerStats(agent.id);
+                    if (stats) {
+                        this._containerStats.set(agent.id, stats);
+                    }
+                } catch {
+                    // Ignore errors
+                }
+            }
+        }
+    }
+
     private _update() {
         const agents = this._agentManager.getAgents();
+        // Fetch container stats in background (non-blocking)
+        this._fetchContainerStats(agents);
         this._panel.webview.html = this._getHtml(agents);
     }
 
@@ -354,6 +399,59 @@ export class AgentPanel {
         }
         .agent-card.containerized.tier-firecracker {
             border-left-color: #4CAF50;
+        }
+        /* Tier select dropdown styling */
+        .tier-select {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid var(--vscode-input-border);
+            background: var(--vscode-input-background);
+            color: var(--vscode-input-foreground);
+            font-size: calc(12px * var(--ui-scale));
+        }
+        .tier-select-small {
+            padding: 4px 8px;
+            font-size: calc(11px * var(--ui-scale));
+            min-width: 100px;
+        }
+        /* Container stats display */
+        .container-stats {
+            display: flex;
+            gap: calc(12px * var(--ui-scale));
+            padding: calc(8px * var(--ui-scale));
+            margin-bottom: calc(8px * var(--ui-scale));
+            background: var(--vscode-editor-background);
+            border-radius: 4px;
+            font-size: calc(11px * var(--ui-scale));
+        }
+        .container-stat {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .container-stat-label {
+            color: var(--vscode-descriptionForeground);
+        }
+        .container-stat-value {
+            font-weight: 500;
+        }
+        .container-state {
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: calc(10px * var(--ui-scale));
+            text-transform: uppercase;
+        }
+        .container-state.running {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4CAF50;
+        }
+        .container-state.stopped {
+            background: rgba(244, 67, 54, 0.2);
+            color: #f44336;
+        }
+        .container-state.error {
+            background: rgba(244, 67, 54, 0.3);
+            color: #f44336;
         }
         .approval-label {
             font-size: calc(12px * var(--ui-scale));
@@ -614,7 +712,9 @@ export class AgentPanel {
                         const count = parseInt(document.getElementById('agent-count').value) || 3;
                         const repoSelect = document.getElementById('repo-select');
                         const repoIndex = repoSelect ? parseInt(repoSelect.value) : 0;
-                        vscode.postMessage({ command: 'createAgents', count: count, repoIndex: repoIndex });
+                        const tierSelect = document.getElementById('isolation-tier-select');
+                        const isolationTier = tierSelect ? tierSelect.value : 'standard';
+                        vscode.postMessage({ command: 'createAgents', count: count, repoIndex: repoIndex, isolationTier: isolationTier });
                         break;
                     case 'addAgent':
                         vscode.postMessage({ command: 'addAgent' });
@@ -623,6 +723,18 @@ export class AgentPanel {
                         location.reload();
                         break;
                 }
+            });
+
+            // Handle isolation tier dropdown change
+            document.addEventListener('change', function(e) {
+                const select = e.target.closest('select[data-action="changeIsolation"]');
+                if (!select) return;
+
+                const agentId = select.getAttribute('data-agent-id');
+                const agentIdNum = agentId ? parseInt(agentId, 10) : undefined;
+                const newTier = select.value;
+
+                vscode.postMessage({ command: 'changeIsolation', agentId: agentIdNum, tier: newTier });
             });
 
             // Handle inline rename on Enter or blur
@@ -765,10 +877,17 @@ export class AgentPanel {
 
         const config = vscode.workspace.getConfiguration('claudeAgents');
         const defaultAgentCount = config.get<number>('defaultAgentCount', 3);
+        const defaultTier = config.get<string>('isolationTier', 'standard');
 
         const repoOptions = repoPaths.map((p, i) => {
             const name = p.split(/[/\\]/).pop() || p;
             return `<option value="${i}" ${i === 0 ? 'selected' : ''}>${name}</option>`;
+        }).join('');
+
+        const tierOptions = this._availableTiers.map(t => {
+            const label = this._getTierLabel(t);
+            const icon = this._getTierIcon(t);
+            return `<option value="${t}" ${t === defaultTier ? 'selected' : ''}>${icon} ${label}</option>`;
         }).join('');
 
         return `
@@ -786,12 +905,40 @@ export class AgentPanel {
                     `}
                 </div>
                 <div class="create-form" style="margin-top: 16px;">
+                    <label>Isolation:</label>
+                    <select id="isolation-tier-select" class="tier-select">
+                        ${tierOptions}
+                    </select>
+                </div>
+                <div class="create-form" style="margin-top: 16px;">
                     <label>Number of agents:</label>
                     <input type="number" id="agent-count" value="${defaultAgentCount}" min="1" max="10">
                     <button class="btn btn-primary" data-action="createAgents">Create Agents</button>
                 </div>
             </div>
         `;
+    }
+
+    private _getTierLabel(tier: IsolationTier): string {
+        switch (tier) {
+            case 'standard': return 'Standard';
+            case 'sandbox': return 'Sandbox';
+            case 'docker': return 'Docker';
+            case 'gvisor': return 'gVisor';
+            case 'firecracker': return 'Firecracker';
+            default: return tier;
+        }
+    }
+
+    private _getTierIcon(tier: IsolationTier): string {
+        switch (tier) {
+            case 'standard': return '';
+            case 'sandbox': return '🛡️';
+            case 'docker': return '📦';
+            case 'gvisor': return '📦';
+            case 'firecracker': return '🖥️';
+            default: return '';
+        }
     }
 
     private _getAgentCard(agent: Agent): string {
@@ -811,11 +958,17 @@ export class AgentPanel {
         const tier = agent.isolationTier || 'standard';
         const isContainerized = tier !== 'standard';
         const tierClass = `tier-${tier}`;
-        const tierIcon = tier === 'docker' || tier === 'gvisor' ? '📦'
-            : tier === 'sandbox' ? '🛡️'
-            : tier === 'firecracker' ? '🖥️'
-            : '';
-        const tierLabel = tier === 'gvisor' ? 'gVisor' : tier.charAt(0).toUpperCase() + tier.slice(1);
+
+        // Container state and stats
+        const containerState = agent.containerInfo?.state || 'not_created';
+        const stats = this._containerStats.get(agent.id);
+
+        // Build tier options for dropdown
+        const tierOptions = this._availableTiers.map(t => {
+            const label = this._getTierLabel(t);
+            const icon = this._getTierIcon(t);
+            return `<option value="${t}" ${t === tier ? 'selected' : ''}>${icon} ${label}</option>`;
+        }).join('');
 
         // Check setting for showing all permission options
         const config = vscode.workspace.getConfiguration('claudeAgents');
@@ -826,10 +979,22 @@ export class AgentPanel {
                 <div class="agent-header">
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <input type="text" class="agent-title-input" value="${displayName}" data-agent-id="${agent.id}" data-original="${displayName}" title="Click to rename">
-                        ${isContainerized ? `<span class="isolation-badge isolation-${tier}" title="Running in ${tierLabel} isolation">${tierIcon} ${tierLabel}</span>` : ''}
+                        ${isContainerized ? `<span class="container-state ${containerState}">${containerState}</span>` : ''}
                     </div>
                     <span class="agent-status ${statusClass}">${agent.status}</span>
                 </div>
+                ${isContainerized && stats ? `
+                <div class="container-stats">
+                    <div class="container-stat">
+                        <span class="container-stat-label">Memory:</span>
+                        <span class="container-stat-value">${stats.memoryMB.toFixed(0)} MB</span>
+                    </div>
+                    <div class="container-stat">
+                        <span class="container-stat-label">CPU:</span>
+                        <span class="container-stat-value">${stats.cpuPercent.toFixed(1)}%</span>
+                    </div>
+                </div>
+                ` : ''}
                 <div class="agent-stats">
                     <div class="stat-item">
                         <span class="stat-label">${agent.status === 'working' ? 'Working' : 'Waiting'}</span>
@@ -847,6 +1012,9 @@ export class AgentPanel {
                 <div class="agent-actions">
                     <button class="btn btn-small btn-primary" data-action="focus" data-agent-id="${agent.id}">${agent.terminal ? 'Focus Terminal' : 'Open Terminal'}</button>
                     <button class="btn btn-small btn-primary" data-action="startClaude" data-agent-id="${agent.id}">Start Claude</button>
+                    <select class="tier-select tier-select-small" data-action="changeIsolation" data-agent-id="${agent.id}" title="Change isolation tier">
+                        ${tierOptions}
+                    </select>
                     <button class="btn btn-small btn-danger" data-action="deleteAgent" data-agent-id="${agent.id}" title="Delete agent">🗑️</button>
                 </div>
                 ${this._getAgentTodoHtml(agent.sessionId)}
