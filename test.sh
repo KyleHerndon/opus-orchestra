@@ -113,7 +113,11 @@ fi
 # Test 6: Test making changes in worktree
 info "Test 6: Test isolated changes"
 echo "test change" > .worktrees/agent-1/test-file.txt
-cd .worktrees/agent-1 && git add test-file.txt && git commit -m "Test commit from agent-1"
+cd .worktrees/agent-1
+# Configure git identity for CI environments
+git config user.email "test@ci.local" 2>/dev/null || true
+git config user.name "CI Test" 2>/dev/null || true
+git add test-file.txt && git commit -m "Test commit from agent-1"
 cd "$REPO_DIR"
 
 # Verify change is only in agent-1, not agent-2 or main
@@ -131,9 +135,9 @@ for wt in .worktrees/agent-*; do
     [ -d "$wt" ] && git worktree remove "$wt" --force
 done
 git branch -D agent-1 agent-2 2>/dev/null || true
-rmdir .worktrees 2>/dev/null || true
 
-if [ ! -d ".worktrees" ] && ! git branch | grep -q "agent-"; then
+# Only check that agent-* worktrees and branches are gone (not .worktrees dir, as other worktrees may exist)
+if [ ! -d ".worktrees/agent-1" ] && [ ! -d ".worktrees/agent-2" ] && ! git branch | grep -q "^  agent-"; then
     pass "Cleanup successful"
 else
     fail "Cleanup incomplete"
