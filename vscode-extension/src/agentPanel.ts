@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { AgentManager, Agent } from './agentManager';
 import { formatTimeSince } from './types';
+import { getTodoService, TodoItem, TodoState } from './services';
 
 export class AgentPanel {
     public static currentPanel: AgentPanel | undefined;
@@ -474,6 +475,76 @@ export class AgentPanel {
             border-radius: 4px;
             text-align: center;
         }
+        /* TODO Section Styles */
+        .todo-section {
+            margin-top: calc(12px * var(--ui-scale));
+            padding: calc(10px * var(--ui-scale));
+            background: var(--vscode-editor-background);
+            border-radius: 6px;
+            border: 1px solid var(--vscode-widget-border);
+        }
+        .todo-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: calc(8px * var(--ui-scale));
+        }
+        .todo-title {
+            font-size: calc(11px * var(--ui-scale));
+            font-weight: 600;
+            color: var(--vscode-textLink-foreground);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .todo-meta {
+            font-size: calc(10px * var(--ui-scale));
+            color: var(--vscode-descriptionForeground);
+        }
+        .todo-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        .todo-item {
+            display: flex;
+            align-items: flex-start;
+            gap: calc(8px * var(--ui-scale));
+            padding: calc(6px * var(--ui-scale)) 0;
+            font-size: calc(13px * var(--ui-scale));
+            border-bottom: 1px solid var(--vscode-widget-border);
+        }
+        .todo-item:last-child {
+            border-bottom: none;
+        }
+        .todo-icon {
+            flex-shrink: 0;
+            width: calc(18px * var(--ui-scale));
+            height: calc(18px * var(--ui-scale));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: calc(12px * var(--ui-scale));
+        }
+        .todo-icon.pending {
+            color: var(--vscode-descriptionForeground);
+        }
+        .todo-icon.in_progress {
+            color: var(--vscode-testing-runAction);
+        }
+        .todo-icon.completed {
+            color: var(--vscode-gitDecoration-addedResourceForeground);
+        }
+        .todo-content {
+            flex: 1;
+        }
+        .todo-content.completed {
+            text-decoration: line-through;
+            opacity: 0.6;
+        }
+        .todo-content.in_progress {
+            color: var(--vscode-gitDecoration-addedResourceForeground);
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -644,6 +715,49 @@ export class AgentPanel {
         `;
     }
 
+    private _getAgentTodoHtml(sessionId: string): string {
+        const items = getTodoService().getTodosForSession(sessionId);
+        if (!items || items.length === 0) {
+            return '';
+        }
+
+        const completedCount = items.filter(i => i.status === 'completed').length;
+        const totalCount = items.length;
+        const progressPercent = Math.round((completedCount / totalCount) * 100);
+
+        const itemsHtml = items.map(item => this._getTodoItemHtml(item)).join('');
+
+        return `
+            <div class="todo-section">
+                <div class="todo-header">
+                    <span class="todo-title">Tasks</span>
+                    <span class="todo-meta">${completedCount}/${totalCount} (${progressPercent}%)</span>
+                </div>
+                <ul class="todo-list">
+                    ${itemsHtml}
+                </ul>
+            </div>
+        `;
+    }
+
+    private _getTodoItemHtml(item: TodoItem): string {
+        const icon = item.status === 'completed' ? '✓'
+            : item.status === 'in_progress' ? '▶'
+            : '○';
+
+        // Show activeForm when in_progress, otherwise show content
+        const text = (item.status === 'in_progress' && item.activeForm)
+            ? item.activeForm
+            : item.content;
+
+        return `
+            <li class="todo-item">
+                <span class="todo-icon ${item.status}">${icon}</span>
+                <div class="todo-content ${item.status}">${this._escapeHtml(text)}</div>
+            </li>
+        `;
+    }
+
     private _getEmptyState(): string {
         const repoPaths = this._agentManager.getRepositoryPaths();
         const defaultRepo = repoPaths.length > 0 ? repoPaths[0] : 'No repository configured';
@@ -735,6 +849,7 @@ export class AgentPanel {
                     <button class="btn btn-small btn-primary" data-action="startClaude" data-agent-id="${agent.id}">Start Claude</button>
                     <button class="btn btn-small btn-danger" data-action="deleteAgent" data-agent-id="${agent.id}" title="Delete agent">🗑️</button>
                 </div>
+                ${this._getAgentTodoHtml(agent.sessionId)}
                 ${needsApproval ? `
                 <div class="approval-context">${this._escapeHtml(agent.pendingApproval || 'Permission required')}</div>
                 <div class="approval-actions">

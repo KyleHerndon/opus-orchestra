@@ -43,8 +43,55 @@ const displayPath = p.forDisplay();
 |---------|--------|---------|
 | Node.js fs operations | `C:/...` (forward slashes work) | `C:/Users/Kyle/project` |
 | WSL terminal commands | `/mnt/c/...` | `/mnt/c/Users/Kyle/project` |
+| WSL native paths | `/home/user/...` | `/home/kyle/.claude/todos` |
 | Git Bash commands | `/c/...` | `/c/Users/Kyle/project` |
 | PowerShell/CMD | `C:\...` | `C:\Users\Kyle\project` |
+
+### WSL Native Paths
+
+Files in the WSL filesystem (not on a Windows drive) need special handling. The `AgentPath` class automatically converts WSL native paths to Windows UNC paths:
+
+```typescript
+// WSL native path (not on Windows drive)
+const p = agentPath('/home/kyle/.claude/todos');
+
+// For Node.js fs operations - converts to UNC path
+p.forNodeFs();
+//   → Returns: //wsl.localhost/Ubuntu-24.04/home/kyle/.claude/todos
+
+// For WSL terminal commands - stays as-is
+p.forTerminal();
+//   → Returns: /home/kyle/.claude/todos
+```
+
+### Getting the Home Directory
+
+**ALWAYS use `getHomeDir()` instead of `os.homedir()` when accessing user-specific files.** This ensures the correct home directory is used based on the terminal type:
+
+```typescript
+import { getHomeDir } from './pathUtils';
+
+// Gets WSL home for WSL terminals, Windows home otherwise
+const homeDir = getHomeDir();
+
+// Access Claude Code's data directory
+const claudeDir = homeDir.join('.claude', 'todos').forNodeFs();
+//   → For WSL: //wsl.localhost/Ubuntu-24.04/home/kyle/.claude/todos
+//   → For Windows: C:/Users/Kyle/.claude/todos
+```
+
+**BUG 4: Using os.homedir() for cross-platform files**
+```typescript
+// WRONG - os.homedir() returns Windows home even when using WSL terminal
+import * as os from 'os';
+const todosDir = path.join(os.homedir(), '.claude', 'todos');
+// Returns: C:\Users\Kyle\.claude\todos (wrong location for WSL!)
+
+// CORRECT - Use getHomeDir() to get the appropriate home
+import { getHomeDir } from './pathUtils';
+const todosDir = getHomeDir().join('.claude', 'todos').forNodeFs();
+// Returns: //wsl.localhost/Ubuntu-24.04/home/kyle/.claude/todos (correct!)
+```
 
 ### Common Path Bugs - DO NOT MAKE THESE MISTAKES
 
@@ -135,32 +182,46 @@ Tests verify:
 
 ## File Structure
 
-- `src/pathUtils.ts` - **AgentPath class** - USE THIS FOR ALL PATH OPERATIONS
+- `src/pathUtils.ts` - **AgentPath class, getHomeDir(), getWslDistro()** - USE THIS FOR ALL PATH OPERATIONS
+- `src/services/TodoService.ts` - Reads Claude Code TODO lists from `~/.claude/todos`
 - `src/agentManager.ts` - Agent lifecycle, terminal management, git operations
-- `src/agentPanel.ts` - Dashboard webview with agent cards
+- `src/agentPanel.ts` - Dashboard webview with agent cards and TODO display
 - `src/extension.ts` - Extension activation, commands, polling intervals
 - `coordination/` - Bundled hooks and slash commands copied to worktrees
 
 ## Debugging
 
-### Debug Logging
+### Debug Logging - CRITICAL
 
-`console.log()` output is NOT accessible from VS Code extensions. Use the `debugLog()` method instead:
+**NEVER use `console.log()` in VS Code extensions** - the output is not accessible. Always use the Logger service which writes to a file.
 
 ```typescript
-this.debugLog(`[methodName] variable: ${value}`);
+import { getLogger, isLoggerInitialized } from './services/Logger';
+
+// In a class method or function:
+if (isLoggerInitialized()) {
+    const logger = getLogger().child('MyComponent');
+    logger.debug(`methodName: variable=${value}`);
+    logger.info('Something happened');
+    logger.warn('Warning message');
+    logger.error('Error message', error);
+}
+
+// Or using optional chaining:
+const logger = isLoggerInitialized() ? getLogger().child('MyComponent') : null;
+logger?.debug(`variable=${value}`);
 ```
 
-This writes to `debug.log` in the **installed extension directory** (not the source directory):
+The log file is written to `debug.log` in the **installed extension directory**:
 ```bash
+# For WSL VS Code (Remote - WSL):
+tail -f ~/.vscode-server/extensions/undefined_publisher.claude-agents-*/debug.log
+
+# For Windows VS Code:
 # Find the installed extension path first
 ls /mnt/c/Users/Kyle/.vscode/extensions/ | grep claude-agents
-
 # Then view the log
-cat "/mnt/c/Users/Kyle/.vscode/extensions/your-publisher-id.claude-agents-X.Y.Z/debug.log"
-
-# Or tail -f for live monitoring
-tail -f "/mnt/c/Users/Kyle/.vscode/extensions/your-publisher-id.claude-agents-X.Y.Z/debug.log"
+tail -f "/mnt/c/Users/Kyle/.vscode/extensions/undefined_publisher.claude-agents-X.Y.Z/debug.log"
 ```
 
 Remember to remove debug logging before committing.

@@ -16,9 +16,9 @@ nvm use 20
 # Package the extension
 npx vsce package --allow-missing-repository
 
-# Install to Windows VS Code
-echo "Installing to Windows VS Code..."
-cmd.exe /c "code --install-extension $(wslpath -w "$(pwd)/claude-agents-${VERSION}.vsix") --force"
+# Install to VS Code (WSL mode - uses VS Code Server in WSL)
+echo "Installing to VS Code (WSL)..."
+code --install-extension "$(pwd)/claude-agents-${VERSION}.vsix" --force
 
 echo ""
 echo "Done! Reload VS Code to use v${VERSION}"

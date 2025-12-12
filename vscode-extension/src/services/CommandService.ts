@@ -6,10 +6,10 @@
  */
 
 import { execSync, exec } from 'child_process';
+import * as os from 'os';
 import { agentPath } from '../pathUtils';
 import { ICommandService, TerminalType, GIT_BASH_PATH } from '../types';
 import { getConfigService } from './ConfigService';
-import { getLogger, isLoggerInitialized } from './Logger';
 
 /**
  * Command execution service
@@ -27,6 +27,12 @@ export class CommandService implements ICommandService {
     exec(command: string, cwd: string): string {
         const terminalPath = agentPath(cwd).forTerminal();
 
+        // If running on Linux (e.g., WSL VS Code), execute directly - don't call `wsl` from within WSL
+        if (os.platform() !== 'win32') {
+            return execSync(command, { cwd: terminalPath, encoding: 'utf-8', shell: '/bin/bash' });
+        }
+
+        // On Windows, use the configured terminal type
         switch (this.terminalType) {
             case 'wsl': {
                 const escapedCmd = command.replace(/'/g, "'\\''");
@@ -53,39 +59,45 @@ export class CommandService implements ICommandService {
     execAsync(command: string, cwd: string): Promise<string> {
         return new Promise((resolve, reject) => {
             const terminalPath = agentPath(cwd).forTerminal();
+            const platform = os.platform();
 
             let fullCommand: string;
             let execOptions: { cwd?: string; encoding: 'utf-8'; shell?: string } = { encoding: 'utf-8' };
 
-            switch (this.terminalType) {
-                case 'wsl': {
-                    const escapedCmd = command.replace(/'/g, "'\\''");
-                    fullCommand = `wsl bash -c "cd '${terminalPath}' && ${escapedCmd}"`;
-                    break;
+            // If running on Linux (e.g., WSL VS Code), execute directly
+            if (platform !== 'win32') {
+                fullCommand = command;
+                execOptions.cwd = terminalPath;
+                execOptions.shell = '/bin/bash';
+            } else {
+                // On Windows, use the configured terminal type
+                switch (this.terminalType) {
+                    case 'wsl': {
+                        const escapedCmd = command.replace(/'/g, "'\\''");
+                        fullCommand = `wsl bash -c "cd '${terminalPath}' && ${escapedCmd}"`;
+                        break;
+                    }
+                    case 'gitbash': {
+                        const escapedCmd = command.replace(/'/g, "'\\''");
+                        fullCommand = `"${GIT_BASH_PATH}" -c "cd '${terminalPath}' && ${escapedCmd}"`;
+                        break;
+                    }
+                    case 'bash':
+                        fullCommand = command;
+                        execOptions.cwd = terminalPath;
+                        execOptions.shell = '/bin/bash';
+                        break;
+                    case 'powershell':
+                    case 'cmd':
+                    default:
+                        fullCommand = command;
+                        execOptions.cwd = terminalPath;
+                        break;
                 }
-                case 'gitbash': {
-                    const escapedCmd = command.replace(/'/g, "'\\''");
-                    fullCommand = `"${GIT_BASH_PATH}" -c "cd '${terminalPath}' && ${escapedCmd}"`;
-                    break;
-                }
-                case 'bash':
-                    fullCommand = command;
-                    execOptions.cwd = terminalPath;
-                    execOptions.shell = '/bin/bash';
-                    break;
-                case 'powershell':
-                case 'cmd':
-                default:
-                    fullCommand = command;
-                    execOptions.cwd = terminalPath;
-                    break;
             }
 
             exec(fullCommand, execOptions, (error, stdout, stderr) => {
                 if (error) {
-                    if (isLoggerInitialized()) {
-                        getLogger().child('CommandService').error(`Command failed: ${command}`, error);
-                    }
                     reject(error);
                 } else {
                     resolve(stdout);
@@ -100,7 +112,15 @@ export class CommandService implements ICommandService {
     execSilent(command: string, cwd: string): void {
         try {
             const terminalPath = agentPath(cwd).forTerminal();
+            const platform = os.platform();
 
+            // If running on Linux (e.g., WSL VS Code), execute directly
+            if (platform !== 'win32') {
+                execSync(command, { cwd: terminalPath, stdio: 'ignore', shell: '/bin/bash' });
+                return;
+            }
+
+            // On Windows, use the configured terminal type
             switch (this.terminalType) {
                 case 'wsl': {
                     const escapedCmd = command.replace(/'/g, "'\\''");

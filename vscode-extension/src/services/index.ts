@@ -18,3 +18,4 @@ export {
     isPersistenceServiceInitialized,
     resetPersistenceService,
 } from './PersistenceService';
+export { TodoService, TodoItem, TodoState, getTodoService, resetTodoService } from './TodoService';
