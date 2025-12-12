@@ -308,7 +308,7 @@
         },
         "claudeAgents.uiScale": {
           "type": "number",
-          "default": 1.0,
+          "default": 1,
           "minimum": 0.75,
           "maximum": 1.5,
           "description": "UI scale factor for the dashboard (0.75 to 1.5)"
@@ -393,17 +393,27 @@
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts",
     "test": "npm run compile && node ./out/test/runTest.js",
-    "test:unit": "npm run compile && mocha --ui tdd ./out/test/suite/agentPanel.test.js"
+    "test:unit": "npm run compile && mocha --ui tdd ./out/test/suite/*.test.js",
+    "test:ui": "npm run compile && ./scripts/test-ui.sh run",
+    "test:ui:setup": "./scripts/test-ui.sh setup",
+    "test:ui:run": "./scripts/test-ui.sh run",
+    "test:ui:check": "./scripts/test-ui.sh check",
+    "test:ui:windows": "extest setup-and-run ./out/test/ui/*.test.js --mocha_config .mocharc.json --storage .vscode-test",
+    "test:ui:windows:setup": "extest get-vscode --storage .vscode-test && extest get-chromedriver --storage .vscode-test",
+    "test:ui:windows:run": "extest run-tests ./out/test/ui/*.test.js --mocha_config .mocharc.json --storage .vscode-test"
   },
   "devDependencies": {
+    "@types/chai": "^5.2.3",
     "@types/mocha": "^10.0.10",
     "@types/node": "^18.x",
     "@types/vscode": "^1.85.0",
     "@typescript-eslint/eslint-plugin": "^6.x",
     "@typescript-eslint/parser": "^6.x",
     "@vscode/test-electron": "^2.5.2",
+    "chai": "^6.2.1",
     "eslint": "^8.x",
     "mocha": "^11.7.5",
-    "typescript": "^5.x"
+    "typescript": "^5.x",
+    "vscode-extension-tester": "^8.19.0"
   }
 }
