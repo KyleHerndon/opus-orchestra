@@ -36,7 +36,6 @@ export { Agent, AgentStatus, PersistedAgent, DiffStats, PendingApproval, Isolati
  */
 export class AgentManager {
     private agents: Map<number, Agent> = new Map();
-    private workspaceRoot: string;
     private extensionPath: string;
 
     // Specialized managers
@@ -46,7 +45,6 @@ export class AgentManager {
     private persistence: AgentPersistence;
 
     constructor(extensionPath: string) {
-        this.workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
         this.extensionPath = extensionPath;
 
         // Initialize managers
@@ -54,6 +52,13 @@ export class AgentManager {
         this.worktreeManager = new WorktreeManager(extensionPath);
         this.statusTracker = new AgentStatusTracker();
         this.persistence = new AgentPersistence(this.worktreeManager, this.containerManager);
+    }
+
+    /**
+     * Get the current workspace root (dynamically, not cached)
+     */
+    private get workspaceRoot(): string {
+        return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
     }
 
     private get worktreeDir(): string {

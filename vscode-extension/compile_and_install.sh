@@ -3,8 +3,9 @@
 
 set -e
 
-# Get version from package.json
+# Get version and name from package.json
 VERSION=$(grep '"version"' package.json | head -1 | sed 's/.*: "\(.*\)".*/\1/')
+NAME=$(grep '"name"' package.json | head -1 | sed 's/.*: "\(.*\)".*/\1/')
 
 echo "Building Claude Agents extension v${VERSION}..."
 
@@ -18,7 +19,7 @@ npx vsce package --allow-missing-repository
 
 # Install to VS Code (WSL mode - uses VS Code Server in WSL)
 echo "Installing to VS Code (WSL)..."
-code --install-extension "$(pwd)/claude-agents-${VERSION}.vsix" --force
+code --install-extension "$(pwd)/${NAME}-${VERSION}.vsix" --force
 
 echo ""
 echo "Done! Reload VS Code to use v${VERSION}"

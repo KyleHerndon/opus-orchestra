@@ -158,6 +158,15 @@ export class AgentPanel {
                 }
                 break;
             }
+            case 'addAgentToRepo': {
+                const repos = this._agentManager.getRepositoryPaths();
+                const repoIndex = message.repoIndex as number ?? 0;
+                const selectedRepo = repos[repoIndex] || repos[0];
+                if (selectedRepo) {
+                    await this._agentManager.createAgents(1, selectedRepo);
+                }
+                break;
+            }
             case 'renameAgent':
                 if (agentId !== undefined && message.newName) {
                     await this._agentManager.renameAgent(agentId, message.newName);
@@ -240,7 +249,6 @@ export class AgentPanel {
     }
 
     private _getHtml(agents: Agent[]): string {
-        const agentCards = agents.map(agent => this._getAgentCard(agent)).join('');
         const hasAgents = agents.length > 0;
 
         const config = vscode.workspace.getConfiguration('claudeAgents');
@@ -269,37 +277,10 @@ export class AgentPanel {
             min-height: 100vh;
             font-size: calc(14px * var(--ui-scale));
         }
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: calc(24px * var(--ui-scale));
-            padding-bottom: calc(16px * var(--ui-scale));
-            border-bottom: 1px solid var(--vscode-widget-border);
-        }
-        .header h1 {
-            font-size: calc(24px * var(--ui-scale));
+        .stats-title {
+            font-size: calc(20px * var(--ui-scale));
             font-weight: 600;
-        }
-        .header-actions {
-            display: flex;
-            gap: calc(8px * var(--ui-scale));
-            align-items: center;
-        }
-        .scale-control {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            font-size: calc(12px * var(--ui-scale));
-            color: var(--vscode-descriptionForeground);
-        }
-        .scale-control select {
-            padding: 4px;
-            border-radius: 4px;
-            border: 1px solid var(--vscode-input-border);
-            background: var(--vscode-input-background);
-            color: var(--vscode-input-foreground);
-            font-size: calc(12px * var(--ui-scale));
+            margin-right: auto;
         }
         .btn {
             padding: calc(8px * var(--ui-scale)) calc(16px * var(--ui-scale));
@@ -344,6 +325,33 @@ export class AgentPanel {
             font-size: calc(12px * var(--ui-scale));
             color: var(--vscode-descriptionForeground);
             margin-top: calc(4px * var(--ui-scale));
+        }
+        .repo-section {
+            margin-bottom: calc(32px * var(--ui-scale));
+        }
+        .repo-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: calc(16px * var(--ui-scale));
+            padding-bottom: calc(8px * var(--ui-scale));
+            border-bottom: 1px solid var(--vscode-widget-border);
+        }
+        .repo-title {
+            font-size: calc(18px * var(--ui-scale));
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: calc(8px * var(--ui-scale));
+        }
+        .repo-path {
+            font-size: calc(12px * var(--ui-scale));
+            color: var(--vscode-descriptionForeground);
+            font-weight: normal;
+        }
+        .repo-actions {
+            display: flex;
+            gap: calc(8px * var(--ui-scale));
         }
         .agents-grid {
             display: grid;
@@ -765,30 +773,9 @@ export class AgentPanel {
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>Claude Agents Dashboard</h1>
-        <div class="header-actions">
-            <div class="scale-control">
-                <label>Scale:</label>
-                <select id="scale-select">
-                    <option value="0.75" ${uiScale === 0.75 ? 'selected' : ''}>75%</option>
-                    <option value="0.875" ${uiScale === 0.875 ? 'selected' : ''}>87.5%</option>
-                    <option value="1" ${uiScale === 1.0 ? 'selected' : ''}>100%</option>
-                    <option value="1.125" ${uiScale === 1.125 ? 'selected' : ''}>112.5%</option>
-                    <option value="1.25" ${uiScale === 1.25 ? 'selected' : ''}>125%</option>
-                    <option value="1.5" ${uiScale === 1.5 ? 'selected' : ''}>150%</option>
-                </select>
-            </div>
-            ${hasAgents ? `
-                <button class="btn btn-primary" data-action="addAgent">+ Add Agent</button>
-                <button class="btn btn-secondary" data-action="refresh">Refresh</button>
-            ` : ''}
-        </div>
-    </div>
-
     ${this._getLoadingIndicator()}
 
-    ${hasAgents ? this._getAgentsDashboard(agents, agentCards) : this._getEmptyState()}
+    ${hasAgents ? this._getAgentsDashboard(agents) : this._getEmptyState()}
 
     <script>
         // Use IIFE to ensure we only initialize once
@@ -840,8 +827,9 @@ export class AgentPanel {
                     case 'addAgent':
                         vscode.postMessage({ command: 'addAgent' });
                         break;
-                    case 'refresh':
-                        location.reload();
+                    case 'addAgentToRepo':
+                        const repoIdx = parseInt(button.getAttribute('data-repo-index')) || 0;
+                        vscode.postMessage({ command: 'addAgentToRepo', repoIndex: repoIdx });
                         break;
                 }
             });
@@ -889,22 +877,13 @@ export class AgentPanel {
                     handleRename(e.target);
                 }
             }, true);
-
-            // Scale selector handler
-            const scaleSelect = document.getElementById('scale-select');
-            if (scaleSelect) {
-                scaleSelect.addEventListener('change', function(e) {
-                    const newScale = parseFloat(e.target.value);
-                    vscode.postMessage({ command: 'setScale', scale: newScale });
-                });
-            }
         })();
     </script>
 </body>
 </html>`;
     }
 
-    private _getAgentsDashboard(agents: Agent[], agentCards: string): string {
+    private _getAgentsDashboard(agents: Agent[]): string {
         const totalInsertions = agents.reduce((sum, a) => sum + a.diffStats.insertions, 0);
         const totalDeletions = agents.reduce((sum, a) => sum + a.diffStats.deletions, 0);
         const waitingCount = agents.filter(a =>
@@ -913,8 +892,13 @@ export class AgentPanel {
         const workingCount = agents.filter(a => a.status === 'working').length;
         const containerizedCount = agents.filter(a => a.isolationTier && a.isolationTier !== 'standard').length;
 
+        // Group agents by repository
+        const agentsByRepo = this._groupAgentsByRepo(agents);
+        const repoSections = this._getRepoSections(agentsByRepo);
+
         return `
             <div class="stats-bar">
+                <div class="stats-title">Opus Orchestra Dashboard</div>
                 <div class="stat">
                     <div class="stat-value">${agents.length}</div>
                     <div class="stat-label">Total Agents</div>
@@ -942,10 +926,75 @@ export class AgentPanel {
                     <div class="stat-label">Deletions</div>
                 </div>
             </div>
-            <div class="agents-grid">
-                ${agentCards}
-            </div>
+            ${repoSections}
         `;
+    }
+
+    private _groupAgentsByRepo(agents: Agent[]): Map<string, Agent[]> {
+        const grouped = new Map<string, Agent[]>();
+        for (const agent of agents) {
+            const repoPath = agent.repoPath || 'Unknown';
+            if (!grouped.has(repoPath)) {
+                grouped.set(repoPath, []);
+            }
+            grouped.get(repoPath)!.push(agent);
+        }
+        return grouped;
+    }
+
+    private _getRepoSections(agentsByRepo: Map<string, Agent[]>): string {
+        const repoPaths = this._agentManager.getRepositoryPaths();
+        const sections: string[] = [];
+
+        // First, add sections for repos that have agents
+        for (const [repoPath, repoAgents] of agentsByRepo) {
+            const repoName = repoPath.split(/[/\\]/).pop() || repoPath;
+            const repoIndex = repoPaths.indexOf(repoPath);
+            const agentCards = repoAgents.map(agent => this._getAgentCard(agent)).join('');
+
+            sections.push(`
+                <div class="repo-section">
+                    <div class="repo-header">
+                        <div class="repo-title">
+                            ${this._escapeHtml(repoName)}
+                            <span class="repo-path">${this._escapeHtml(repoPath)}</span>
+                        </div>
+                        <div class="repo-actions">
+                            <button class="btn btn-primary btn-small" data-action="addAgentToRepo" data-repo-index="${repoIndex >= 0 ? repoIndex : 0}">+ Add Agent</button>
+                        </div>
+                    </div>
+                    <div class="agents-grid">
+                        ${agentCards}
+                    </div>
+                </div>
+            `);
+        }
+
+        // Add empty sections for configured repos without agents
+        for (let i = 0; i < repoPaths.length; i++) {
+            const repoPath = repoPaths[i];
+            if (!agentsByRepo.has(repoPath)) {
+                const repoName = repoPath.split(/[/\\]/).pop() || repoPath;
+                sections.push(`
+                    <div class="repo-section">
+                        <div class="repo-header">
+                            <div class="repo-title">
+                                ${this._escapeHtml(repoName)}
+                                <span class="repo-path">${this._escapeHtml(repoPath)}</span>
+                            </div>
+                            <div class="repo-actions">
+                                <button class="btn btn-primary btn-small" data-action="addAgentToRepo" data-repo-index="${i}">+ Add Agent</button>
+                            </div>
+                        </div>
+                        <div class="agents-grid">
+                            <div style="color: var(--vscode-descriptionForeground); padding: 16px;">No agents in this repository</div>
+                        </div>
+                    </div>
+                `);
+            }
+        }
+
+        return sections.join('');
     }
 
     private _getAgentTodoHtml(sessionId: string): string {
