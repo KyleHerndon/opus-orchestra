@@ -108,8 +108,8 @@ export class Logger implements ILogger {
      */
     private formatArgs(args: unknown[]): string {
         return args.map(arg => {
-            if (arg === null) return 'null';
-            if (arg === undefined) return 'undefined';
+            if (arg === null) { return 'null'; }
+            if (arg === undefined) { return 'undefined'; }
             if (typeof arg === 'object') {
                 try {
                     return JSON.stringify(arg);

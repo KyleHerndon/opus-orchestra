@@ -8,7 +8,6 @@ import * as vscode from 'vscode';
 import {
     Agent,
     PersistedAgent,
-    DiffStats,
     AGENTS_STORAGE_KEY,
     ContainerInfo,
     PersistedContainerInfo,

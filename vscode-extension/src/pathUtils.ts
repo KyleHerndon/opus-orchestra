@@ -35,11 +35,11 @@ export class AgentPath {
         // Parse the path to extract drive and rest
         const wslMountMatch = inputPath.match(/^\/mnt\/([a-z])\/(.*)/i);
         const gitBashMatch = inputPath.match(/^\/([a-z])\/(.*)/i);
-        const windowsMatch = inputPath.match(/^([a-zA-Z]):[\\\/](.*)/);
+        const windowsMatch = inputPath.match(/^([a-zA-Z]):[\\/](.*)/);
         // Match UNC paths with backslashes: \\wsl.localhost\Ubuntu\... or \\wsl$\Ubuntu\...
         const wslUncBackslashMatch = inputPath.match(/^\\\\wsl(?:\.localhost|\$)\\([^\\]+)\\(.*)/i);
         // Match UNC paths with forward slashes: //wsl.localhost/Ubuntu/... or //wsl$/Ubuntu/...
-        const wslUncForwardMatch = inputPath.match(/^\/\/wsl(?:\.localhost|\$)\/([^\/]+)\/(.*)/i);
+        const wslUncForwardMatch = inputPath.match(/^\/\/wsl(?:\.localhost|\$)\/([^/]+)\/(.*)/i);
 
         if (wslUncBackslashMatch) {
             // UNC path to WSL with backslashes: \\wsl.localhost\Ubuntu\home\user

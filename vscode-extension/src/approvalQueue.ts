@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { AgentManager, PendingApproval } from './agentManager';
+import { AgentManager } from './agentManager';
 
 export class ApprovalTreeProvider implements vscode.TreeDataProvider<ApprovalTreeItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<ApprovalTreeItem | undefined | null | void> =

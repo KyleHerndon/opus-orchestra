@@ -12,7 +12,7 @@ import { getLogger, isLoggerInitialized } from './Logger';
  * Event bus implementation
  */
 export class EventBus implements IEventBus {
-    private handlers: Map<EventType, Set<EventHandler<any>>> = new Map();
+    private handlers: Map<EventType, Set<EventHandler<unknown>>> = new Map();
 
     /**
      * Subscribe to an event

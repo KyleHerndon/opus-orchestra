@@ -107,20 +107,20 @@ export function activate(context: vscode.ExtensionContext) {
             backlogTreeProvider.refresh();
         }),
 
-        vscode.commands.registerCommand('claudeAgents.startAgent', async (item: any) => {
+        vscode.commands.registerCommand('claudeAgents.startAgent', async (item: { agentId?: number }) => {
             if (item && item.agentId) {
                 await agentManager.startClaudeInAgent(item.agentId);
             }
         }),
 
-        vscode.commands.registerCommand('claudeAgents.approveAction', (item: any) => {
+        vscode.commands.registerCommand('claudeAgents.approveAction', (item: { agentId?: number }) => {
             if (item && item.agentId) {
                 agentManager.sendToAgent(item.agentId, 'y');
                 approvalTreeProvider.refresh();
             }
         }),
 
-        vscode.commands.registerCommand('claudeAgents.rejectAction', (item: any) => {
+        vscode.commands.registerCommand('claudeAgents.rejectAction', (item: { agentId?: number }) => {
             if (item && item.agentId) {
                 agentManager.sendToAgent(item.agentId, 'n');
                 approvalTreeProvider.refresh();

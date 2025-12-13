@@ -7,7 +7,7 @@
 
 import * as fs from 'fs';
 import { agentPath } from '../pathUtils';
-import { IStatusService, ParsedStatus, HookData, AgentStatus } from '../types';
+import { IStatusService, ParsedStatus, HookData } from '../types';
 import { getLogger, isLoggerInitialized } from './Logger';
 
 /**

@@ -1,7 +1,20 @@
 import * as vscode from 'vscode';
 import { AgentManager, Agent, IsolationTier } from './agentManager';
 import { formatTimeSince } from './types';
-import { getTodoService, TodoItem, TodoState } from './services';
+import { getTodoService, TodoItem } from './services';
+
+interface WebviewMessage {
+    command: string;
+    agentId?: number;
+    key?: string;
+    text?: string;
+    repoIndex?: number;
+    isolationTier?: string;
+    count?: number;
+    tier?: string;
+    newName?: string;
+    scale?: number;
+}
 
 export class AgentPanel {
     public static currentPanel: AgentPanel | undefined;
@@ -57,7 +70,7 @@ export class AgentPanel {
         AgentPanel.currentPanel = new AgentPanel(panel, agentManager);
     }
 
-    private async _handleMessage(message: any) {
+    private async _handleMessage(message: WebviewMessage) {
         const agentId = message.agentId !== undefined ? Number(message.agentId) : undefined;
 
         switch (message.command) {
@@ -85,12 +98,13 @@ export class AgentPanel {
                     await this._agentManager.startClaudeInAgent(agentId);
                 }
                 break;
-            case 'createAgents':
+            case 'createAgents': {
                 const repoPaths = this._agentManager.getRepositoryPaths();
                 const selectedRepo = repoPaths[message.repoIndex] || repoPaths[0];
                 const tier = message.isolationTier as IsolationTier || 'standard';
                 await this._agentManager.createAgents(message.count, selectedRepo, tier);
                 break;
+            }
             case 'changeIsolation':
                 if (agentId !== undefined && message.tier) {
                     await this._agentManager.changeAgentIsolationTier(agentId, message.tier as IsolationTier);
@@ -108,12 +122,13 @@ export class AgentPanel {
                     }
                 }
                 break;
-            case 'addAgent':
+            case 'addAgent': {
                 const repos = this._agentManager.getRepositoryPaths();
                 if (repos.length > 0) {
                     await this._agentManager.createAgents(1, repos[0]);
                 }
                 break;
+            }
             case 'renameAgent':
                 if (agentId !== undefined && message.newName) {
                     await this._agentManager.renameAgent(agentId, message.newName);

@@ -96,7 +96,7 @@ export class CommandService implements ICommandService {
                 }
             }
 
-            exec(fullCommand, execOptions, (error, stdout, stderr) => {
+            exec(fullCommand, execOptions, (error, stdout, _stderr) => {
                 if (error) {
                     reject(error);
                 } else {

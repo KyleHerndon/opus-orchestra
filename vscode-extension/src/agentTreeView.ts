@@ -124,7 +124,7 @@ export class AgentTreeItem extends vscode.TreeItem {
         this.tooltip = this.description;
 
         if (agent) {
-            (this as any).agentId = agent.id;
+            (this as unknown as { agentId: number }).agentId = agent.id;
         }
     }
 }

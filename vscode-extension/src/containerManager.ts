@@ -12,7 +12,6 @@ import {
     ContainerInfo,
     PersistedContainerInfo,
     CONTAINER_LABELS,
-    BLOCKED_HOST_PATHS,
 } from './types';
 
 // Import services
@@ -220,9 +219,9 @@ export class ContainerManager {
      * Create a sandbox using sandbox-runtime (bubblewrap/sandbox-exec)
      */
     private async createSandbox(
-        agentId: number,
-        worktreePath: string,
-        config?: ContainerConfig
+        _agentId: number,
+        _worktreePath: string,
+        _config?: ContainerConfig
     ): Promise<string> {
         // TODO: Implement sandbox-runtime integration
         // For now, throw not implemented
@@ -336,9 +335,9 @@ export class ContainerManager {
      * Create a Firecracker microVM
      */
     private async createFirecrackerVM(
-        agentId: number,
-        worktreePath: string,
-        config?: ContainerConfig
+        _agentId: number,
+        _worktreePath: string,
+        _config?: ContainerConfig
     ): Promise<string> {
         // TODO: Implement Firecracker integration
         throw new Error('Firecracker VMs not yet implemented. Use Docker or gVisor tier instead.');
@@ -354,7 +353,7 @@ export class ContainerManager {
 
         // Docker Desktop on Windows uses /c/... format
         // Convert C:/Users/... to /c/Users/...
-        const match = nodePath.match(/^([A-Za-z]):[\/\\](.*)$/);
+        const match = nodePath.match(/^([A-Za-z]):[\\/](.*)$/);
         if (match) {
             return `/${match[1].toLowerCase()}/${match[2].replace(/\\/g, '/')}`;
         }

@@ -3,6 +3,8 @@ import * as assert from 'assert';
 // Import the panel module to test HTML generation
 // We'll test the HTML structure statically
 
+/* eslint-disable @typescript-eslint/no-var-requires */
+
 suite('AgentPanel HTML Test Suite', () => {
 
     // Test that all button actions in the switch statement have corresponding HTML buttons

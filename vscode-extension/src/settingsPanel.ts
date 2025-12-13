@@ -1,10 +1,13 @@
 import * as vscode from 'vscode';
 
 // Get extension version from package.json
-const EXTENSION_VERSION = require('../package.json').version;
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const EXTENSION_VERSION = require('../package.json').version as string;
+
+type SettingsValue = string | number | boolean | string[];
 
 // Settings keys with their default values (must match SETTINGS_SCHEMA in webview JS)
-const SETTINGS_KEYS: Record<string, any> = {
+const SETTINGS_KEYS: Record<string, SettingsValue> = {
     repositoryPaths: [],
     defaultAgentCount: 3,
     claudeCommand: 'claude',
@@ -22,7 +25,7 @@ export class SettingsPanel {
     private readonly _panel: vscode.WebviewPanel;
     private _disposables: vscode.Disposable[] = [];
 
-    private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
+    private constructor(panel: vscode.WebviewPanel, _extensionUri: vscode.Uri) {
         this._panel = panel;
         this._update();
 
@@ -58,7 +61,7 @@ export class SettingsPanel {
         SettingsPanel.currentPanel = new SettingsPanel(panel, extensionUri);
     }
 
-    private async _handleMessage(message: any) {
+    private async _handleMessage(message: { command: string; fieldId?: string } & Record<string, unknown>) {
         const config = vscode.workspace.getConfiguration('claudeAgents');
 
         switch (message.command) {
@@ -71,7 +74,7 @@ export class SettingsPanel {
                 vscode.window.showInformationMessage('Settings saved');
                 break;
 
-            case 'browseDirectory':
+            case 'browseDirectory': {
                 const uri = await vscode.window.showOpenDialog({
                     canSelectFiles: false,
                     canSelectFolders: true,
@@ -85,8 +88,9 @@ export class SettingsPanel {
                     });
                 }
                 break;
+            }
 
-            case 'browseForPath':
+            case 'browseForPath': {
                 const pathUri = await vscode.window.showOpenDialog({
                     canSelectFiles: false,
                     canSelectFolders: true,
@@ -101,6 +105,7 @@ export class SettingsPanel {
                     });
                 }
                 break;
+            }
 
             case 'getSettings':
                 this._sendCurrentSettings();
@@ -110,7 +115,7 @@ export class SettingsPanel {
 
     private _sendCurrentSettings() {
         const config = vscode.workspace.getConfiguration('claudeAgents');
-        const settings: Record<string, any> = {};
+        const settings: Record<string, SettingsValue> = {};
         for (const [key, defaultValue] of Object.entries(SETTINGS_KEYS)) {
             settings[key] = config.get(key, defaultValue);
         }
