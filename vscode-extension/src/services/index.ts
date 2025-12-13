@@ -10,6 +10,7 @@ export { CommandService, getCommandService, resetCommandService } from './Comman
 export { GitService, getGitService, resetGitService } from './GitService';
 export { TerminalService, getTerminalService, resetTerminalService, getTerminalIcon } from './TerminalService';
 export { StatusService, getStatusService, resetStatusService } from './StatusService';
+export { StatusWatcher, getStatusWatcher, resetStatusWatcher } from './StatusWatcher';
 export { EventBus, getEventBus, resetEventBus } from './EventBus';
 export {
     PersistenceService,

@@ -262,11 +262,6 @@
           "default": false,
           "description": "Automatically start Claude when creating agent terminal"
         },
-        "claudeAgents.statusPollingInterval": {
-          "type": "number",
-          "default": 1000,
-          "description": "Milliseconds between status checks"
-        },
         "claudeAgents.diffPollingInterval": {
           "type": "number",
           "default": 60000,

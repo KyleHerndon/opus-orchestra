@@ -12,7 +12,6 @@ const SETTINGS_KEYS: Record<string, SettingsValue> = {
     defaultAgentCount: 3,
     claudeCommand: 'claude',
     autoStartClaude: false,
-    statusPollingInterval: 1000,
     diffPollingInterval: 60000,
     worktreeDirectory: '.worktrees',
     coordinationScriptsPath: '',
@@ -395,11 +394,6 @@ export class SettingsPanel {
     <h2>Advanced</h2>
     <div class="setting-group">
         <div class="setting-item">
-            <label class="setting-label">Status Polling Interval (ms)</label>
-            <div class="setting-description">How often to check agent status (lightweight, reads hook status files)</div>
-            <input type="number" id="statusPollingInterval" min="500" max="10000" value="1000">
-        </div>
-        <div class="setting-item">
             <label class="setting-label">Git Diff Polling Interval (ms)</label>
             <div class="setting-description">How often to refresh git diff stats. Set to 0 to disable. Default: 60000 (60 seconds)</div>
             <input type="number" id="diffPollingInterval" min="0" max="300000" value="60000">
@@ -424,7 +418,6 @@ export class SettingsPanel {
             defaultAgentCount: { type: 'number', default: 3 },
             claudeCommand: { type: 'text', default: 'claude' },
             autoStartClaude: { type: 'checkbox', default: false },
-            statusPollingInterval: { type: 'number', default: 1000 },
             diffPollingInterval: { type: 'number', default: 60000 },
             worktreeDirectory: { type: 'text', default: '.worktrees' },
             coordinationScriptsPath: { type: 'text', default: '' },

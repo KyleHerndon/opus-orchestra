@@ -1,13 +1,32 @@
 import * as vscode from 'vscode';
 import { AgentManager } from './agentManager';
+import { getEventBus } from './services';
 
-export class ApprovalTreeProvider implements vscode.TreeDataProvider<ApprovalTreeItem> {
+export class ApprovalTreeProvider implements vscode.TreeDataProvider<ApprovalTreeItem>, vscode.Disposable {
     private _onDidChangeTreeData: vscode.EventEmitter<ApprovalTreeItem | undefined | null | void> =
         new vscode.EventEmitter<ApprovalTreeItem | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<ApprovalTreeItem | undefined | null | void> =
         this._onDidChangeTreeData.event;
 
-    constructor(private agentManager: AgentManager) {}
+    private readonly refreshHandler = () => this.refresh();
+
+    constructor(private agentManager: AgentManager) {
+        // Subscribe to events that affect approvals
+        const eventBus = getEventBus();
+        eventBus.on('approval:pending', this.refreshHandler);
+        eventBus.on('approval:resolved', this.refreshHandler);
+        eventBus.on('agent:deleted', this.refreshHandler);
+        eventBus.on('status:refreshed', this.refreshHandler);
+    }
+
+    dispose(): void {
+        const eventBus = getEventBus();
+        eventBus.off('approval:pending', this.refreshHandler);
+        eventBus.off('approval:resolved', this.refreshHandler);
+        eventBus.off('agent:deleted', this.refreshHandler);
+        eventBus.off('status:refreshed', this.refreshHandler);
+        this._onDidChangeTreeData.dispose();
+    }
 
     refresh(): void {
         this._onDidChangeTreeData.fire();

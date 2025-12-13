@@ -79,10 +79,6 @@ export class ConfigService {
     // Polling Intervals
     // ========================================================================
 
-    get statusPollingInterval(): number {
-        return this.config.get<number>('statusPollingInterval', DEFAULT_CONFIG.statusPollingInterval);
-    }
-
     get diffPollingInterval(): number {
         return this.config.get<number>('diffPollingInterval', DEFAULT_CONFIG.diffPollingInterval);
     }
@@ -128,7 +124,6 @@ export class ConfigService {
             backlogPath: this.backlogPath,
             repositoryPaths: this.repositoryPaths,
             terminalType: this.terminalType,
-            statusPollingInterval: this.statusPollingInterval,
             diffPollingInterval: this.diffPollingInterval,
             isolationTier: this.isolationTier,
             containerImage: this.containerImage,

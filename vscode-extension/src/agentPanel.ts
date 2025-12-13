@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { AgentManager, Agent, IsolationTier } from './agentManager';
 import { formatTimeSince } from './types';
-import { getTodoService, TodoItem } from './services';
+import { getTodoService, TodoItem, getEventBus } from './services';
 
 interface WebviewMessage {
     command: string;
@@ -21,10 +21,10 @@ export class AgentPanel {
     private readonly _panel: vscode.WebviewPanel;
     private readonly _agentManager: AgentManager;
     private _disposables: vscode.Disposable[] = [];
-    private _updateInterval: NodeJS.Timeout | undefined;
     private _availableTiers: IsolationTier[] = ['standard'];
     private _containerStats: Map<number, { memoryMB: number; cpuPercent: number }> = new Map();
     private _lastStatsUpdate: number = 0;
+    private readonly _updateHandler = () => this._update();
 
     private constructor(panel: vscode.WebviewPanel, agentManager: AgentManager) {
         this._panel = panel;
@@ -35,8 +35,17 @@ export class AgentPanel {
 
         this._update();
 
-        // Update every second
-        this._updateInterval = setInterval(() => this._update(), 1000);
+        // Subscribe to EventBus for reactive updates
+        const eventBus = getEventBus();
+        eventBus.on('agent:created', this._updateHandler);
+        eventBus.on('agent:deleted', this._updateHandler);
+        eventBus.on('agent:renamed', this._updateHandler);
+        eventBus.on('agent:terminalClosed', this._updateHandler);
+        eventBus.on('agent:statusChanged', this._updateHandler);
+        eventBus.on('approval:pending', this._updateHandler);
+        eventBus.on('approval:resolved', this._updateHandler);
+        eventBus.on('status:refreshed', this._updateHandler);
+        eventBus.on('diffStats:refreshed', this._updateHandler);
 
         this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
 
@@ -1058,9 +1067,17 @@ export class AgentPanel {
     public dispose() {
         AgentPanel.currentPanel = undefined;
 
-        if (this._updateInterval) {
-            clearInterval(this._updateInterval);
-        }
+        // Unsubscribe from EventBus
+        const eventBus = getEventBus();
+        eventBus.off('agent:created', this._updateHandler);
+        eventBus.off('agent:deleted', this._updateHandler);
+        eventBus.off('agent:renamed', this._updateHandler);
+        eventBus.off('agent:terminalClosed', this._updateHandler);
+        eventBus.off('agent:statusChanged', this._updateHandler);
+        eventBus.off('approval:pending', this._updateHandler);
+        eventBus.off('approval:resolved', this._updateHandler);
+        eventBus.off('status:refreshed', this._updateHandler);
+        eventBus.off('diffStats:refreshed', this._updateHandler);
 
         this._panel.dispose();
 

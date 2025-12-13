@@ -18,7 +18,9 @@ export type EventType =
     | 'container:removed'
     | 'container:stateChanged'
     | 'approval:pending'
-    | 'approval:resolved';
+    | 'approval:resolved'
+    | 'status:refreshed'
+    | 'diffStats:refreshed';
 
 /**
  * Event payload types
@@ -34,6 +36,8 @@ export interface EventPayloads {
     'container:stateChanged': { containerInfo: ContainerInfo; previousState: ContainerState };
     'approval:pending': { approval: PendingApproval };
     'approval:resolved': { agentId: number };
+    'status:refreshed': Record<string, never>;
+    'diffStats:refreshed': Record<string, never>;
 }
 
 /**
