@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { AgentManager, Agent, IsolationTier } from './agentManager';
 import { formatTimeSince } from './types';
-import { getTodoService, TodoItem } from './services';
+import { getTodoService, TodoItem, getEventBus } from './services';
 
 interface WebviewMessage {
     command: string;
@@ -16,15 +16,27 @@ interface WebviewMessage {
     scale?: number;
 }
 
+interface ActiveOperation {
+    operationId: string;
+    type: string;
+    message: string;
+    current?: number;
+    total?: number;
+}
+
 export class AgentPanel {
     public static currentPanel: AgentPanel | undefined;
     private readonly _panel: vscode.WebviewPanel;
     private readonly _agentManager: AgentManager;
     private _disposables: vscode.Disposable[] = [];
-    private _updateInterval: NodeJS.Timeout | undefined;
     private _availableTiers: IsolationTier[] = ['standard'];
     private _containerStats: Map<number, { memoryMB: number; cpuPercent: number }> = new Map();
     private _lastStatsUpdate: number = 0;
+    private readonly _updateHandler = () => this._update();
+    private readonly _operationStartedHandler = (payload: { operationId: string; type: string; message: string }) => this._handleOperationStarted(payload);
+    private readonly _operationProgressHandler = (payload: { operationId: string; type: string; current: number; total: number; message: string }) => this._handleOperationProgress(payload);
+    private readonly _operationCompletedHandler = () => this._handleOperationCompleted();
+    private _activeOperation: ActiveOperation | null = null;
 
     private constructor(panel: vscode.WebviewPanel, agentManager: AgentManager) {
         this._panel = panel;
@@ -35,8 +47,23 @@ export class AgentPanel {
 
         this._update();
 
-        // Update every second
-        this._updateInterval = setInterval(() => this._update(), 1000);
+        // Subscribe to EventBus for reactive updates
+        const eventBus = getEventBus();
+        eventBus.on('agent:created', this._updateHandler);
+        eventBus.on('agent:deleted', this._updateHandler);
+        eventBus.on('agent:renamed', this._updateHandler);
+        eventBus.on('agent:terminalClosed', this._updateHandler);
+        eventBus.on('agent:statusChanged', this._updateHandler);
+        eventBus.on('approval:pending', this._updateHandler);
+        eventBus.on('approval:resolved', this._updateHandler);
+        eventBus.on('status:refreshed', this._updateHandler);
+        eventBus.on('diffStats:refreshed', this._updateHandler);
+
+        // Subscribe to operation events for loading states
+        eventBus.on('operation:started', this._operationStartedHandler);
+        eventBus.on('operation:progress', this._operationProgressHandler);
+        eventBus.on('operation:completed', this._operationCompletedHandler);
+        eventBus.on('operation:failed', this._operationCompletedHandler);
 
         this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
 
@@ -180,6 +207,29 @@ export class AgentPanel {
                 }
             }
         }
+    }
+
+    private _handleOperationStarted(payload: { operationId: string; type: string; message: string }): void {
+        this._activeOperation = {
+            operationId: payload.operationId,
+            type: payload.type,
+            message: payload.message,
+        };
+        this._update();
+    }
+
+    private _handleOperationProgress(payload: { operationId: string; type: string; current: number; total: number; message: string }): void {
+        if (this._activeOperation && this._activeOperation.operationId === payload.operationId) {
+            this._activeOperation.current = payload.current;
+            this._activeOperation.total = payload.total;
+            this._activeOperation.message = payload.message;
+            this._update();
+        }
+    }
+
+    private _handleOperationCompleted(): void {
+        this._activeOperation = null;
+        this._update();
     }
 
     private _update() {
@@ -660,6 +710,58 @@ export class AgentPanel {
             color: var(--vscode-gitDecoration-addedResourceForeground);
             font-style: italic;
         }
+        /* Loading indicator styles */
+        .loading-overlay {
+            background: var(--vscode-editor-background);
+            border: 1px solid var(--vscode-textLink-foreground);
+            border-radius: 8px;
+            padding: calc(16px * var(--ui-scale));
+            margin-bottom: calc(24px * var(--ui-scale));
+            display: flex;
+            align-items: center;
+            gap: calc(12px * var(--ui-scale));
+        }
+        .loading-spinner {
+            width: calc(24px * var(--ui-scale));
+            height: calc(24px * var(--ui-scale));
+            border: 3px solid var(--vscode-widget-border);
+            border-top-color: var(--vscode-textLink-foreground);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .loading-content {
+            flex: 1;
+        }
+        .loading-message {
+            font-weight: 500;
+            margin-bottom: calc(4px * var(--ui-scale));
+        }
+        .loading-progress {
+            display: flex;
+            align-items: center;
+            gap: calc(8px * var(--ui-scale));
+        }
+        .loading-bar {
+            flex: 1;
+            height: calc(6px * var(--ui-scale));
+            background: var(--vscode-widget-border);
+            border-radius: calc(3px * var(--ui-scale));
+            overflow: hidden;
+        }
+        .loading-bar-fill {
+            height: 100%;
+            background: var(--vscode-textLink-foreground);
+            transition: width 0.3s ease;
+        }
+        .loading-percent {
+            font-size: calc(12px * var(--ui-scale));
+            color: var(--vscode-descriptionForeground);
+            min-width: calc(40px * var(--ui-scale));
+            text-align: right;
+        }
     </style>
 </head>
 <body>
@@ -683,6 +785,8 @@ export class AgentPanel {
             ` : ''}
         </div>
     </div>
+
+    ${this._getLoadingIndicator()}
 
     ${hasAgents ? this._getAgentsDashboard(agents, agentCards) : this._getEmptyState()}
 
@@ -936,6 +1040,33 @@ export class AgentPanel {
         `;
     }
 
+    private _getLoadingIndicator(): string {
+        if (!this._activeOperation) {
+            return '';
+        }
+
+        const { message, current, total } = this._activeOperation;
+        const hasProgress = current !== undefined && total !== undefined && total > 0;
+        const percent = hasProgress ? Math.round((current! / total!) * 100) : 0;
+
+        return `
+            <div class="loading-overlay">
+                <div class="loading-spinner"></div>
+                <div class="loading-content">
+                    <div class="loading-message">${this._escapeHtml(message)}</div>
+                    ${hasProgress ? `
+                    <div class="loading-progress">
+                        <div class="loading-bar">
+                            <div class="loading-bar-fill" style="width: ${percent}%"></div>
+                        </div>
+                        <span class="loading-percent">${current}/${total}</span>
+                    </div>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    }
+
     private _getTierLabel(tier: IsolationTier): string {
         switch (tier) {
             case 'standard': return 'Standard';
@@ -1058,9 +1189,23 @@ export class AgentPanel {
     public dispose() {
         AgentPanel.currentPanel = undefined;
 
-        if (this._updateInterval) {
-            clearInterval(this._updateInterval);
-        }
+        // Unsubscribe from EventBus
+        const eventBus = getEventBus();
+        eventBus.off('agent:created', this._updateHandler);
+        eventBus.off('agent:deleted', this._updateHandler);
+        eventBus.off('agent:renamed', this._updateHandler);
+        eventBus.off('agent:terminalClosed', this._updateHandler);
+        eventBus.off('agent:statusChanged', this._updateHandler);
+        eventBus.off('approval:pending', this._updateHandler);
+        eventBus.off('approval:resolved', this._updateHandler);
+        eventBus.off('status:refreshed', this._updateHandler);
+        eventBus.off('diffStats:refreshed', this._updateHandler);
+
+        // Unsubscribe from operation events
+        eventBus.off('operation:started', this._operationStartedHandler);
+        eventBus.off('operation:progress', this._operationProgressHandler);
+        eventBus.off('operation:completed', this._operationCompletedHandler);
+        eventBus.off('operation:failed', this._operationCompletedHandler);
 
         this._panel.dispose();
 

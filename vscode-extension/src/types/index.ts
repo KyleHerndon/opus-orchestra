@@ -75,6 +75,11 @@ export {
     EventPayloads,
     EventHandler,
     IEventBus,
+    OperationType,
+    OperationStatus,
+    CommandPayloads,
+    OperationPayloads,
+    DomainEventPayloads,
 } from './events';
 
 // UI types and utilities

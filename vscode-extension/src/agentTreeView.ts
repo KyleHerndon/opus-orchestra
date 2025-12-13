@@ -1,14 +1,39 @@
 import * as vscode from 'vscode';
 import { AgentManager, Agent } from './agentManager';
 import { formatTimeSince } from './types';
+import { getEventBus } from './services';
 
-export class AgentTreeProvider implements vscode.TreeDataProvider<AgentTreeItem> {
+export class AgentTreeProvider implements vscode.TreeDataProvider<AgentTreeItem>, vscode.Disposable {
     private _onDidChangeTreeData: vscode.EventEmitter<AgentTreeItem | undefined | null | void> =
         new vscode.EventEmitter<AgentTreeItem | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<AgentTreeItem | undefined | null | void> =
         this._onDidChangeTreeData.event;
 
-    constructor(private agentManager: AgentManager) {}
+    private readonly refreshHandler = () => this.refresh();
+
+    constructor(private agentManager: AgentManager) {
+        // Subscribe to events that should trigger a refresh
+        const eventBus = getEventBus();
+        eventBus.on('agent:created', this.refreshHandler);
+        eventBus.on('agent:deleted', this.refreshHandler);
+        eventBus.on('agent:renamed', this.refreshHandler);
+        eventBus.on('agent:terminalClosed', this.refreshHandler);
+        eventBus.on('agent:statusChanged', this.refreshHandler);
+        eventBus.on('status:refreshed', this.refreshHandler);
+        eventBus.on('diffStats:refreshed', this.refreshHandler);
+    }
+
+    dispose(): void {
+        const eventBus = getEventBus();
+        eventBus.off('agent:created', this.refreshHandler);
+        eventBus.off('agent:deleted', this.refreshHandler);
+        eventBus.off('agent:renamed', this.refreshHandler);
+        eventBus.off('agent:terminalClosed', this.refreshHandler);
+        eventBus.off('agent:statusChanged', this.refreshHandler);
+        eventBus.off('status:refreshed', this.refreshHandler);
+        eventBus.off('diffStats:refreshed', this.refreshHandler);
+        this._onDidChangeTreeData.dispose();
+    }
 
     refresh(): void {
         this._onDidChangeTreeData.fire();

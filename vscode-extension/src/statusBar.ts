@@ -1,10 +1,12 @@
 import * as vscode from 'vscode';
 import { AgentManager } from './agentManager';
 import { formatTimeSince } from './types';
+import { getEventBus } from './services';
 
 export class StatusBarManager implements vscode.Disposable {
     private statusBarItem: vscode.StatusBarItem;
     private agentManager: AgentManager;
+    private readonly updateHandler = () => this.update();
 
     constructor(agentManager: AgentManager) {
         this.agentManager = agentManager;
@@ -17,6 +19,16 @@ export class StatusBarManager implements vscode.Disposable {
         this.statusBarItem.command = 'claudeAgents.showApprovals';
         this.update();
         this.statusBarItem.show();
+
+        // Subscribe to events that affect status bar display
+        const eventBus = getEventBus();
+        eventBus.on('agent:created', this.updateHandler);
+        eventBus.on('agent:deleted', this.updateHandler);
+        eventBus.on('agent:statusChanged', this.updateHandler);
+        eventBus.on('approval:pending', this.updateHandler);
+        eventBus.on('approval:resolved', this.updateHandler);
+        eventBus.on('status:refreshed', this.updateHandler);
+        eventBus.on('diffStats:refreshed', this.updateHandler);
     }
 
     update(): void {
@@ -74,6 +86,16 @@ export class StatusBarManager implements vscode.Disposable {
     }
 
     dispose(): void {
+        // Unsubscribe from events
+        const eventBus = getEventBus();
+        eventBus.off('agent:created', this.updateHandler);
+        eventBus.off('agent:deleted', this.updateHandler);
+        eventBus.off('agent:statusChanged', this.updateHandler);
+        eventBus.off('approval:pending', this.updateHandler);
+        eventBus.off('approval:resolved', this.updateHandler);
+        eventBus.off('status:refreshed', this.updateHandler);
+        eventBus.off('diffStats:refreshed', this.updateHandler);
+
         this.statusBarItem.dispose();
     }
 }

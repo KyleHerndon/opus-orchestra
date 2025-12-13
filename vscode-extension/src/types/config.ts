@@ -28,7 +28,6 @@ export interface ExtensionConfig {
     terminalType: TerminalType;
 
     // Polling intervals (ms)
-    statusPollingInterval: number;
     diffPollingInterval: number;
 
     // Isolation settings
@@ -55,7 +54,6 @@ export const DEFAULT_CONFIG: ExtensionConfig = {
     backlogPath: '',
     repositoryPaths: [],
     terminalType: 'wsl',
-    statusPollingInterval: 1000,
     diffPollingInterval: 60000,
     isolationTier: 'standard',
     containerImage: 'ghcr.io/kyleherndon/opus-orchestra-sandbox:latest',

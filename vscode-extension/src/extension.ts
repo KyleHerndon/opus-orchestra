@@ -6,7 +6,7 @@ import { BacklogTreeProvider } from './backlogTreeView';
 import { StatusBarManager } from './statusBar';
 import { AgentPanel } from './agentPanel';
 import { SettingsPanel } from './settingsPanel';
-import { initLogger, initPersistenceService } from './services';
+import { initLogger, initPersistenceService, getStatusWatcher } from './services';
 
 let agentManager: AgentManager;
 let agentTreeProvider: AgentTreeProvider;
@@ -66,7 +66,7 @@ export function activate(context: vscode.ExtensionContext) {
             if (countStr) {
                 const count = parseInt(countStr);
                 await agentManager.createAgents(count);
-                agentTreeProvider.refresh();
+                // Note: EventBus 'agent:created' handles refresh
             }
         }),
 
@@ -116,14 +116,14 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('claudeAgents.approveAction', (item: { agentId?: number }) => {
             if (item && item.agentId) {
                 agentManager.sendToAgent(item.agentId, 'y');
-                approvalTreeProvider.refresh();
+                // Note: EventBus 'approval:resolved' handles refresh
             }
         }),
 
         vscode.commands.registerCommand('claudeAgents.rejectAction', (item: { agentId?: number }) => {
             if (item && item.agentId) {
                 agentManager.sendToAgent(item.agentId, 'n');
-                approvalTreeProvider.refresh();
+                // Note: EventBus 'approval:resolved' handles refresh
             }
         }),
 
@@ -202,10 +202,8 @@ export function activate(context: vscode.ExtensionContext) {
             });
 
             if (selected) {
-                const agent = await agentManager.createAgentForTask(selected.label, targetRepo);
-                if (agent) {
-                    agentTreeProvider.refresh();
-                }
+                await agentManager.createAgentForTask(selected.label, targetRepo);
+                // Note: EventBus 'agent:created' handles refresh
             }
         }),
 
@@ -310,42 +308,18 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.window.onDidCloseTerminal((terminal) => {
             agentManager.handleTerminalClosed(terminal);
-            agentTreeProvider.refresh();
+            // EventBus 'agent:terminalClosed' will trigger component updates
         })
     );
 
-    // Start status polling (lightweight - no git commands)
-    const pollingInterval = vscode.workspace.getConfiguration('claudeAgents')
-        .get<number>('statusPollingInterval', 1000);
-
-    const statusPoller = setInterval(() => {
-        agentManager.refreshStatus();
-        agentTreeProvider.refresh();
-        approvalTreeProvider.refresh();
-        statusBarManager.update();
-    }, pollingInterval);
-
-    // Start separate diff stats polling (heavier - runs git commands async)
-    const diffPollingInterval = vscode.workspace.getConfiguration('claudeAgents')
-        .get<number>('diffPollingInterval', 60000);
-
-    let diffPoller: NodeJS.Timeout | undefined;
-    if (diffPollingInterval > 0) {
-        // Initial diff refresh
-        agentManager.refreshDiffStats();
-
-        diffPoller = setInterval(() => {
-            agentManager.refreshDiffStats();
-        }, diffPollingInterval);
-    }
+    // Start the centralized status watcher
+    // This polls status files and emits EventBus events
+    // All UI components subscribe to events and update themselves
+    const statusWatcher = getStatusWatcher();
+    statusWatcher.start(agentManager);
 
     context.subscriptions.push({
-        dispose: () => {
-            clearInterval(statusPoller);
-            if (diffPoller) {
-                clearInterval(diffPoller);
-            }
-        }
+        dispose: () => statusWatcher.stop()
     });
 
     // Register disposables
@@ -353,6 +327,8 @@ export function activate(context: vscode.ExtensionContext) {
         agentTreeView,
         backlogTreeView,
         approvalTreeView,
+        agentTreeProvider,
+        approvalTreeProvider,
         statusBarManager
     );
 }

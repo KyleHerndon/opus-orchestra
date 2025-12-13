@@ -22,6 +22,7 @@ import {
     getGitService,
     getTerminalService,
     getEventBus,
+    getCommandHandler,
     getLogger,
     isLoggerInitialized,
     getTerminalIcon,
@@ -173,19 +174,29 @@ export class AgentManager {
         let createdCount = 0;
         let restoredCount = 0;
 
-        await vscode.window.withProgress({
-            location: vscode.ProgressLocation.Notification,
-            title: 'Creating agent worktrees',
-            cancellable: false
-        }, async (progress) => {
-            let nextId = 1;
-            while (createdCount + restoredCount < count) {
-                while (existingIds.has(nextId)) {
-                    nextId++;
-                }
+        // Start operation tracking for event-driven UI updates
+        const commandHandler = getCommandHandler();
+        const operation = commandHandler.startOperation('createAgents', `Creating ${count} agent(s)...`);
 
-                const agentName = this.getAgentName(nextId);
-                progress.report({ message: `Creating agent ${agentName}...`, increment: (100 / count) });
+        try {
+            await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: 'Creating agent worktrees',
+                cancellable: false
+            }, async (progress) => {
+                let nextId = 1;
+                while (createdCount + restoredCount < count) {
+                    // Find next available ID
+                    while (existingIds.has(nextId)) {
+                        nextId++;
+                    }
+
+                    const agentName = this.getAgentName(nextId);  // Display name (word-based)
+                    const currentProgress = createdCount + restoredCount + 1;
+
+                    // Report progress via both VS Code notification and EventBus
+                    progress.report({ message: `Creating agent ${agentName}...`, increment: (100 / count) });
+                    commandHandler.reportProgress(operation, currentProgress, count, `Creating agent ${agentName}...`);
 
                 const branchName = `claude-${agentName}`;
                 const worktreePath = this.worktreeManager.getWorktreePath(targetRepo, agentName);
@@ -277,17 +288,26 @@ export class AgentManager {
                     vscode.window.showErrorMessage(`Failed to create agent ${nextId}: ${error}`);
                 }
 
-                nextId++;
-            }
-        });
+                    nextId++;
+                }
+            });
 
-        this.persistence.saveAgents(this.agents);
+            // Persist agents to storage (both VS Code state and worktree metadata)
+            this.persistence.saveAgents(this.agents);
 
-        const tierInfo = defaultTier !== 'standard' ? ` (${defaultTier} isolation)` : '';
-        const message = restoredCount > 0
-            ? `Created ${createdCount} new, restored ${restoredCount} existing agent worktrees${tierInfo}`
-            : `Created ${createdCount} agent worktrees${tierInfo}`;
-        vscode.window.showInformationMessage(message);
+            const tierInfo = defaultTier !== 'standard' ? ` (${defaultTier} isolation)` : '';
+            const message = restoredCount > 0
+                ? `Created ${createdCount} new, restored ${restoredCount} existing agent worktrees${tierInfo}`
+                : `Created ${createdCount} agent worktrees${tierInfo}`;
+
+            // Complete operation successfully
+            commandHandler.completeOperation(operation, message);
+            vscode.window.showInformationMessage(message);
+        } catch (error) {
+            // Fail operation if something went wrong
+            commandHandler.failOperation(operation, String(error));
+            throw error;
+        }
     }
 
     async deleteAgent(agentId: number): Promise<boolean> {
