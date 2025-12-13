@@ -66,6 +66,11 @@ info "Test 2: Run setup-agents.sh"
 NUM_AGENTS=2
 BASE_BRANCH=$(git branch --show-current)
 
+# Handle detached HEAD state in CI (PR checkouts)
+if [ -z "$BASE_BRANCH" ]; then
+    BASE_BRANCH="HEAD"
+fi
+
 mkdir -p .worktrees
 mkdir -p .claude-coordination
 
