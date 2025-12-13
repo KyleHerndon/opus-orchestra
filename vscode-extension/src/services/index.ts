@@ -12,6 +12,7 @@ export { TerminalService, getTerminalService, resetTerminalService, getTerminalI
 export { StatusService, getStatusService, resetStatusService } from './StatusService';
 export { StatusWatcher, getStatusWatcher, resetStatusWatcher } from './StatusWatcher';
 export { EventBus, getEventBus, resetEventBus } from './EventBus';
+export { CommandHandler, getCommandHandler, resetCommandHandler, OperationContext } from './CommandHandler';
 export {
     PersistenceService,
     initPersistenceService,
