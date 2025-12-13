@@ -30,12 +30,6 @@ describe('Claude Agents Dashboard UI Tests', function () {
         return driver.wait(until.elementLocated(By.css(selector)), timeout);
     }
 
-    // Helper: wait for elements to exist (returns array)
-    async function waitForElements(selector: string, timeout = 10000) {
-        await driver.wait(until.elementLocated(By.css(selector)), timeout);
-        return driver.findElements(By.css(selector));
-    }
-
     // Helper: open dashboard and switch to webview frame
     async function openDashboardAndSwitchToFrame(): Promise<WebView> {
         // Check if dashboard is already open
