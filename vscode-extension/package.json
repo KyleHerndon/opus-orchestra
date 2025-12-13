@@ -391,7 +391,7 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "lint": "eslint src --ext ts",
+    "lint": "eslint src --ext ts --max-warnings 0",
     "test": "npm run compile && node ./out/test/runTest.js",
     "test:unit": "npm run compile && mocha --ui tdd ./out/test/suite/agentPanel.test.js",
     "test:ui": "npm run compile && ./scripts/test-ui.sh run",
