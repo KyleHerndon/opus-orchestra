@@ -1,4 +1,7 @@
 import * as vscode from 'vscode';
+import { execSync } from 'child_process';
+import { getConfigService } from './services';
+import { agentPath } from './pathUtils';
 
 // Get extension version from package.json
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -16,7 +19,8 @@ const SETTINGS_KEYS: Record<string, SettingsValue> = {
     worktreeDirectory: '.worktrees',
     coordinationScriptsPath: '',
     backlogPath: '',
-    terminalType: 'bash'
+    terminalType: 'bash',
+    uiScale: 1.0
 };
 
 export class SettingsPanel {
@@ -70,6 +74,8 @@ export class SettingsPanel {
                         await config.update(key, message[key], vscode.ConfigurationTarget.Global);
                     }
                 }
+                // Refresh ConfigService to pick up new values
+                getConfigService().refresh();
                 vscode.window.showInformationMessage('Settings saved');
                 break;
 
@@ -109,6 +115,28 @@ export class SettingsPanel {
             case 'getSettings':
                 this._sendCurrentSettings();
                 break;
+
+            case 'validateRepo': {
+                const repoPath = message.path as string;
+                const isValid = this._isValidGitRepo(repoPath);
+                this._panel.webview.postMessage({
+                    command: 'repoValidated',
+                    path: repoPath,
+                    isValid,
+                    error: isValid ? null : 'Not a valid git repository'
+                });
+                break;
+            }
+        }
+    }
+
+    private _isValidGitRepo(repoPath: string): boolean {
+        try {
+            const fsPath = agentPath(repoPath).forNodeFs();
+            execSync('git rev-parse --git-dir', { cwd: fsPath, stdio: 'pipe' });
+            return true;
+        } catch {
+            return false;
         }
     }
 
@@ -246,6 +274,26 @@ export class SettingsPanel {
             padding: 4px 8px;
             font-size: 12px;
         }
+        .repo-item.valid {
+            border-color: var(--vscode-gitDecoration-addedResourceForeground);
+        }
+        .repo-item.invalid {
+            border-color: var(--vscode-inputValidation-errorBorder);
+            background: var(--vscode-inputValidation-errorBackground);
+        }
+        .repo-status {
+            font-size: 12px;
+            padding: 0 4px;
+        }
+        .repo-status.valid {
+            color: var(--vscode-gitDecoration-addedResourceForeground);
+        }
+        .repo-status.invalid {
+            color: var(--vscode-inputValidation-errorForeground);
+        }
+        .repo-status.pending {
+            color: var(--vscode-descriptionForeground);
+        }
         .btn-icon {
             padding: 4px 8px;
             background: transparent;
@@ -369,6 +417,18 @@ export class SettingsPanel {
                 <option value="cmd">Command Prompt (CMD) - C:\\ paths</option>
             </select>
         </div>
+        <div class="setting-item">
+            <label class="setting-label">Dashboard UI Scale</label>
+            <div class="setting-description">Adjust the size of the dashboard UI elements.</div>
+            <select id="uiScale">
+                <option value="0.75">75%</option>
+                <option value="0.875">87.5%</option>
+                <option value="1">100% (Default)</option>
+                <option value="1.125">112.5%</option>
+                <option value="1.25">125%</option>
+                <option value="1.5">150%</option>
+            </select>
+        </div>
     </div>
 
     <h2>Task Coordination</h2>
@@ -412,6 +472,7 @@ export class SettingsPanel {
     <script>
         const vscode = acquireVsCodeApi();
         let repositoryPaths = [];
+        let repoValidationState = {}; // { path: 'valid' | 'invalid' | 'pending' }
 
         // Settings schema: id -> { type, default }
         const SETTINGS_SCHEMA = {
@@ -422,7 +483,8 @@ export class SettingsPanel {
             worktreeDirectory: { type: 'text', default: '.worktrees' },
             coordinationScriptsPath: { type: 'text', default: '' },
             backlogPath: { type: 'text', default: '' },
-            terminalType: { type: 'select', default: 'bash' }
+            terminalType: { type: 'select', default: 'bash' },
+            uiScale: { type: 'select', default: 1.0 }
         };
 
         window.addEventListener('message', event => {
@@ -432,18 +494,33 @@ export class SettingsPanel {
                     loadSettings(message.settings);
                     break;
                 case 'directorySelected':
-                    addRepo(message.path);
+                    if (window.pendingRepoIndex !== undefined) {
+                        // Update existing repo at index
+                        repositoryPaths[window.pendingRepoIndex] = message.path;
+                        window.pendingRepoIndex = undefined;
+                    } else {
+                        // Add new repo
+                        if (!repositoryPaths.includes(message.path)) {
+                            repositoryPaths.push(message.path);
+                        }
+                    }
+                    validateRepo(repositoryPaths.indexOf(message.path), message.path);
                     break;
                 case 'pathSelected':
                     if (message.fieldId) {
                         document.getElementById(message.fieldId).value = message.path;
                     }
                     break;
+                case 'repoValidated':
+                    repoValidationState[message.path] = message.isValid ? 'valid' : 'invalid';
+                    renderRepoList();
+                    break;
             }
         });
 
         function loadSettings(settings) {
             repositoryPaths = settings.repositoryPaths || [];
+            repoValidationState = {}; // Reset validation state
             for (const [id, schema] of Object.entries(SETTINGS_SCHEMA)) {
                 const el = document.getElementById(id);
                 const value = settings[id] ?? schema.default;
@@ -454,6 +531,8 @@ export class SettingsPanel {
                 }
             }
             renderRepoList();
+            // Validate all repos after loading
+            validateAllRepos();
         }
 
         function renderRepoList() {
@@ -463,13 +542,39 @@ export class SettingsPanel {
                 return;
             }
 
-            container.innerHTML = repositoryPaths.map((path, index) => \`
-                <div class="repo-item">
-                    <input type="text" value="\${path}" onchange="updateRepo(\${index}, this.value)">
-                    <button class="btn btn-icon" onclick="browseForRepo(\${index})">...</button>
-                    <button class="btn btn-icon btn-danger" onclick="removeRepo(\${index})">×</button>
-                </div>
-            \`).join('');
+            container.innerHTML = repositoryPaths.map((path, index) => {
+                const state = repoValidationState[path] || '';
+                const stateClass = state ? state : '';
+                const statusIcon = state === 'valid' ? '✓' : state === 'invalid' ? '✗' : state === 'pending' ? '...' : '';
+                return \`
+                    <div class="repo-item \${stateClass}" data-index="\${index}">
+                        <span class="repo-status \${stateClass}">\${statusIcon}</span>
+                        <input type="text" value="\${path}"
+                            onchange="updateRepo(\${index}, this.value)"
+                            onblur="validateRepo(\${index}, this.value)">
+                        <button class="btn btn-icon" onclick="browseForRepo(\${index})">...</button>
+                        <button class="btn btn-icon btn-danger" onclick="removeRepo(\${index})">×</button>
+                    </div>
+                \`;
+            }).join('');
+        }
+
+        function validateRepo(index, path) {
+            if (!path || path.trim() === '') {
+                delete repoValidationState[path];
+                return;
+            }
+            repoValidationState[path] = 'pending';
+            renderRepoList();
+            vscode.postMessage({ command: 'validateRepo', path: path, index: index });
+        }
+
+        function validateAllRepos() {
+            repositoryPaths.forEach((path, index) => {
+                if (path && path.trim() !== '') {
+                    validateRepo(index, path);
+                }
+            });
         }
 
         function addRepo(path) {

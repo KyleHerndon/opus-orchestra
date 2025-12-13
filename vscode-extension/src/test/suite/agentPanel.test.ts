@@ -37,7 +37,7 @@ suite('AgentPanel HTML Test Suite', () => {
     test('Button actions should have matching data-action attributes in HTML', () => {
         const handledActions = [
             'focus', 'startClaude', 'sendKey', 'deleteAgent',
-            'viewDiff', 'createAgents', 'addAgent', 'refresh'
+            'viewDiff', 'createAgents', 'addAgentToRepo'
         ];
 
         for (const action of handledActions) {
