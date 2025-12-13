@@ -12,7 +12,8 @@ import { getLogger, isLoggerInitialized } from './Logger';
  * Event bus implementation
  */
 export class EventBus implements IEventBus {
-    private handlers: Map<EventType, Set<EventHandler<unknown>>> = new Map();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private handlers: Map<EventType, Set<EventHandler<any>>> = new Map();
 
     /**
      * Subscribe to an event

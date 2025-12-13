@@ -89,7 +89,7 @@ export class AgentPanel {
                 }
                 break;
             case 'sendMessage':
-                if (agentId !== undefined) {
+                if (agentId !== undefined && message.text) {
                     this._agentManager.sendToAgent(agentId, message.text);
                 }
                 break;
@@ -100,9 +100,11 @@ export class AgentPanel {
                 break;
             case 'createAgents': {
                 const repoPaths = this._agentManager.getRepositoryPaths();
-                const selectedRepo = repoPaths[message.repoIndex] || repoPaths[0];
-                const tier = message.isolationTier as IsolationTier || 'standard';
-                await this._agentManager.createAgents(message.count, selectedRepo, tier);
+                const repoIndex = message.repoIndex ?? 0;
+                const selectedRepo = repoPaths[repoIndex] || repoPaths[0];
+                const tier = (message.isolationTier as IsolationTier) || 'standard';
+                const count = message.count ?? 1;
+                await this._agentManager.createAgents(count, selectedRepo, tier);
                 break;
             }
             case 'changeIsolation':
