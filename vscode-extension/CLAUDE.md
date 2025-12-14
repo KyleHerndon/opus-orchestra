@@ -219,7 +219,7 @@ tail -f ~/.vscode-server/extensions/undefined_publisher.opus-orchestra-*/debug.l
 
 # For Windows VS Code:
 # Find the installed extension path first
-ls /mnt/c/Users/Kyle/.vscode/extensions/ | grep claude-agents
+ls /mnt/c/Users/Kyle/.vscode/extensions/ | grep opus-orchestra
 # Then view the log
 tail -f "/mnt/c/Users/Kyle/.vscode/extensions/undefined_publisher.opus-orchestra-X.Y.Z/debug.log"
 ```
