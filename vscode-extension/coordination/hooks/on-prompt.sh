@@ -15,7 +15,7 @@ if [[ -z "$SESSION_ID" ]]; then
 fi
 
 # Use CLAUDE_PROJECT_DIR which is set by Claude Code
-STATUS_DIR="$CLAUDE_PROJECT_DIR/.claude-agents/status"
+STATUS_DIR="$CLAUDE_PROJECT_DIR/.opus-orchestra/status"
 mkdir -p "$STATUS_DIR"
 
 # Write status file indicating this session is working

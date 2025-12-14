@@ -18,7 +18,7 @@ export class StatusService implements IStatusService {
      * Get the status directory path for a worktree
      */
     getStatusDirectory(worktreePath: string): string {
-        return agentPath(worktreePath).join('.claude-agents', 'status').forNodeFs();
+        return agentPath(worktreePath).join('.opus-orchestra', 'status').forNodeFs();
     }
 
     /**

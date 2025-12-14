@@ -10,7 +10,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { execSync } from 'child_process';
 
-const TEST_REPO_BASE = 'claude-agents-test-repo';
+const TEST_REPO_BASE = 'opus-orchestra-test-repo';
 
 // Track created repos for cleanup
 const createdRepos: string[] = [];

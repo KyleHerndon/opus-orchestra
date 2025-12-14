@@ -100,7 +100,7 @@ cleanup_test_repo() {
 # Run tests
 run_tests() {
     # Create test repo in WSL filesystem (native WSL path)
-    local test_repo="/tmp/claude-agents-ui-test-repo-$$"
+    local test_repo="/tmp/opus-orchestra-ui-test-repo-$$"
     local test_exit_code=0
 
     if is_wsl; then
@@ -148,15 +148,15 @@ EOF
 
         # Package our extension first
         echo "Packaging extension..."
-        win_npx vsce package --out .vscode-test/claude-agents.vsix
+        win_npx vsce package --out .vscode-test/opus-orchestra.vsix
 
         # Install Remote-WSL extension to the clean directory
         echo "Installing Remote-WSL extension to isolated directory..."
         win_npx extest install-from-marketplace ms-vscode-remote.remote-wsl --storage .vscode-test --extensions_dir "$win_ext_dir" 2>/dev/null || true
 
         # Install our extension to the isolated directory
-        echo "Installing claude-agents extension to isolated directory..."
-        win_npx extest install-vsix --vsix_file .vscode-test/claude-agents.vsix --storage .vscode-test --extensions_dir "$win_ext_dir"
+        echo "Installing opus-orchestra extension to isolated directory..."
+        win_npx extest install-vsix --vsix_file .vscode-test/opus-orchestra.vsix --storage .vscode-test --extensions_dir "$win_ext_dir"
 
         # Run tests with isolated extensions directory
         win_npx extest run-tests ./out/test/ui/*.test.js --mocha_config .mocharc.json --storage .vscode-test --extensions_dir "$win_ext_dir" -r "$win_workspace" || test_exit_code=$?

@@ -29,7 +29,7 @@ export class BacklogTreeProvider implements vscode.TreeDataProvider<BacklogItem>
             // Try to find backlog in workspace
             const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
             if (workspaceRoot) {
-                const defaultPath = path.join(workspaceRoot, '.claude-agents', 'backlog');
+                const defaultPath = path.join(workspaceRoot, '.opus-orchestra', 'backlog');
                 if (fs.existsSync(defaultPath)) {
                     this.backlogPath = defaultPath;
                 }

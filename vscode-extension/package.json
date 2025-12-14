@@ -1,5 +1,5 @@
 {
-  "name": "claude-agents",
+  "name": "opus-orchestra",
   "displayName": "Claude Agents",
   "description": "Manage multiple Claude Code agents in parallel with git worktrees",
   "version": "0.1.2",
@@ -114,14 +114,14 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "claude-agents",
+          "id": "opus-orchestra",
           "title": "Claude Agents",
           "icon": "$(hubot)"
         }
       ]
     },
     "views": {
-      "claude-agents": [
+      "opus-orchestra": [
         {
           "id": "agentList",
           "name": "Agents"
@@ -275,7 +275,7 @@
         "claudeAgents.backlogPath": {
           "type": "string",
           "default": "",
-          "description": "Path to the backlog directory. Will be symlinked into .claude-agents/backlog when initializing coordination."
+          "description": "Path to the backlog directory. Will be symlinked into .opus-orchestra/backlog when initializing coordination."
         },
         "claudeAgents.terminalType": {
           "type": "string",

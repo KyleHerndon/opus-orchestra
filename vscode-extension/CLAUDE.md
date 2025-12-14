@@ -25,8 +25,8 @@ import { agentPath } from './pathUtils';
 const p = agentPath(agent.worktreePath);
 
 // For Node.js fs operations (existsSync, readFileSync, etc.)
-const statusDir = p.join('.claude-agents', 'status').forNodeFs();
-//   → Returns: C:/Users/Kyle/project/.claude-agents/status
+const statusDir = p.join('.opus-orchestra', 'status').forNodeFs();
+//   → Returns: C:/Users/Kyle/project/.opus-orchestra/status
 
 // For terminal commands (sent to WSL/Git Bash/PowerShell)
 const termPath = p.forTerminal();
@@ -102,9 +102,9 @@ path.join('/mnt/c/Users/Kyle', 'subdir')
 // Returns: \mnt\c\Users\Kyle\subdir (BROKEN!)
 
 // CORRECT - Use template strings or AgentPath
-`${worktreePath}/.claude-agents/status`
+`${worktreePath}/.opus-orchestra/status`
 // OR
-agentPath(worktreePath).join('.claude-agents', 'status').forNodeFs()
+agentPath(worktreePath).join('.opus-orchestra', 'status').forNodeFs()
 ```
 
 **BUG 2: Using WSL paths with Windows Node.js fs module**
@@ -122,10 +122,10 @@ const exists = fs.existsSync(agentPath('/mnt/c/Users/Kyle/file').forNodeFs());
 ```typescript
 // WRONG - toWindowsPath returns C:\..., then joining creates mixed paths
 const windowsPath = this.toWindowsPath(agent.worktreePath);  // C:\Users\Kyle
-const statusDir = `${windowsPath}/.claude-agents/status`;    // C:\Users\Kyle/.claude-agents/status (BROKEN!)
+const statusDir = `${windowsPath}/.opus-orchestra/status`;    // C:\Users\Kyle/.opus-orchestra/status (BROKEN!)
 
 // CORRECT - Use AgentPath consistently
-const statusDir = agentPath(agent.worktreePath).join('.claude-agents', 'status').forNodeFs();
+const statusDir = agentPath(agent.worktreePath).join('.opus-orchestra', 'status').forNodeFs();
 ```
 
 ### Helper Methods in AgentManager
@@ -143,7 +143,7 @@ toWindowsPath(inputPath)   → agentPath(inputPath).forNodeFs()
 ### How Status Tracking Works
 
 1. Hooks in `.claude/settings.json` fire on Claude events (Stop, PermissionRequest, etc.)
-2. Hook scripts write status to `.claude-agents/status/{session_id}`
+2. Hook scripts write status to `.opus-orchestra/status/{session_id}`
 3. Extension polls status directory, reads most recent file by mtime
 4. Dashboard updates to show agent status
 
@@ -215,13 +215,13 @@ logger?.debug(`variable=${value}`);
 The log file is written to `debug.log` in the **installed extension directory**:
 ```bash
 # For WSL VS Code (Remote - WSL):
-tail -f ~/.vscode-server/extensions/undefined_publisher.claude-agents-*/debug.log
+tail -f ~/.vscode-server/extensions/undefined_publisher.opus-orchestra-*/debug.log
 
 # For Windows VS Code:
 # Find the installed extension path first
-ls /mnt/c/Users/Kyle/.vscode/extensions/ | grep claude-agents
+ls /mnt/c/Users/Kyle/.vscode/extensions/ | grep opus-orchestra
 # Then view the log
-tail -f "/mnt/c/Users/Kyle/.vscode/extensions/undefined_publisher.claude-agents-X.Y.Z/debug.log"
+tail -f "/mnt/c/Users/Kyle/.vscode/extensions/undefined_publisher.opus-orchestra-X.Y.Z/debug.log"
 ```
 
 Remember to remove debug logging before committing.
