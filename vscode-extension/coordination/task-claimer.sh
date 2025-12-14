@@ -11,17 +11,17 @@
 
 set -euo pipefail
 
-# Find the .claude-agents directory (search up from current dir)
+# Find the .opus-orchestra directory (search up from current dir)
 find_agents_dir() {
     local dir="$PWD"
     while [[ "$dir" != "/" ]]; do
-        if [[ -d "$dir/.claude-agents" ]]; then
-            echo "$dir/.claude-agents"
+        if [[ -d "$dir/.opus-orchestra" ]]; then
+            echo "$dir/.opus-orchestra"
             return 0
         fi
         dir="$(dirname "$dir")"
     done
-    echo "Error: .claude-agents directory not found" >&2
+    echo "Error: .opus-orchestra directory not found" >&2
     return 1
 }
 

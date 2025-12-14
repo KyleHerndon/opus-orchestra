@@ -275,7 +275,7 @@
         "claudeAgents.backlogPath": {
           "type": "string",
           "default": "",
-          "description": "Path to the backlog directory. Will be symlinked into .claude-agents/backlog when initializing coordination."
+          "description": "Path to the backlog directory. Will be symlinked into .opus-orchestra/backlog when initializing coordination."
         },
         "claudeAgents.terminalType": {
           "type": "string",

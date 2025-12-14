@@ -202,7 +202,7 @@ export class WorktreeManager {
 
             // Create directories
             const worktreeCommandsDir = worktreePath.join('.claude', 'commands').forNodeFs();
-            const worktreeAgentsDir = worktreePath.join('.claude-agents').forNodeFs();
+            const worktreeAgentsDir = worktreePath.join('.opus-orchestra').forNodeFs();
             fs.mkdirSync(worktreeCommandsDir, { recursive: true });
             fs.mkdirSync(worktreeAgentsDir, { recursive: true });
 
@@ -263,8 +263,8 @@ export class WorktreeManager {
             // Create status directory
             fs.mkdirSync(`${worktreeAgentsDir}/status`, { recursive: true });
 
-            // Copy from repo's .claude-agents if exists (overrides bundled)
-            const repoAgentsDir = repoPath.join('.claude-agents').forNodeFs();
+            // Copy from repo's .opus-orchestra if exists (overrides bundled)
+            const repoAgentsDir = repoPath.join('.opus-orchestra').forNodeFs();
             if (fs.existsSync(repoAgentsDir)) {
                 const repoClaimerSrc = `${repoAgentsDir}/task-claimer.sh`;
                 if (fs.existsSync(repoClaimerSrc)) {

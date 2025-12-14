@@ -11,6 +11,6 @@ if [[ -z "$SESSION_ID" ]]; then
     exit 0
 fi
 
-STATUS_DIR="$CLAUDE_PROJECT_DIR/.claude-agents/status"
+STATUS_DIR="$CLAUDE_PROJECT_DIR/.opus-orchestra/status"
 mkdir -p "$STATUS_DIR"
 echo "$INPUT" > "$STATUS_DIR/$SESSION_ID"

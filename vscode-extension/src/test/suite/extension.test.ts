@@ -5,11 +5,11 @@ suite('Extension Test Suite', () => {
     vscode.window.showInformationMessage('Start all tests.');
 
     test('Extension should be present', () => {
-        assert.ok(vscode.extensions.getExtension('your-publisher-id.claude-agents'));
+        assert.ok(vscode.extensions.getExtension('your-publisher-id.opus-orchestra'));
     });
 
     test('Extension should activate', async () => {
-        const ext = vscode.extensions.getExtension('your-publisher-id.claude-agents');
+        const ext = vscode.extensions.getExtension('your-publisher-id.opus-orchestra');
         assert.ok(ext);
         await ext!.activate();
         assert.ok(ext!.isActive);

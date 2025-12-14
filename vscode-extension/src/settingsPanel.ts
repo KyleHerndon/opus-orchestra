@@ -443,7 +443,7 @@ export class SettingsPanel {
         </div>
         <div class="setting-item">
             <label class="setting-label">Backlog Path</label>
-            <div class="setting-description">Path to your task backlog directory. Will be symlinked into .claude-agents/backlog when initializing.</div>
+            <div class="setting-description">Path to your task backlog directory. Will be symlinked into .opus-orchestra/backlog when initializing.</div>
             <div class="path-input-row">
                 <input type="text" id="backlogPath" placeholder="e.g., /path/to/BACKLOG">
                 <button class="btn btn-secondary" onclick="browseForPath('backlogPath')">Browse...</button>

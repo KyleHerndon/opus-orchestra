@@ -188,7 +188,7 @@ export function activate(context: vscode.ExtensionContext) {
 
             const tasks = agentManager.getAvailableTasks(targetRepo);
             if (tasks.length === 0) {
-                vscode.window.showWarningMessage('No available tasks in backlog. Add task files to .claude-agents/backlog/');
+                vscode.window.showWarningMessage('No available tasks in backlog. Add task files to .opus-orchestra/backlog/');
                 return;
             }
 

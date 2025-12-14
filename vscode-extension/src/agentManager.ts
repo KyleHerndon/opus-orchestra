@@ -741,7 +741,7 @@ export class AgentManager {
 
     getAvailableTasks(repoPath: string): string[] {
         const terminalPath = this.toTerminalPath(repoPath);
-        const backlogPath = `${terminalPath}/.claude-agents/backlog`.replace(/\\/g, '/');
+        const backlogPath = `${terminalPath}/.opus-orchestra/backlog`.replace(/\\/g, '/');
 
         try {
             const fsPath = agentPath(backlogPath).forNodeFs();
@@ -805,7 +805,7 @@ export class AgentManager {
                 branch: branchName,
                 worktreePath,
                 repoPath: targetRepo,
-                taskFile: `${repoTerminalPath}/.claude-agents/backlog/${taskName}.md`.replace(/\\/g, '/'),
+                taskFile: `${repoTerminalPath}/.opus-orchestra/backlog/${taskName}.md`.replace(/\\/g, '/'),
                 terminal: null,
                 status: 'idle',
                 statusIcon: 'circle-outline',
@@ -830,7 +830,7 @@ export class AgentManager {
 
     async initializeCoordination(repoPath: string, backlogPath?: string): Promise<{ success: boolean; message: string }> {
         const windowsRepoPath = this.toWindowsPath(repoPath);
-        const agentsDir = path.join(windowsRepoPath, '.claude-agents');
+        const agentsDir = path.join(windowsRepoPath, '.opus-orchestra');
         const claudeCommandsDir = path.join(windowsRepoPath, '.claude', 'commands');
         const claudeSkillsDir = path.join(windowsRepoPath, '.claude', 'skills');
 
@@ -896,9 +896,9 @@ export class AgentManager {
             }
 
             const ignoreEntries = [
-                '.claude-agents/completed/',
-                '.claude-agents/claims.jsonl',
-                '.claude-agents/.claims.lock'
+                '.opus-orchestra/completed/',
+                '.opus-orchestra/claims.jsonl',
+                '.opus-orchestra/.claims.lock'
             ];
 
             for (const entry of ignoreEntries) {
@@ -920,7 +920,7 @@ export class AgentManager {
 
         for (const rp of repoPaths) {
             const terminalPath = this.toTerminalPath(rp);
-            const completedDir = `${terminalPath}/.claude-agents/completed`.replace(/\\/g, '/');
+            const completedDir = `${terminalPath}/.opus-orchestra/completed`.replace(/\\/g, '/');
 
             try {
                 if (fs.existsSync(completedDir)) {
