@@ -1,9 +1,16 @@
 import * as vscode from 'vscode';
 import { AgentManager, Agent, IsolationTier } from './agentManager';
 import { formatTimeSince } from './types';
-import { getTodoService, TodoItem, getEventBus } from './services';
+import { getTodoService, TodoItem, getEventBus, getPersistenceService } from './services';
 
-interface WebviewMessage {
+// ============================================================================
+// Message Types
+// ============================================================================
+
+/**
+ * Messages sent FROM the webview TO the extension (user actions)
+ */
+interface WebviewIncomingMessage {
     command: string;
     agentId?: number;
     key?: string;
@@ -14,8 +21,49 @@ interface WebviewMessage {
     tier?: string;
     newName?: string;
     scale?: number;
+    // For drag/drop reordering
+    sourceAgentId?: number;
+    targetAgentId?: number;
+    repoPath?: string;
+    dropPosition?: 'before' | 'after';
 }
 
+/**
+ * Messages sent FROM the extension TO the webview (UI updates)
+ *
+ * Update Strategy (all incremental, no full re-renders):
+ * - 'updateAgents': Update status/stats in place
+ * - 'swapCards': Swap two card positions (drag/drop reorder)
+ * - 'addCard': Insert new agent card into DOM
+ * - 'removeCard': Remove agent card from DOM
+ */
+type WebviewOutgoingMessage =
+    | { command: 'updateAgents'; agents: AgentStatusUpdate[]; stats: DashboardStats }
+    | { command: 'swapCards'; sourceAgentId: number; targetAgentId: number }
+    | { command: 'addCard'; agentId: number; repoPath: string; cardHtml: string }
+    | { command: 'removeCard'; agentId: number };
+
+/** Status data for incremental agent updates */
+interface AgentStatusUpdate {
+    id: number;
+    status: string;
+    statusClass: string;
+    timeSince: string;
+    insertions: number;
+    deletions: number;
+}
+
+/** Aggregate stats for the dashboard header */
+interface DashboardStats {
+    total: number;
+    working: number;
+    waiting: number;
+    containerized: number;
+    insertions: number;
+    deletions: number;
+}
+
+/** Active operation state for loading indicators */
 interface ActiveOperation {
     operationId: string;
     type: string;
@@ -37,6 +85,7 @@ export class AgentPanel {
     private readonly _operationProgressHandler = (payload: { operationId: string; type: string; current: number; total: number; message: string }) => this._handleOperationProgress(payload);
     private readonly _operationCompletedHandler = () => this._handleOperationCompleted();
     private _activeOperation: ActiveOperation | null = null;
+    private _lastAgentIds: Set<number> = new Set();
 
     private constructor(panel: vscode.WebviewPanel, agentManager: AgentManager) {
         this._panel = panel;
@@ -45,7 +94,8 @@ export class AgentPanel {
         // Fetch available tiers immediately
         this._fetchAvailableTiers();
 
-        this._update();
+        // Initial full render (only time we do full render)
+        this._fullRender(this._agentManager.getAgents());
 
         // Subscribe to EventBus for reactive updates
         const eventBus = getEventBus();
@@ -68,10 +118,22 @@ export class AgentPanel {
         this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
 
         this._panel.webview.onDidReceiveMessage(
-            message => this._handleMessage(message),
+            (message: WebviewIncomingMessage) => this._handleMessage(message),
             null,
             this._disposables
         );
+    }
+
+    // ========================================================================
+    // Webview Communication
+    // ========================================================================
+
+    /**
+     * Send a message to the webview for incremental UI updates.
+     * Prefer this over full HTML re-renders when possible.
+     */
+    private _postMessage(message: WebviewOutgoingMessage): void {
+        this._panel.webview.postMessage(message);
     }
 
     public static show(agentManager: AgentManager) {
@@ -97,7 +159,8 @@ export class AgentPanel {
         AgentPanel.currentPanel = new AgentPanel(panel, agentManager);
     }
 
-    private async _handleMessage(message: WebviewMessage) {
+    /** Handle incoming messages from the webview (user actions) */
+    private async _handleMessage(message: WebviewIncomingMessage): Promise<void> {
         const agentId = message.agentId !== undefined ? Number(message.agentId) : undefined;
 
         switch (message.command) {
@@ -183,6 +246,24 @@ export class AgentPanel {
                     await config.update('uiScale', message.scale, vscode.ConfigurationTarget.Global);
                 }
                 break;
+            case 'reorderAgents':
+                if (message.sourceAgentId !== undefined &&
+                    message.targetAgentId !== undefined &&
+                    message.repoPath) {
+                    await this._handleReorder(
+                        message.sourceAgentId,
+                        message.targetAgentId,
+                        message.repoPath
+                    );
+                    // Send swap command to webview to reorder DOM elements
+                    this._postMessage({
+                        command: 'swapCards',
+                        sourceAgentId: message.sourceAgentId,
+                        targetAgentId: message.targetAgentId
+                    });
+                    return;
+                }
+                break;
         }
         this._update();
     }
@@ -241,11 +322,150 @@ export class AgentPanel {
         this._update();
     }
 
-    private _update() {
+    private async _handleReorder(
+        sourceAgentId: number,
+        targetAgentId: number,
+        repoPath: string
+    ): Promise<void> {
+        const persistenceService = getPersistenceService();
+        const agents = this._agentManager.getAgents()
+            .filter(a => a.repoPath === repoPath);
+
+        if (agents.length < 2) {
+            return; // Nothing to reorder
+        }
+
+        // Get current order map
+        const orderMap = persistenceService.getAgentOrder(repoPath);
+
+        // Ensure ALL agents have an order entry (fill in missing ones)
+        const sortedAgents = [...agents].sort((a, b) => a.id - b.id);
+        let maxOrder = -1;
+        for (const id in orderMap) {
+            if (orderMap[id] > maxOrder) {
+                maxOrder = orderMap[id];
+            }
+        }
+        for (const agent of sortedAgents) {
+            if (orderMap[agent.id] === undefined) {
+                maxOrder++;
+                orderMap[agent.id] = maxOrder;
+            }
+        }
+
+        // Swap the order values of source and target
+        const sourceOrder = orderMap[sourceAgentId];
+        const targetOrder = orderMap[targetAgentId];
+        orderMap[sourceAgentId] = targetOrder;
+        orderMap[targetAgentId] = sourceOrder;
+
+        persistenceService.saveAgentOrder(repoPath, orderMap);
+    }
+
+    // ========================================================================
+    // UI Update Methods
+    // ========================================================================
+
+    /**
+     * Main update entry point. Always uses incremental updates to avoid
+     * interrupting user interactions.
+     *
+     * Update strategy:
+     * - Agent added: Insert card via addCard message
+     * - Agent removed: Remove card via removeCard message
+     * - Status/stats change: Update in place via updateAgents message
+     * - Order change: Handled separately via swapCards message
+     */
+    private _update(): void {
         const agents = this._agentManager.getAgents();
-        // Fetch container stats in background (non-blocking)
+        const currentIds = new Set(agents.map(a => a.id));
+
+        // Find added and removed agents
+        const addedIds = [...currentIds].filter(id => !this._lastAgentIds.has(id));
+        const removedIds = [...this._lastAgentIds].filter(id => !currentIds.has(id));
+
+        // Handle removals first
+        for (const id of removedIds) {
+            this._postMessage({ command: 'removeCard', agentId: id });
+        }
+
+        // Handle additions
+        for (const id of addedIds) {
+            const agent = agents.find(a => a.id === id);
+            if (agent) {
+                this._postMessage({
+                    command: 'addCard',
+                    agentId: id,
+                    repoPath: agent.repoPath,
+                    cardHtml: this._getAgentCard(agent)
+                });
+            }
+        }
+
+        // Update tracked IDs
+        this._lastAgentIds = currentIds;
+
+        // Always send status/stats update
+        this._sendIncrementalUpdate(agents);
+
+        // Fetch container stats for new agents
+        if (addedIds.length > 0) {
+            this._fetchContainerStats(agents);
+        }
+    }
+
+    /**
+     * Full HTML re-render. Only used for initial render when panel opens.
+     */
+    private _fullRender(agents: Agent[]): void {
+        this._lastAgentIds = new Set(agents.map(a => a.id));
         this._fetchContainerStats(agents);
         this._panel.webview.html = this._getHtml(agents);
+    }
+
+    /**
+     * Incremental update via postMessage. Updates status/stats in place without
+     * regenerating HTML. Much faster than full re-render.
+     */
+    private _sendIncrementalUpdate(agents: Agent[]): void {
+        const agentData = agents.map(agent => {
+            const isWaiting = agent.status === 'waiting-input' || agent.status === 'waiting-approval';
+            const statusClass = agent.status === 'working' ? 'status-working'
+                : isWaiting ? 'status-waiting'
+                : agent.status === 'stopped' ? 'status-stopped'
+                : agent.status === 'error' ? 'status-error'
+                : 'status-idle';
+
+            return {
+                id: agent.id,
+                status: agent.status,
+                statusClass,
+                timeSince: formatTimeSince(agent.lastInteractionTime, true),
+                insertions: agent.diffStats.insertions,
+                deletions: agent.diffStats.deletions,
+            };
+        });
+
+        const totalInsertions = agents.reduce((sum, a) => sum + a.diffStats.insertions, 0);
+        const totalDeletions = agents.reduce((sum, a) => sum + a.diffStats.deletions, 0);
+        const waitingCount = agents.filter(a =>
+            a.status === 'waiting-input' || a.status === 'waiting-approval'
+        ).length;
+        const workingCount = agents.filter(a => a.status === 'working').length;
+        const containerizedCount = agents.filter(a => a.isolationTier && a.isolationTier !== 'standard').length;
+
+        this._postMessage({
+            command: 'updateAgents',
+            agents: agentData,
+            stats: {
+                total: agents.length,
+                working: workingCount,
+                waiting: waitingCount,
+                containerized: containerizedCount,
+                insertions: totalInsertions,
+                deletions: totalDeletions,
+            }
+        });
     }
 
     private _getHtml(agents: Agent[]): string {
@@ -770,6 +990,25 @@ export class AgentPanel {
             min-width: calc(40px * var(--ui-scale));
             text-align: right;
         }
+        /* Drag and drop styles */
+        .agent-card[draggable="true"] {
+            cursor: grab;
+            transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
+        }
+        .agent-card[draggable="true"]:active {
+            cursor: grabbing;
+        }
+        .agent-card.dragging {
+            opacity: 0.5;
+            transform: scale(1.02);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+        .agent-card.drag-over-left {
+            border-left: 3px solid var(--vscode-textLink-foreground);
+        }
+        .agent-card.drag-over-right {
+            border-right: 3px solid var(--vscode-textLink-foreground);
+        }
     </style>
 </head>
 <body>
@@ -788,6 +1027,114 @@ export class AgentPanel {
 
             // Acquire VS Code API once
             const vscode = acquireVsCodeApi();
+
+            // Listen for incremental updates from extension
+            window.addEventListener('message', function(event) {
+                const message = event.data;
+                if (message.command === 'swapCards') {
+                    // Swap two cards in the DOM
+                    const sourceCard = document.querySelector('.agent-card[data-agent-id="' + message.sourceAgentId + '"]');
+                    const targetCard = document.querySelector('.agent-card[data-agent-id="' + message.targetAgentId + '"]');
+                    if (sourceCard && targetCard && sourceCard.parentNode === targetCard.parentNode) {
+                        const parent = sourceCard.parentNode;
+                        const sourceNext = sourceCard.nextSibling;
+                        const targetNext = targetCard.nextSibling;
+
+                        // Swap positions
+                        if (sourceNext === targetCard) {
+                            parent.insertBefore(targetCard, sourceCard);
+                        } else if (targetNext === sourceCard) {
+                            parent.insertBefore(sourceCard, targetCard);
+                        } else {
+                            parent.insertBefore(sourceCard, targetNext);
+                            parent.insertBefore(targetCard, sourceNext);
+                        }
+                    }
+                    return;
+                }
+                if (message.command === 'addCard') {
+                    // Find the grid for this repo
+                    const grids = document.querySelectorAll('.agents-grid');
+                    for (const grid of grids) {
+                        const repoSection = grid.closest('.repo-section');
+                        if (repoSection) {
+                            const repoPath = repoSection.querySelector('.repo-path');
+                            if (repoPath && repoPath.textContent === message.repoPath) {
+                                // Remove "no agents" placeholder if present
+                                const placeholder = grid.querySelector('div[style*="color: var(--vscode-descriptionForeground)"]');
+                                if (placeholder) {
+                                    placeholder.remove();
+                                }
+                                // Insert new card at the end
+                                grid.insertAdjacentHTML('beforeend', message.cardHtml);
+                                return;
+                            }
+                        }
+                    }
+                    return;
+                }
+                if (message.command === 'removeCard') {
+                    const card = document.querySelector('.agent-card[data-agent-id="' + message.agentId + '"]');
+                    if (card) {
+                        card.remove();
+                    }
+                    return;
+                }
+                if (message.command === 'updateAgents') {
+                    // Update each agent's status and stats in place
+                    for (const agent of message.agents) {
+                        const card = document.querySelector('.agent-card[data-agent-id="' + agent.id + '"]');
+                        if (!card) continue;
+
+                        // Update status
+                        const statusEl = card.querySelector('.agent-status');
+                        if (statusEl) {
+                            statusEl.textContent = agent.status;
+                            statusEl.className = 'agent-status ' + agent.statusClass;
+                        }
+
+                        // Update time since
+                        const timeEl = card.querySelector('.stat-value');
+                        if (timeEl) {
+                            timeEl.textContent = agent.timeSince;
+                        }
+
+                        // Update working/waiting label
+                        const labelEl = card.querySelector('.stat-label');
+                        if (labelEl) {
+                            labelEl.textContent = agent.status === 'working' ? 'Working' : 'Waiting';
+                        }
+
+                        // Update diff stats
+                        const diffAdd = card.querySelector('.diff-add');
+                        const diffDel = card.querySelector('.diff-del');
+                        if (diffAdd) diffAdd.textContent = '+' + agent.insertions;
+                        if (diffDel) diffDel.textContent = '-' + agent.deletions;
+
+                        // Update waiting class on card
+                        const isWaiting = agent.status === 'waiting-input' || agent.status === 'waiting-approval';
+                        card.classList.toggle('waiting', isWaiting);
+                    }
+
+                    // Update stats bar
+                    if (message.stats) {
+                        const statValues = document.querySelectorAll('.stats-bar .stat-value');
+                        if (statValues.length >= 5) {
+                            statValues[0].textContent = message.stats.total;
+                            statValues[1].textContent = message.stats.working;
+                            statValues[2].textContent = message.stats.waiting;
+                            statValues[3].textContent = message.stats.containerized;
+                        }
+                        const diffStats = document.querySelector('.stats-bar .diff-stats');
+                        if (diffStats) {
+                            const add = diffStats.querySelector('.diff-add');
+                            const del = diffStats.querySelector('.diff-del');
+                            if (add) add.textContent = '+' + message.stats.insertions;
+                            if (del) del.textContent = '-' + message.stats.deletions;
+                        }
+                    }
+                }
+            });
 
             // Use event delegation for all button clicks
             document.addEventListener('click', function(e) {
@@ -877,6 +1224,112 @@ export class AgentPanel {
                     handleRename(e.target);
                 }
             }, true);
+
+            // Drag and drop for agent reordering
+            let draggedAgentId = null;
+            let draggedRepoPath = null;
+
+            document.addEventListener('dragstart', function(e) {
+                // Don't allow drag from interactive elements
+                const interactive = e.target.closest('button, input, select, a, .btn, .btn-icon');
+                if (interactive) {
+                    e.preventDefault();
+                    return;
+                }
+
+                const card = e.target.closest('.agent-card');
+                if (!card) return;
+
+                draggedAgentId = parseInt(card.getAttribute('data-agent-id'), 10);
+                draggedRepoPath = card.getAttribute('data-repo-path');
+
+                card.classList.add('dragging');
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', String(draggedAgentId));
+            });
+
+            document.addEventListener('dragend', function(e) {
+                // Clean up ALL dragging classes on all cards
+                document.querySelectorAll('.agent-card.dragging').forEach(function(el) {
+                    el.classList.remove('dragging');
+                });
+                // Clean up all drag-over classes
+                document.querySelectorAll('.drag-over-left, .drag-over-right').forEach(function(el) {
+                    el.classList.remove('drag-over-left', 'drag-over-right');
+                });
+                draggedAgentId = null;
+                draggedRepoPath = null;
+            });
+
+            document.addEventListener('dragover', function(e) {
+                const card = e.target.closest('.agent-card');
+                if (!card) return;
+
+                const targetRepoPath = card.getAttribute('data-repo-path');
+                // Only allow reordering within same repo
+                if (targetRepoPath !== draggedRepoPath) return;
+
+                const targetAgentId = parseInt(card.getAttribute('data-agent-id'), 10);
+                // Don't show indicator on self
+                if (targetAgentId === draggedAgentId) return;
+
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+
+                // Remove previous indicators
+                document.querySelectorAll('.drag-over-left, .drag-over-right').forEach(function(el) {
+                    el.classList.remove('drag-over-left', 'drag-over-right');
+                });
+
+                // Show drop indicator based on cursor position (horizontal for grid)
+                const rect = card.getBoundingClientRect();
+                const midpoint = rect.left + rect.width / 2;
+                if (e.clientX < midpoint) {
+                    card.classList.add('drag-over-left');
+                } else {
+                    card.classList.add('drag-over-right');
+                }
+            });
+
+            document.addEventListener('dragleave', function(e) {
+                const card = e.target.closest('.agent-card');
+                if (card && !card.contains(e.relatedTarget)) {
+                    card.classList.remove('drag-over-left', 'drag-over-right');
+                }
+            });
+
+            document.addEventListener('drop', function(e) {
+                e.preventDefault();
+
+                const card = e.target.closest('.agent-card');
+                if (!card) return;
+
+                const targetAgentId = parseInt(card.getAttribute('data-agent-id'), 10);
+                const targetRepoPath = card.getAttribute('data-repo-path');
+
+                // Only reorder within same repo
+                if (targetRepoPath !== draggedRepoPath) return;
+
+                // Don't do anything if dropped on self
+                if (targetAgentId === draggedAgentId) return;
+
+                // Determine if dropping before or after target (use X for grid layout)
+                const rect = card.getBoundingClientRect();
+                const dropPosition = e.clientX < (rect.left + rect.width / 2) ? 'before' : 'after';
+
+                vscode.postMessage({
+                    command: 'reorderAgents',
+                    sourceAgentId: draggedAgentId,
+                    targetAgentId: targetAgentId,
+                    repoPath: targetRepoPath,
+                    dropPosition: dropPosition
+                });
+
+                // Clean up
+                document.querySelectorAll('.drag-over-top, .drag-over-bottom').forEach(function(el) {
+                    el.classList.remove('drag-over-top', 'drag-over-bottom');
+                });
+            });
         })();
     </script>
 </body>
@@ -931,7 +1384,9 @@ export class AgentPanel {
     }
 
     private _groupAgentsByRepo(agents: Agent[]): Map<string, Agent[]> {
+        const persistenceService = getPersistenceService();
         const grouped = new Map<string, Agent[]>();
+
         for (const agent of agents) {
             const repoPath = agent.repoPath || 'Unknown';
             if (!grouped.has(repoPath)) {
@@ -939,6 +1394,21 @@ export class AgentPanel {
             }
             grouped.get(repoPath)!.push(agent);
         }
+
+        // Sort each group by saved order
+        for (const [repoPath, repoAgents] of grouped) {
+            const orderMap = persistenceService.getAgentOrder(repoPath);
+            repoAgents.sort((a, b) => {
+                const orderA = orderMap[a.id] ?? Number.MAX_SAFE_INTEGER;
+                const orderB = orderMap[b.id] ?? Number.MAX_SAFE_INTEGER;
+                // If both have no order, sort by ID (creation order)
+                if (orderA === Number.MAX_SAFE_INTEGER && orderB === Number.MAX_SAFE_INTEGER) {
+                    return a.id - b.id;
+                }
+                return orderA - orderB;
+            });
+        }
+
         return grouped;
     }
 
@@ -1172,7 +1642,10 @@ export class AgentPanel {
         const showAllOptions = config.get<boolean>('showAllPermissionOptions', false);
 
         return `
-            <div class="agent-card ${isWaiting ? 'waiting' : ''} ${isContainerized ? 'containerized ' + tierClass : ''}">
+            <div class="agent-card ${isWaiting ? 'waiting' : ''} ${isContainerized ? 'containerized ' + tierClass : ''}"
+                 draggable="true"
+                 data-agent-id="${agent.id}"
+                 data-repo-path="${this._escapeHtml(agent.repoPath)}">
                 <div class="agent-header">
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <input type="text" class="agent-title-input" value="${displayName}" data-agent-id="${agent.id}" data-original="${displayName}" title="Click to rename">

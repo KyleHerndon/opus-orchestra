@@ -15,6 +15,8 @@ export {
     AGENT_NAMES,
     STATUS_ICONS,
     AGENTS_STORAGE_KEY,
+    AgentOrderMap,
+    AGENT_ORDER_STORAGE_KEY,
 } from './agent';
 
 // Container types

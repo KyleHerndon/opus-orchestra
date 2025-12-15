@@ -12,6 +12,8 @@ import {
     ContainerInfo,
     PersistedContainerInfo,
     CONTAINERS_STORAGE_KEY,
+    AgentOrderMap,
+    AGENT_ORDER_STORAGE_KEY,
 } from '../types';
 import { getLogger, isLoggerInitialized } from './Logger';
 
@@ -196,6 +198,79 @@ export class PersistenceService {
     clearContainers(): void {
         if (this.context) {
             this.context.workspaceState.update(CONTAINERS_STORAGE_KEY, []);
+        }
+    }
+
+    // ========================================================================
+    // Agent Order Persistence
+    // ========================================================================
+
+    /**
+     * Get the storage key for agent order preferences
+     */
+    private getOrderStorageKey(): string {
+        return AGENT_ORDER_STORAGE_KEY(this.workspaceRoot);
+    }
+
+    /**
+     * Save agent order for a repository
+     */
+    saveAgentOrder(repoPath: string, orderMap: AgentOrderMap): void {
+        if (!this.context) {
+            return;
+        }
+
+        const allOrders = this.loadAllAgentOrders();
+        allOrders[repoPath] = orderMap;
+        this.context.workspaceState.update(this.getOrderStorageKey(), allOrders);
+    }
+
+    /**
+     * Load all agent orders (keyed by repository path)
+     */
+    loadAllAgentOrders(): Record<string, AgentOrderMap> {
+        if (!this.context) {
+            return {};
+        }
+
+        return this.context.workspaceState.get<Record<string, AgentOrderMap>>(
+            this.getOrderStorageKey(),
+            {}
+        );
+    }
+
+    /**
+     * Get agent order for a specific repository
+     */
+    getAgentOrder(repoPath: string): AgentOrderMap {
+        const allOrders = this.loadAllAgentOrders();
+        return allOrders[repoPath] || {};
+    }
+
+    /**
+     * Remove an agent from the order map (call when agent is deleted)
+     */
+    removeAgentFromOrder(agentId: number, repoPath: string): void {
+        if (!this.context) {
+            return;
+        }
+
+        const allOrders = this.loadAllAgentOrders();
+        const repoOrder = allOrders[repoPath];
+
+        if (repoOrder && repoOrder[agentId] !== undefined) {
+            delete repoOrder[agentId];
+
+            // Reindex remaining agents to keep sequential order
+            const sortedAgents = Object.entries(repoOrder)
+                .sort(([, a], [, b]) => a - b)
+                .map(([id]) => parseInt(id, 10));
+
+            allOrders[repoPath] = Object.fromEntries(
+                sortedAgents.map((id, index) => [id, index])
+            );
+
+            this.context.workspaceState.update(this.getOrderStorageKey(), allOrders);
         }
     }
 
