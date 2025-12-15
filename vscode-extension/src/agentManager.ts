@@ -668,7 +668,7 @@ export class AgentManager {
             );
             const baseRef = baseCommit.trim();
 
-            // Build the resource list for vscode.changes command
+            // Build the resource list for multi-diff editor
             const resources: Array<{ original: vscode.Uri; modified: vscode.Uri }> = [];
 
             for (const line of lines) {
@@ -682,31 +682,24 @@ export class AgentManager {
                 const fullPath = path.join(windowsWorktreePath, filePath);
                 const modifiedUri = vscode.Uri.file(fullPath);
 
-                // Construct git URI for the base version
-                // Format: git:/path/to/file?{ref}&path
-                const gitQuery = JSON.stringify({
-                    path: filePath,
-                    ref: baseRef
-                });
-                const originalUri = vscode.Uri.from({
-                    scheme: 'git',
-                    path: fullPath,
-                    query: gitQuery
-                });
-
                 // Skip deleted files (D status) - they don't have a modified version
                 if (status === 'D') {
                     continue;
                 }
 
-                // For added files (A status), the original doesn't exist in base
-                // Use an empty URI scheme to indicate no original
+                // For added files (A status), use empty URI as original (untitled scheme)
                 if (status === 'A') {
                     resources.push({
-                        original: vscode.Uri.from({ scheme: 'untitled', path: '' }),
+                        original: vscode.Uri.from({ scheme: 'untitled', path: filePath }),
                         modified: modifiedUri
                     });
                 } else {
+                    // Construct git URI using VS Code's expected format:
+                    // Start with file URI, then change scheme to 'git' and add query with ref
+                    const originalUri = vscode.Uri.file(fullPath).with({
+                        scheme: 'git',
+                        query: JSON.stringify({ path: fullPath, ref: baseRef })
+                    });
                     resources.push({
                         original: originalUri,
                         modified: modifiedUri
@@ -719,12 +712,20 @@ export class AgentManager {
                 return;
             }
 
-            // Try to open multi-diff view with vscode.changes command
+            // Try to open multi-diff view
             try {
+                // Use the internal multi-diff editor command
+                // Include timestamp in URI to prevent VS Code from reusing a stale cached tab
                 await vscode.commands.executeCommand(
-                    'vscode.changes',
-                    `Changes: ${agent.name} (${resources.length} files)`,
-                    resources
+                    '_workbench.openMultiDiffEditor',
+                    {
+                        multiDiffSourceUri: vscode.Uri.parse(`multi-diff:${agent.name}?t=${Date.now()}`),
+                        title: `Changes: ${agent.name} (${resources.length} files)`,
+                        resources: resources.map(r => ({
+                            originalUri: r.original,
+                            modifiedUri: r.modified,
+                        })),
+                    }
                 );
             } catch {
                 // Fallback: open each file's diff individually using git.openChange

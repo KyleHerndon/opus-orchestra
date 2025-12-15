@@ -25,9 +25,9 @@ suite('StatusWatcher Stale File Detection Test Suite', () => {
     let hooksTypesContent: string;
 
     setup(() => {
-        statusWatcherContent = fs.readFileSync(statusWatcherPath, 'utf-8');
-        statusServiceContent = fs.readFileSync(statusServicePath, 'utf-8');
-        hooksTypesContent = fs.readFileSync(hooksTypesPath, 'utf-8');
+        statusWatcherContent = fs.readFileSync(statusWatcherPath, 'utf-8').replace(/\r\n/g, '\n');
+        statusServiceContent = fs.readFileSync(statusServicePath, 'utf-8').replace(/\r\n/g, '\n');
+        hooksTypesContent = fs.readFileSync(hooksTypesPath, 'utf-8').replace(/\r\n/g, '\n');
     });
 
     test('ParsedStatus interface should include fileTimestamp field', () => {
@@ -117,7 +117,7 @@ suite('AgentManager sendToAgent Test Suite', () => {
     let content: string;
 
     setup(() => {
-        content = fs.readFileSync(agentManagerPath, 'utf-8');
+        content = fs.readFileSync(agentManagerPath, 'utf-8').replace(/\r\n/g, '\n');
     });
 
     test('sendToAgent should update lastInteractionTime before emitting event', () => {
@@ -220,7 +220,7 @@ suite('AgentManager getAgents Terminal Validation Test Suite', () => {
     let content: string;
 
     setup(() => {
-        content = fs.readFileSync(agentManagerPath, 'utf-8');
+        content = fs.readFileSync(agentManagerPath, 'utf-8').replace(/\r\n/g, '\n');
     });
 
     test('getAgents should validate terminal state before returning', () => {
@@ -265,7 +265,7 @@ suite('AgentManager showAgentDiff Test Suite', () => {
     let content: string;
 
     setup(() => {
-        content = fs.readFileSync(agentManagerPath, 'utf-8');
+        content = fs.readFileSync(agentManagerPath, 'utf-8').replace(/\r\n/g, '\n');
     });
 
     test('showAgentDiff should use git diff --name-status to get file statuses', () => {
@@ -296,10 +296,10 @@ suite('AgentManager showAgentDiff Test Suite', () => {
         );
     });
 
-    test('showAgentDiff should use vscode.changes command for multi-file diff', () => {
+    test('showAgentDiff should use multi-diff editor for multi-file diff', () => {
         assert.ok(
-            content.includes("'vscode.changes'"),
-            'showAgentDiff should use vscode.changes command'
+            content.includes("'_workbench.openMultiDiffEditor'"),
+            'showAgentDiff should use _workbench.openMultiDiffEditor command'
         );
     });
 
@@ -331,16 +331,15 @@ suite('AgentManager showAgentDiff Test Suite', () => {
         );
     });
 
-    test('showAgentDiff should have fallback to QuickPick if vscode.changes fails', () => {
+    test('showAgentDiff should have fallback to QuickPick if multi-diff editor fails', () => {
         const methodStart = content.indexOf('async showAgentDiff');
         const methodEnd = content.indexOf('\n    isGitRepo()', methodStart);
         const methodContent = content.substring(methodStart, methodEnd);
 
-        // Should have try/catch around vscode.changes
+        // Should have try/catch around _workbench.openMultiDiffEditor
         assert.ok(
-            methodContent.includes("executeCommand(\n                    'vscode.changes'") ||
-            methodContent.includes("executeCommand('vscode.changes'"),
-            'showAgentDiff should call vscode.changes command'
+            methodContent.includes("'_workbench.openMultiDiffEditor'"),
+            'showAgentDiff should call _workbench.openMultiDiffEditor command'
         );
 
         // Should have fallback QuickPick
