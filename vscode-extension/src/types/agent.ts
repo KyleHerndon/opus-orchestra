@@ -116,3 +116,16 @@ export const STATUS_ICONS: Record<AgentStatus, string> = {
  * Storage key for persisted agents
  */
 export const AGENTS_STORAGE_KEY = (workspaceRoot: string) => `claudeAgents.agents.${workspaceRoot}`;
+
+/**
+ * Maps agent IDs to their display order within a repository
+ * Key: agent ID (number)
+ * Value: order index (number, 0-based)
+ */
+export type AgentOrderMap = Record<number, number>;
+
+/**
+ * Storage key for agent order preferences (per workspace)
+ */
+export const AGENT_ORDER_STORAGE_KEY = (workspaceRoot: string) =>
+    `claudeAgents.agentOrder.${workspaceRoot}`;

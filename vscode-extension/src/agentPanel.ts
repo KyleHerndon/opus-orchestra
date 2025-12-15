@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { AgentManager, Agent, IsolationTier } from './agentManager';
 import { formatTimeSince } from './types';
-import { getTodoService, TodoItem, getEventBus } from './services';
+import { getTodoService, TodoItem, getEventBus, getPersistenceService } from './services';
 
 interface WebviewMessage {
     command: string;
@@ -14,6 +14,11 @@ interface WebviewMessage {
     tier?: string;
     newName?: string;
     scale?: number;
+    // For drag/drop reordering
+    sourceAgentId?: number;
+    targetAgentId?: number;
+    repoPath?: string;
+    dropPosition?: 'before' | 'after';
 }
 
 interface ActiveOperation {
@@ -183,6 +188,19 @@ export class AgentPanel {
                     await config.update('uiScale', message.scale, vscode.ConfigurationTarget.Global);
                 }
                 break;
+            case 'reorderAgents':
+                if (message.sourceAgentId !== undefined &&
+                    message.targetAgentId !== undefined &&
+                    message.repoPath &&
+                    message.dropPosition) {
+                    await this._handleReorder(
+                        message.sourceAgentId,
+                        message.targetAgentId,
+                        message.repoPath,
+                        message.dropPosition
+                    );
+                }
+                break;
         }
         this._update();
     }
@@ -239,6 +257,69 @@ export class AgentPanel {
     private _handleOperationCompleted(): void {
         this._activeOperation = null;
         this._update();
+    }
+
+    private async _handleReorder(
+        sourceAgentId: number,
+        targetAgentId: number,
+        repoPath: string,
+        dropPosition: 'before' | 'after'
+    ): Promise<void> {
+        const persistenceService = getPersistenceService();
+        const agents = this._agentManager.getAgents()
+            .filter(a => a.repoPath === repoPath);
+
+        if (agents.length < 2) {
+            return; // Nothing to reorder
+        }
+
+        // Get current order or create default based on current array order
+        let orderMap = persistenceService.getAgentOrder(repoPath);
+
+        // If no order exists, create default based on agent IDs
+        if (Object.keys(orderMap).length === 0) {
+            // Sort by ID to get consistent default order
+            const sortedAgents = [...agents].sort((a, b) => a.id - b.id);
+            orderMap = {};
+            sortedAgents.forEach((agent, index) => {
+                orderMap[agent.id] = index;
+            });
+        }
+
+        // Build current ordered list of agent IDs
+        const orderedIds = agents
+            .map(a => ({ id: a.id, order: orderMap[a.id] ?? a.id }))
+            .sort((a, b) => a.order - b.order)
+            .map(a => a.id);
+
+        // Remove source from its current position
+        const sourceIndex = orderedIds.indexOf(sourceAgentId);
+        if (sourceIndex === -1) {
+            return;
+        }
+        orderedIds.splice(sourceIndex, 1);
+
+        // Find target position and insert source
+        let targetIndex = orderedIds.indexOf(targetAgentId);
+        if (targetIndex === -1) {
+            return;
+        }
+
+        // Adjust for drop position
+        if (dropPosition === 'after') {
+            targetIndex += 1;
+        }
+
+        // Insert source at new position
+        orderedIds.splice(targetIndex, 0, sourceAgentId);
+
+        // Create new order map
+        const newOrderMap: Record<number, number> = {};
+        orderedIds.forEach((id, index) => {
+            newOrderMap[id] = index;
+        });
+
+        persistenceService.saveAgentOrder(repoPath, newOrderMap);
     }
 
     private _update() {
@@ -770,6 +851,39 @@ export class AgentPanel {
             min-width: calc(40px * var(--ui-scale));
             text-align: right;
         }
+        /* Drag and drop styles */
+        .agent-card[draggable="true"] {
+            cursor: grab;
+            transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
+        }
+        .agent-card[draggable="true"]:active {
+            cursor: grabbing;
+        }
+        .agent-card.dragging {
+            opacity: 0.5;
+            transform: scale(1.02);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+        .agent-card.drag-over-top {
+            border-top: 3px solid var(--vscode-textLink-foreground);
+        }
+        .agent-card.drag-over-bottom {
+            border-bottom: 3px solid var(--vscode-textLink-foreground);
+        }
+        .drag-handle {
+            cursor: grab;
+            padding: calc(4px * var(--ui-scale));
+            opacity: 0.4;
+            transition: opacity 0.2s;
+            user-select: none;
+            font-size: calc(14px * var(--ui-scale));
+        }
+        .agent-card:hover .drag-handle {
+            opacity: 0.8;
+        }
+        .drag-handle:hover {
+            opacity: 1;
+        }
     </style>
 </head>
 <body>
@@ -877,6 +991,105 @@ export class AgentPanel {
                     handleRename(e.target);
                 }
             }, true);
+
+            // Drag and drop for agent reordering
+            let draggedAgentId = null;
+            let draggedRepoPath = null;
+
+            document.addEventListener('dragstart', function(e) {
+                const card = e.target.closest('.agent-card[draggable="true"]');
+                if (!card) return;
+
+                draggedAgentId = parseInt(card.getAttribute('data-agent-id'), 10);
+                draggedRepoPath = card.getAttribute('data-repo-path');
+
+                card.classList.add('dragging');
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', String(draggedAgentId));
+            });
+
+            document.addEventListener('dragend', function(e) {
+                const card = e.target.closest('.agent-card');
+                if (card) {
+                    card.classList.remove('dragging');
+                }
+                // Clean up all drag-over classes
+                document.querySelectorAll('.drag-over-top, .drag-over-bottom').forEach(function(el) {
+                    el.classList.remove('drag-over-top', 'drag-over-bottom');
+                });
+                draggedAgentId = null;
+                draggedRepoPath = null;
+            });
+
+            document.addEventListener('dragover', function(e) {
+                const card = e.target.closest('.agent-card[draggable="true"]');
+                if (!card) return;
+
+                const targetRepoPath = card.getAttribute('data-repo-path');
+                // Only allow reordering within same repo
+                if (targetRepoPath !== draggedRepoPath) return;
+
+                const targetAgentId = parseInt(card.getAttribute('data-agent-id'), 10);
+                // Don't show indicator on self
+                if (targetAgentId === draggedAgentId) return;
+
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+
+                // Remove previous indicators
+                document.querySelectorAll('.drag-over-top, .drag-over-bottom').forEach(function(el) {
+                    el.classList.remove('drag-over-top', 'drag-over-bottom');
+                });
+
+                // Show drop indicator based on cursor position
+                const rect = card.getBoundingClientRect();
+                const midpoint = rect.top + rect.height / 2;
+                if (e.clientY < midpoint) {
+                    card.classList.add('drag-over-top');
+                } else {
+                    card.classList.add('drag-over-bottom');
+                }
+            });
+
+            document.addEventListener('dragleave', function(e) {
+                const card = e.target.closest('.agent-card');
+                if (card && !card.contains(e.relatedTarget)) {
+                    card.classList.remove('drag-over-top', 'drag-over-bottom');
+                }
+            });
+
+            document.addEventListener('drop', function(e) {
+                e.preventDefault();
+
+                const card = e.target.closest('.agent-card[draggable="true"]');
+                if (!card) return;
+
+                const targetAgentId = parseInt(card.getAttribute('data-agent-id'), 10);
+                const targetRepoPath = card.getAttribute('data-repo-path');
+
+                // Only reorder within same repo
+                if (targetRepoPath !== draggedRepoPath) return;
+
+                // Don't do anything if dropped on self
+                if (targetAgentId === draggedAgentId) return;
+
+                // Determine if dropping above or below target
+                const rect = card.getBoundingClientRect();
+                const dropPosition = e.clientY < (rect.top + rect.height / 2) ? 'before' : 'after';
+
+                vscode.postMessage({
+                    command: 'reorderAgents',
+                    sourceAgentId: draggedAgentId,
+                    targetAgentId: targetAgentId,
+                    repoPath: targetRepoPath,
+                    dropPosition: dropPosition
+                });
+
+                // Clean up
+                document.querySelectorAll('.drag-over-top, .drag-over-bottom').forEach(function(el) {
+                    el.classList.remove('drag-over-top', 'drag-over-bottom');
+                });
+            });
         })();
     </script>
 </body>
@@ -931,7 +1144,9 @@ export class AgentPanel {
     }
 
     private _groupAgentsByRepo(agents: Agent[]): Map<string, Agent[]> {
+        const persistenceService = getPersistenceService();
         const grouped = new Map<string, Agent[]>();
+
         for (const agent of agents) {
             const repoPath = agent.repoPath || 'Unknown';
             if (!grouped.has(repoPath)) {
@@ -939,6 +1154,21 @@ export class AgentPanel {
             }
             grouped.get(repoPath)!.push(agent);
         }
+
+        // Sort each group by saved order
+        for (const [repoPath, repoAgents] of grouped) {
+            const orderMap = persistenceService.getAgentOrder(repoPath);
+            repoAgents.sort((a, b) => {
+                const orderA = orderMap[a.id] ?? Number.MAX_SAFE_INTEGER;
+                const orderB = orderMap[b.id] ?? Number.MAX_SAFE_INTEGER;
+                // If both have no order, sort by ID (creation order)
+                if (orderA === Number.MAX_SAFE_INTEGER && orderB === Number.MAX_SAFE_INTEGER) {
+                    return a.id - b.id;
+                }
+                return orderA - orderB;
+            });
+        }
+
         return grouped;
     }
 
@@ -1172,9 +1402,13 @@ export class AgentPanel {
         const showAllOptions = config.get<boolean>('showAllPermissionOptions', false);
 
         return `
-            <div class="agent-card ${isWaiting ? 'waiting' : ''} ${isContainerized ? 'containerized ' + tierClass : ''}">
+            <div class="agent-card ${isWaiting ? 'waiting' : ''} ${isContainerized ? 'containerized ' + tierClass : ''}"
+                 draggable="true"
+                 data-agent-id="${agent.id}"
+                 data-repo-path="${this._escapeHtml(agent.repoPath)}">
                 <div class="agent-header">
                     <div style="display: flex; align-items: center; gap: 8px;">
+                        <span class="drag-handle" title="Drag to reorder">⋮⋮</span>
                         <input type="text" class="agent-title-input" value="${displayName}" data-agent-id="${agent.id}" data-original="${displayName}" title="Click to rename">
                         ${isContainerized ? `<span class="container-state ${containerState}">${containerState}</span>` : ''}
                     </div>

@@ -26,6 +26,7 @@ import {
     getLogger,
     isLoggerInitialized,
     getTerminalIcon,
+    getPersistenceService,
 } from './services';
 
 // Re-export types for backward compatibility
@@ -335,8 +336,15 @@ export class AgentManager {
             // Ignore errors during cleanup
         }
 
+        // Store repoPath before deleting for order cleanup
+        const repoPath = agent.repoPath;
+
         this.agents.delete(agentId);
         this.persistence.saveAgents(this.agents);
+
+        // Clean up agent from display order
+        getPersistenceService().removeAgentFromOrder(agentId, repoPath);
+
         getEventBus().emit('agent:deleted', { agentId });
         vscode.window.showInformationMessage(`Agent ${agent.name || agentId} deleted`);
         return true;
