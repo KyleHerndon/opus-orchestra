@@ -641,36 +641,109 @@ export class AgentManager {
             const baseBranch = await getGitService().getBaseBranch(agent.repoPath);
             const windowsWorktreePath = this.toWindowsPath(agent.worktreePath);
 
+            // Get list of changed files with their status
             const output = await getCommandService().execAsync(
-                `git diff --name-only ${baseBranch}...HEAD`,
+                `git diff --name-status ${baseBranch}...HEAD`,
                 agent.worktreePath
             );
 
-            const changedFiles = output.trim().split('\n').filter(f => f);
-
-            if (changedFiles.length === 0) {
+            const lines = output.trim().split('\n').filter(l => l);
+            if (lines.length === 0) {
                 vscode.window.showInformationMessage(`No changes in agent "${agent.name}"`);
                 return;
             }
 
-            const items = changedFiles.map(f => ({
-                label: f,
-                description: `${agent.name}: ${f}`
-            }));
+            // Get the base commit SHA for constructing git URIs
+            const baseCommit = await getCommandService().execAsync(
+                `git merge-base ${baseBranch} HEAD`,
+                agent.worktreePath
+            );
+            const baseRef = baseCommit.trim();
 
-            const selected = await vscode.window.showQuickPick(items, {
-                placeHolder: `Select file to view diff (${changedFiles.length} changed files)`,
-                canPickMany: false
-            });
+            // Build the resource list for vscode.changes command
+            const resources: Array<{ original: vscode.Uri; modified: vscode.Uri }> = [];
 
-            if (selected) {
-                const filePath = path.join(windowsWorktreePath, selected.label);
-                const uri = vscode.Uri.file(filePath);
+            for (const line of lines) {
+                const [status, ...fileParts] = line.split('\t');
+                const filePath = fileParts.join('\t'); // Handle filenames with tabs
 
-                try {
-                    await vscode.commands.executeCommand('git.openChange', uri);
-                } catch {
-                    await vscode.commands.executeCommand('vscode.open', uri);
+                if (!filePath) {
+                    continue;
+                }
+
+                const fullPath = path.join(windowsWorktreePath, filePath);
+                const modifiedUri = vscode.Uri.file(fullPath);
+
+                // Construct git URI for the base version
+                // Format: git:/path/to/file?{ref}&path
+                const gitQuery = JSON.stringify({
+                    path: filePath,
+                    ref: baseRef
+                });
+                const originalUri = vscode.Uri.from({
+                    scheme: 'git',
+                    path: fullPath,
+                    query: gitQuery
+                });
+
+                // Skip deleted files (D status) - they don't have a modified version
+                if (status === 'D') {
+                    continue;
+                }
+
+                // For added files (A status), the original doesn't exist in base
+                // Use an empty URI scheme to indicate no original
+                if (status === 'A') {
+                    resources.push({
+                        original: vscode.Uri.from({ scheme: 'untitled', path: '' }),
+                        modified: modifiedUri
+                    });
+                } else {
+                    resources.push({
+                        original: originalUri,
+                        modified: modifiedUri
+                    });
+                }
+            }
+
+            if (resources.length === 0) {
+                vscode.window.showInformationMessage(`No viewable changes in agent "${agent.name}"`);
+                return;
+            }
+
+            // Try to open multi-diff view with vscode.changes command
+            try {
+                await vscode.commands.executeCommand(
+                    'vscode.changes',
+                    `Changes: ${agent.name} (${resources.length} files)`,
+                    resources
+                );
+            } catch {
+                // Fallback: open each file's diff individually using git.openChange
+                // Show QuickPick for file selection as before
+                const items = lines
+                    .filter(l => !l.startsWith('D\t')) // Exclude deleted files
+                    .map(l => {
+                        const [, ...parts] = l.split('\t');
+                        return {
+                            label: parts.join('\t'),
+                            description: `${agent.name}`
+                        };
+                    });
+
+                const selected = await vscode.window.showQuickPick(items, {
+                    placeHolder: `Select file to view diff (${items.length} changed files)`,
+                    canPickMany: false
+                });
+
+                if (selected) {
+                    const filePath = path.join(windowsWorktreePath, selected.label);
+                    const uri = vscode.Uri.file(filePath);
+                    try {
+                        await vscode.commands.executeCommand('git.openChange', uri);
+                    } catch {
+                        await vscode.commands.executeCommand('vscode.open', uri);
+                    }
                 }
             }
         } catch (error) {

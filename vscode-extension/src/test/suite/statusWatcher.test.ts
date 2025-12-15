@@ -209,3 +209,111 @@ suite('Approval Flow Integration Test Suite', () => {
         );
     });
 });
+
+suite('AgentManager showAgentDiff Test Suite', () => {
+    /**
+     * Tests verifying the multi-file diff view feature
+     */
+
+    const agentManagerPath = path.resolve(__dirname, '../../../src/agentManager.ts');
+    let content: string;
+
+    setup(() => {
+        content = fs.readFileSync(agentManagerPath, 'utf-8');
+    });
+
+    test('showAgentDiff should use git diff --name-status to get file statuses', () => {
+        assert.ok(
+            content.includes('git diff --name-status'),
+            'showAgentDiff should use --name-status to get file change types'
+        );
+    });
+
+    test('showAgentDiff should get base commit SHA using merge-base', () => {
+        assert.ok(
+            content.includes('git merge-base'),
+            'showAgentDiff should use merge-base to find common ancestor'
+        );
+    });
+
+    test('showAgentDiff should build resource list with original and modified URIs', () => {
+        // Check for the resources array type
+        assert.ok(
+            content.includes('Array<{ original: vscode.Uri; modified: vscode.Uri }>'),
+            'showAgentDiff should define resources array with original/modified URI pairs'
+        );
+
+        // Check for git URI construction
+        assert.ok(
+            content.includes("scheme: 'git'"),
+            'showAgentDiff should create git:// URIs for original files'
+        );
+    });
+
+    test('showAgentDiff should use vscode.changes command for multi-file diff', () => {
+        assert.ok(
+            content.includes("'vscode.changes'"),
+            'showAgentDiff should use vscode.changes command'
+        );
+    });
+
+    test('showAgentDiff should handle deleted files (D status)', () => {
+        assert.ok(
+            content.includes("status === 'D'"),
+            'showAgentDiff should check for deleted files'
+        );
+        // Deleted files should be skipped since they have no modified version
+        const methodStart = content.indexOf('async showAgentDiff');
+        const methodEnd = content.indexOf('\n    isGitRepo()', methodStart);
+        const methodContent = content.substring(methodStart, methodEnd);
+
+        assert.ok(
+            methodContent.includes("if (status === 'D')") && methodContent.includes('continue'),
+            'showAgentDiff should skip deleted files'
+        );
+    });
+
+    test('showAgentDiff should handle added files (A status)', () => {
+        assert.ok(
+            content.includes("status === 'A'"),
+            'showAgentDiff should check for added files'
+        );
+        // Added files should use untitled scheme for original (no base version)
+        assert.ok(
+            content.includes("scheme: 'untitled'"),
+            'showAgentDiff should use untitled scheme for added files original'
+        );
+    });
+
+    test('showAgentDiff should have fallback to QuickPick if vscode.changes fails', () => {
+        const methodStart = content.indexOf('async showAgentDiff');
+        const methodEnd = content.indexOf('\n    isGitRepo()', methodStart);
+        const methodContent = content.substring(methodStart, methodEnd);
+
+        // Should have try/catch around vscode.changes
+        assert.ok(
+            methodContent.includes("executeCommand(\n                    'vscode.changes'") ||
+            methodContent.includes("executeCommand('vscode.changes'"),
+            'showAgentDiff should call vscode.changes command'
+        );
+
+        // Should have fallback QuickPick
+        assert.ok(
+            methodContent.includes('showQuickPick'),
+            'showAgentDiff should have QuickPick fallback'
+        );
+
+        // Fallback should use git.openChange
+        assert.ok(
+            methodContent.includes("'git.openChange'"),
+            'showAgentDiff fallback should use git.openChange'
+        );
+    });
+
+    test('showAgentDiff should include file count in title', () => {
+        assert.ok(
+            content.includes('${resources.length} files'),
+            'showAgentDiff should show file count in multi-diff title'
+        );
+    });
+});
