@@ -210,6 +210,52 @@ suite('Approval Flow Integration Test Suite', () => {
     });
 });
 
+suite('AgentManager getAgents Terminal Validation Test Suite', () => {
+    /**
+     * Tests verifying that getAgents() validates terminal state
+     * to fix the bug where button shows wrong state after VS Code reload
+     */
+
+    const agentManagerPath = path.resolve(__dirname, '../../../src/agentManager.ts');
+    let content: string;
+
+    setup(() => {
+        content = fs.readFileSync(agentManagerPath, 'utf-8');
+    });
+
+    test('getAgents should validate terminal state before returning', () => {
+        // Find the getAgents method
+        const methodMatch = content.match(/getAgents\(\): Agent\[\] \{[\s\S]*?return Array\.from/);
+        assert.ok(methodMatch, 'getAgents method should exist');
+
+        const methodContent = methodMatch[0];
+
+        // Should check if terminal is alive
+        assert.ok(
+            methodContent.includes('isTerminalAlive'),
+            'getAgents should check if terminal is alive'
+        );
+
+        // Should clear stale terminal references
+        assert.ok(
+            methodContent.includes('agent.terminal = null'),
+            'getAgents should clear stale terminal references'
+        );
+    });
+
+    test('getAgents should use terminalService for validation', () => {
+        const methodMatch = content.match(/getAgents\(\): Agent\[\] \{[\s\S]*?return Array\.from/);
+        assert.ok(methodMatch, 'getAgents method should exist');
+
+        const methodContent = methodMatch[0];
+
+        assert.ok(
+            methodContent.includes('getTerminalService()'),
+            'getAgents should use getTerminalService()'
+        );
+    });
+});
+
 suite('AgentManager showAgentDiff Test Suite', () => {
     /**
      * Tests verifying the multi-file diff view feature

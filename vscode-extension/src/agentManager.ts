@@ -620,6 +620,14 @@ export class AgentManager {
     }
 
     getAgents(): Agent[] {
+        // Validate terminal state before returning agents
+        // This cleans up stale terminal references after VS Code reload
+        const terminalService = getTerminalService();
+        for (const agent of this.agents.values()) {
+            if (agent.terminal && !terminalService.isTerminalAlive(agent.terminal)) {
+                agent.terminal = null;
+            }
+        }
         return Array.from(this.agents.values());
     }
 
