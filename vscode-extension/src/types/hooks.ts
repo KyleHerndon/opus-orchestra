@@ -33,4 +33,6 @@ export interface HookData {
 export interface ParsedStatus {
     status: AgentStatus;
     pendingApproval: string | null;
+    /** Timestamp of the status file (ms since epoch) */
+    fileTimestamp?: number;
 }

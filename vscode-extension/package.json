@@ -388,7 +388,7 @@
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts --max-warnings 0",
     "test": "npm run compile && node ./out/test/runTest.js",
-    "test:unit": "npm run compile && mocha --ui tdd ./out/test/suite/agentPanel.test.js",
+    "test:unit": "npm run compile && mocha --ui tdd ./out/test/suite/agentPanel.test.js ./out/test/suite/statusWatcher.test.js",
     "test:ui": "npm run compile && ./scripts/test-ui.sh run",
     "test:ui:setup": "./scripts/test-ui.sh setup",
     "test:ui:run": "./scripts/test-ui.sh run",
