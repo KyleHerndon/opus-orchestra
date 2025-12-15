@@ -262,6 +262,21 @@
           "default": false,
           "description": "Automatically start Claude when creating agent terminal"
         },
+        "claudeAgents.autoStartClaudeOnFocus": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically start or resume Claude when opening/focusing an agent terminal"
+        },
+        "claudeAgents.useTmux": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use tmux for terminal session persistence. Allows reconnecting to running Claude sessions after terminal closes."
+        },
+        "claudeAgents.tmuxSessionPrefix": {
+          "type": "string",
+          "default": "opus",
+          "description": "Prefix for tmux session names (e.g., opus-{session-id})"
+        },
         "claudeAgents.diffPollingInterval": {
           "type": "number",
           "default": 60000,

@@ -48,7 +48,12 @@ export class DashboardPage {
         await this.webview.switchToFrame();
         this.inFrame = true;
 
-        await this.waitFor('.header h1');
+        // Wait for either stats-bar (agents exist) or empty-state (no agents)
+        await this.driver.wait(async () => {
+            const statsBar = await this.driver.findElements(By.css('.stats-bar'));
+            const emptyState = await this.driver.findElements(By.css('.empty-state'));
+            return statsBar.length > 0 || emptyState.length > 0;
+        }, 10000, 'Dashboard content did not load');
     }
 
     async close(): Promise<void> {
@@ -59,7 +64,9 @@ export class DashboardPage {
     }
 
     async switchToFrame(): Promise<void> {
-        if (this.webview && !this.inFrame) {
+        // Always create fresh WebView reference in case VS Code changed state
+        if (!this.inFrame) {
+            this.webview = new WebView();
             await this.webview.switchToFrame();
             this.inFrame = true;
         }
@@ -98,22 +105,17 @@ export class DashboardPage {
     }
 
     async getHeader(): Promise<WebElement> {
-        return this.driver.findElement(By.css('.header h1'));
+        // Try stats-title first (when agents exist), then empty-state h2
+        const statsTitle = await this.driver.findElements(By.css('.stats-title'));
+        if (statsTitle.length > 0) {
+            return statsTitle[0];
+        }
+        return this.driver.findElement(By.css('.empty-state h2'));
     }
 
     async getHeaderText(): Promise<string> {
         const header = await this.getHeader();
         return header.getText();
-    }
-
-    async getScaleSelect(): Promise<WebElement> {
-        return this.driver.findElement(By.id('scale-select'));
-    }
-
-    async getScaleOptions(): Promise<string[]> {
-        const select = await this.getScaleSelect();
-        const options = await select.findElements(By.css('option'));
-        return Promise.all(options.map(o => o.getAttribute('value')));
     }
 
     async getAgentCountInput(): Promise<WebElement | null> {

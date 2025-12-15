@@ -58,6 +58,7 @@ export type EventType =
     | 'agent:deleted'
     | 'agent:statusChanged'
     | 'agent:renamed'
+    | 'agent:terminalCreated'
     | 'agent:terminalClosed'
     | 'container:created'
     | 'container:removed'
@@ -139,6 +140,7 @@ export interface DomainEventPayloads {
     'agent:deleted': { agentId: number };
     'agent:statusChanged': { agent: Agent; previousStatus: AgentStatus };
     'agent:renamed': { agent: Agent; previousName: string };
+    'agent:terminalCreated': { agent: Agent; isNew: boolean };
     'agent:terminalClosed': { agentId: number };
     'container:created': { containerInfo: ContainerInfo };
     'container:removed': { agentId: number };

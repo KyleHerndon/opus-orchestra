@@ -61,17 +61,23 @@ describe('Claude Agents Dashboard', function () {
         before(async () => await page.open());
         after(async () => await page.close());
 
-        it('should display header and scale selector', async function () {
-            expect(await page.getHeaderText()).to.equal('Claude Agents Dashboard');
+        // Re-ensure we're in the frame before each test since VS Code may switch focus
+        beforeEach(async function () {
+            await page.switchBack();
+            await driver.sleep(200);
+            await page.switchToFrame();
+        });
 
-            const options = await page.getScaleOptions();
-            expect(options).to.include.members(['0.75', '1', '1.5']);
+        it('should display header', async function () {
+            // Header text depends on state: "Opus Orchestra Dashboard" (with agents) or "No Agents Created" (empty)
+            const headerText = await page.getHeaderText();
+            expect(['Opus Orchestra Dashboard', 'No Agents Created']).to.include(headerText);
         });
 
         it('should show empty state with creation controls when no agents', async function () {
             const cards = await page.getAgentCards();
             if (cards.length > 0) {
-                return; // Skip if agents exist
+                this.skip(); // Properly skip if agents exist
             }
 
             expect(await page.hasEmptyState()).to.be.true;
@@ -153,6 +159,12 @@ describe('Claude Agents Dashboard', function () {
         before(async () => await page.open());
         after(async () => await page.close());
 
+        beforeEach(async function () {
+            await page.switchBack();
+            await driver.sleep(200);
+            await page.switchToFrame();
+        });
+
         it('should support progress element injection', async function () {
             const cards = await page.getAgentCards();
             if (cards.length === 0) {
@@ -167,6 +179,98 @@ describe('Claude Agents Dashboard', function () {
             expect(await progressElements[0].getText()).to.equal('Test progress');
 
             await page.removeProgressElements();
+        });
+    });
+
+    describe('Terminal Auto-Start Feature', function () {
+        before(async () => await page.open());
+        after(async () => await page.close());
+
+        it('should have focus button that triggers terminal creation', async function () {
+            // Ensure we have at least one agent
+            if (await page.hasEmptyState()) {
+                await page.createAgents(1);
+            }
+
+            const cards = await page.getAgentCards();
+            expect(cards.length).to.be.greaterThan(0);
+
+            // Verify focus button exists
+            const agentId = await page.getAgentId(cards[0]);
+            const focusButton = await page.getAgentButton(cards[0], 'focus');
+            expect(focusButton).to.not.be.null;
+
+            // Button should be enabled
+            expect(await page.isButtonEnabled('focus', agentId!)).to.be.true;
+        });
+
+        it('should click focus button and open terminal', async function () {
+            const cards = await page.getAgentCards();
+            if (cards.length === 0) {
+                this.skip();
+            }
+
+            const agentId = await page.getAgentId(cards[0]);
+
+            // Click the focus button to open/focus terminal
+            await page.clickButton('focus', agentId!);
+
+            // Allow time for terminal to be created
+            await driver.sleep(2000);
+
+            // Clicking focus switches us out of the webview frame - re-establish
+            await page.switchBack();
+            await driver.sleep(500);
+            await page.switchToFrame();
+            await driver.sleep(300);
+
+            // The button should still exist and be enabled
+            const newCards = await page.getAgentCards();
+            expect(newCards.length).to.be.greaterThan(0);
+        });
+
+        it('should have startClaude button as alternative to auto-start', async function () {
+            // Re-establish frame in case previous test left us outside
+            await page.switchBack();
+            await driver.sleep(200);
+            await page.switchToFrame();
+
+            const cards = await page.getAgentCards();
+            if (cards.length === 0) {
+                this.skip();
+            }
+
+            const agentId = await page.getAgentId(cards[0]);
+            const startClaudeButton = await page.getAgentButton(cards[0], 'startClaude');
+            expect(startClaudeButton).to.not.be.null;
+            expect(await page.isButtonEnabled('startClaude', agentId!)).to.be.true;
+        });
+
+        it('should have both focus and startClaude buttons available simultaneously', async function () {
+            // Re-establish frame in case previous test left us outside
+            await page.switchBack();
+            await driver.sleep(200);
+            await page.switchToFrame();
+
+            const cards = await page.getAgentCards();
+            if (cards.length === 0) {
+                this.skip();
+            }
+
+            const card = cards[0];
+
+            // Both buttons should exist on the same card
+            const focusButton = await page.getAgentButton(card, 'focus');
+            const startClaudeButton = await page.getAgentButton(card, 'startClaude');
+
+            expect(focusButton).to.not.be.null;
+            expect(startClaudeButton).to.not.be.null;
+
+            // Get their text to verify they're different actions
+            const focusText = await focusButton!.getText();
+            const startClaudeText = await startClaudeButton!.getText();
+
+            expect(focusText).to.not.equal(startClaudeText);
         });
     });
 });

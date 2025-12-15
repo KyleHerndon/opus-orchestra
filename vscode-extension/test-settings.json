@@ -1,0 +1,5 @@
+{
+  "claudeAgents.terminalType": "wsl",
+  "claudeAgents.useTmux": true,
+  "claudeAgents.autoStartClaudeOnFocus": true
+}

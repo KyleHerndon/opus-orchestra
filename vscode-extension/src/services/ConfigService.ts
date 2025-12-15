@@ -43,8 +43,24 @@ export class ConfigService {
         return this.config.get<boolean>('autoStartClaude', DEFAULT_CONFIG.autoStartClaude);
     }
 
+    get autoStartClaudeOnFocus(): boolean {
+        return this.config.get<boolean>('autoStartClaudeOnFocus', DEFAULT_CONFIG.autoStartClaudeOnFocus);
+    }
+
     get claudeCommand(): string {
         return this.config.get<string>('claudeCommand', DEFAULT_CONFIG.claudeCommand);
+    }
+
+    // ========================================================================
+    // Tmux Settings
+    // ========================================================================
+
+    get useTmux(): boolean {
+        return this.config.get<boolean>('useTmux', DEFAULT_CONFIG.useTmux);
+    }
+
+    get tmuxSessionPrefix(): string {
+        return this.config.get<string>('tmuxSessionPrefix', DEFAULT_CONFIG.tmuxSessionPrefix);
     }
 
     // ========================================================================
@@ -118,7 +134,10 @@ export class ConfigService {
         return {
             defaultAgentCount: this.defaultAgentCount,
             autoStartClaude: this.autoStartClaude,
+            autoStartClaudeOnFocus: this.autoStartClaudeOnFocus,
             claudeCommand: this.claudeCommand,
+            useTmux: this.useTmux,
+            tmuxSessionPrefix: this.tmuxSessionPrefix,
             worktreeDirectory: this.worktreeDirectory,
             coordinationScriptsPath: this.coordinationScriptsPath,
             backlogPath: this.backlogPath,

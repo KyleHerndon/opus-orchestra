@@ -16,7 +16,12 @@ export interface ExtensionConfig {
     // Agent settings
     defaultAgentCount: number;
     autoStartClaude: boolean;
+    autoStartClaudeOnFocus: boolean;
     claudeCommand: string;
+
+    // Tmux settings
+    useTmux: boolean;
+    tmuxSessionPrefix: string;
 
     // Directory settings
     worktreeDirectory: string;
@@ -48,7 +53,10 @@ export interface ExtensionConfig {
 export const DEFAULT_CONFIG: ExtensionConfig = {
     defaultAgentCount: 3,
     autoStartClaude: true,
+    autoStartClaudeOnFocus: true,
     claudeCommand: 'claude',
+    useTmux: true,
+    tmuxSessionPrefix: 'opus',
     worktreeDirectory: '.worktrees',
     coordinationScriptsPath: '',
     backlogPath: '',

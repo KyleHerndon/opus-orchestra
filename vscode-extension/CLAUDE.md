@@ -138,6 +138,44 @@ toTerminalPath(inputPath)  → agentPath(inputPath).forTerminal()
 toWindowsPath(inputPath)   → agentPath(inputPath).forNodeFs()
 ```
 
+## Tmux Session Management
+
+The extension uses tmux for persistent terminal sessions. This allows:
+- Claude sessions to survive VS Code terminal closes
+- Reconnecting to running sessions without restarting Claude
+- Better reliability for long-running tasks
+
+### Configuration
+
+- `claudeAgents.useTmux` (default: `true`) - Enable tmux session management
+- `claudeAgents.tmuxSessionPrefix` (default: `"opus"`) - Prefix for tmux session names
+- `claudeAgents.autoStartClaudeOnFocus` (default: `true`) - Auto-start Claude when opening terminal
+
+### How It Works
+
+1. **Agent creation**: Creates tmux session `opus-{sessionId}` and starts Claude
+2. **Terminal focus (session exists)**: Attaches to existing tmux session (Claude still running!)
+3. **Terminal focus (no session)**: Creates new tmux session and starts Claude with `--resume`
+
+### Session Naming
+
+Tmux sessions use the agent's **sessionId** (UUID), not the agent name. This ensures:
+- Sessions survive agent renames
+- No conflicts between similarly-named agents
+
+Example: `opus-abc123def456` (first 12 chars of UUID)
+
+### Container Support
+
+- **Standard tier**: Tmux runs on host
+- **Docker/gVisor tiers**: Tmux runs inside container via `docker exec -it {container} tmux ...`
+
+### Cleanup
+
+Tmux sessions are automatically killed when:
+- Agent is deleted
+- Full cleanup is run
+
 ## Hook System
 
 ### How Status Tracking Works
@@ -167,12 +205,58 @@ Agents use NATO phonetic alphabet names: alpha, bravo, charlie, etc.
 
 ## Testing
 
-Run tests: `npm run compile && npx mocha --ui tdd ./out/test/suite/agentPanel.test.js`
+### Unit Tests
+
+Run unit tests:
+```bash
+npm run compile && npx mocha --ui tdd ./out/test/suite/*.test.js
+```
 
 Tests verify:
 - Button data-action attributes match switch case handlers
 - All buttons have corresponding message handlers
 - Agent cards have required elements (inline rename input, etc.)
+- Tmux service configuration and methods
+- Terminal auto-start functionality
+
+### UI Tests (Selenium/vscode-extension-tester)
+
+UI tests run with **extension isolation** - a clean VS Code instance with only our extension and Remote-WSL installed.
+
+**Prerequisites:**
+- Node.js installed on Windows (for running VS Code)
+- WSL configured
+
+**Test configuration:**
+- `test-settings.json` - VS Code settings for tests (sets `claudeAgents.terminalType: "wsl"`)
+- `.vscode-test/test-extensions/` - Isolated extensions directory (gitignored)
+- Test repo: `C:\Users\Kyle\Documents\claude-agents-test-repo`
+
+**Running UI tests:**
+```bash
+# First time setup (downloads VS Code + ChromeDriver)
+./scripts/test-ui.sh setup
+
+# Run tests
+./scripts/test-ui.sh run
+
+# Check environment
+./scripts/test-ui.sh check
+```
+
+**What the test script does:**
+1. Creates a test git repository if it doesn't exist
+2. Installs Remote-WSL extension to isolated directory
+3. Packages and installs our extension
+4. Runs tests with:
+   - `--extensions_dir .vscode-test/test-extensions` - Extension isolation
+   - `--code_settings test-settings.json` - WSL terminal type configured
+   - `--open_resource C:\Users\Kyle\Documents\claude-agents-test-repo` - Opens test repo
+
+**Manual test command (if needed):**
+```bash
+cmd.exe /c "cd /d C:\\path\\to\\vscode-extension && npx extest setup-and-run ./out/test/ui/*.test.js --mocha_config .mocharc.json --storage .vscode-test --extensions_dir .vscode-test/test-extensions --code_settings test-settings.json --open_resource C:\\Users\\Kyle\\Documents\\claude-agents-test-repo"
+```
 
 ## Build & Install
 
