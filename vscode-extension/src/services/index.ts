@@ -21,4 +21,4 @@ export {
     resetPersistenceService,
 } from './PersistenceService';
 export { TodoService, TodoItem, TodoState, getTodoService, resetTodoService } from './TodoService';
-export { TmuxService, getTmuxService, resetTmuxService, TmuxSessionInfo } from './TmuxService';
+export { TmuxService, getTmuxService, resetTmuxService } from './TmuxService';

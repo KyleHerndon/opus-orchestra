@@ -23,7 +23,7 @@ export type TerminalType =
  */
 export interface TerminalOptions {
     name: string;
-    cwd: string;
+    cwd?: string;  // Optional - tmux terminals set working dir via shell args
     iconPath?: vscode.ThemeIcon;
     env?: Record<string, string>;
 }

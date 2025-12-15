@@ -54,15 +54,20 @@ export class TerminalService implements ITerminalService {
     /**
      * Create a new terminal
      */
-    createTerminal(options: TerminalOptions): vscode.Terminal {
+    createTerminal(options: TerminalOptions & {
+        shellPath?: string;
+        shellArgs?: string[];
+    }): vscode.Terminal {
         // Convert path to Windows format for VS Code terminal cwd
-        const windowsCwd = agentPath(options.cwd).forNodeFs();
+        const windowsCwd = options.cwd ? agentPath(options.cwd).forNodeFs() : undefined;
 
         const terminalOptions: vscode.TerminalOptions = {
             name: options.name,
             cwd: windowsCwd,
             iconPath: options.iconPath,
             env: options.env,
+            shellPath: options.shellPath,
+            shellArgs: options.shellArgs,
         };
 
         return vscode.window.createTerminal(terminalOptions);
