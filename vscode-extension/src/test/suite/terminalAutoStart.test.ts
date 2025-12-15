@@ -92,17 +92,10 @@ suite('Terminal Auto-Start Feature Test Suite', () => {
             );
         });
 
-        test('ensureTerminalExists should return boolean', () => {
-            assert.ok(
-                agentManagerContent.includes('private ensureTerminalExists(agent: Agent): boolean'),
-                'ensureTerminalExists should return boolean'
-            );
-        });
-
-        test('ensureTerminalExists should emit agent:terminalCreated event', () => {
+        test('focusAgent should emit agent:terminalCreated event', () => {
             assert.ok(
                 agentManagerContent.includes("getEventBus().emit('agent:terminalCreated'"),
-                'ensureTerminalExists should emit agent:terminalCreated event'
+                'focusAgent should emit agent:terminalCreated event'
             );
         });
 
@@ -120,10 +113,10 @@ suite('Terminal Auto-Start Feature Test Suite', () => {
             );
         });
 
-        test('focusAgent should handle terminal creation result', () => {
+        test('focusAgent should check if terminal is alive before creating', () => {
             assert.ok(
-                agentManagerContent.includes('const terminalWasCreated = this.ensureTerminalExists(agent)'),
-                'focusAgent should capture ensureTerminalExists return value'
+                agentManagerContent.includes('terminalService.isTerminalAlive(agent.terminal)'),
+                'focusAgent should check terminal liveness'
             );
         });
     });
@@ -139,32 +132,34 @@ suite('Terminal Auto-Start Feature Test Suite', () => {
                 'focusAgent should check useTmux config'
             );
             assert.ok(
-                focusAgentMethod[0].includes('terminalWasCreated && config.autoStartClaudeOnFocus'),
-                'Non-tmux mode should only start Claude on new terminal creation'
+                focusAgentMethod[0].includes('config.autoStartClaudeOnFocus'),
+                'Non-tmux mode should check autoStartClaudeOnFocus config'
             );
         });
 
-        test('ensureTerminalExists should return false when terminal already exists', () => {
-            // Verify there are return false statements for existing terminals
-            const ensureMethod = agentManagerContent.match(
-                /private ensureTerminalExists\(agent: Agent\): boolean \{[\s\S]*?\n {4}\}/
+        test('focusAgent should check for existing terminal before creating new one', () => {
+            const focusAgentMethod = agentManagerContent.match(
+                /async focusAgent\(agentId: number\): Promise<void> \{[\s\S]*?\n {4}\}/
             );
-            assert.ok(ensureMethod, 'ensureTerminalExists method should exist');
-            const returnFalseCount = (ensureMethod[0].match(/return false;/g) || []).length;
+            assert.ok(focusAgentMethod, 'focusAgent method should exist');
             assert.ok(
-                returnFalseCount >= 2,
-                'ensureTerminalExists should return false when terminal exists (alive or by name)'
+                focusAgentMethod[0].includes('terminalService.isTerminalAlive'),
+                'focusAgent should check if terminal is alive'
+            );
+            assert.ok(
+                focusAgentMethod[0].includes('terminalService.findTerminalByName'),
+                'focusAgent should try to find terminal by name'
             );
         });
 
-        test('ensureTerminalExists should return true when new terminal is created', () => {
-            const ensureMethod = agentManagerContent.match(
-                /private ensureTerminalExists\(agent: Agent\): boolean \{[\s\S]*?\n {4}\}/
+        test('focusAgent should create terminal with tmux as shell in tmux mode', () => {
+            const focusAgentMethod = agentManagerContent.match(
+                /async focusAgent\(agentId: number\): Promise<void> \{[\s\S]*?\n {4}\}/
             );
-            assert.ok(ensureMethod, 'ensureTerminalExists method should exist');
+            assert.ok(focusAgentMethod, 'focusAgent method should exist');
             assert.ok(
-                ensureMethod[0].includes('return true;'),
-                'ensureTerminalExists should return true when new terminal is created'
+                focusAgentMethod[0].includes("shellPath: 'tmux'"),
+                'focusAgent should create terminal with tmux as shell'
             );
         });
     });
@@ -262,24 +257,17 @@ suite('Terminal Auto-Start Feature Test Suite', () => {
             );
         });
 
-        test('TmuxService should have buildTmuxCommand method', () => {
+        test('TmuxService should have listSessions method', () => {
             assert.ok(
-                tmuxServiceContent.includes('buildTmuxCommand('),
-                'TmuxService should have buildTmuxCommand method'
+                tmuxServiceContent.includes('listSessions(): string[]'),
+                'TmuxService should have listSessions method'
             );
         });
 
-        test('buildTmuxCommand should handle containerized agents', () => {
+        test('TmuxService should use CommandService for execution', () => {
             assert.ok(
-                tmuxServiceContent.includes('docker exec -it'),
-                'buildTmuxCommand should support docker exec for containers'
-            );
-        });
-
-        test('buildTmuxCommand should return isNewSession flag', () => {
-            assert.ok(
-                tmuxServiceContent.includes('isNewSession: boolean'),
-                'buildTmuxCommand should return isNewSession'
+                tmuxServiceContent.includes('getCommandService()'),
+                'TmuxService should use CommandService for proper terminal type handling'
             );
         });
 
@@ -308,8 +296,9 @@ suite('Terminal Auto-Start Feature Test Suite', () => {
 
         test('focusAgent should use TmuxService when tmux is enabled', () => {
             assert.ok(
-                agentManagerContent.includes('tmuxService.buildTmuxCommand'),
-                'focusAgent should use TmuxService.buildTmuxCommand'
+                agentManagerContent.includes('tmuxService.sessionExists') ||
+                agentManagerContent.includes('tmuxService.getSessionName'),
+                'focusAgent should use TmuxService for session management'
             );
         });
 
