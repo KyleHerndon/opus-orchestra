@@ -38,13 +38,17 @@ export class StatusService implements IStatusService {
                 return null;
             }
 
-            const latestFile = this.findLatestFile(statusDir, files);
-            if (!latestFile) {
+            const fileInfo = this.findLatestFile(statusDir, files);
+            if (!fileInfo) {
                 return null;
             }
 
-            const content = fs.readFileSync(latestFile, 'utf-8').trim();
-            return this.parseHookData(content);
+            const content = fs.readFileSync(fileInfo.path, 'utf-8').trim();
+            const parsed = this.parseHookData(content);
+            if (parsed) {
+                parsed.fileTimestamp = fileInfo.mtime;
+            }
+            return parsed;
         } catch (error) {
             if (isLoggerInitialized()) {
                 getLogger().child('StatusService').debug('Failed to check status', error);
@@ -139,8 +143,9 @@ export class StatusService implements IStatusService {
 
     /**
      * Find the most recently modified file in a directory
+     * Returns both the file path and its modification time
      */
-    private findLatestFile(directory: string, files: string[]): string | null {
+    private findLatestFile(directory: string, files: string[]): { path: string; mtime: number } | null {
         let latestFile = '';
         let latestTime = 0;
 
@@ -157,7 +162,7 @@ export class StatusService implements IStatusService {
             }
         }
 
-        return latestFile || null;
+        return latestFile ? { path: latestFile, mtime: latestTime } : null;
     }
 
     /**

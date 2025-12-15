@@ -107,6 +107,17 @@ export class StatusWatcher {
             return false;
         }
 
+        // Skip update if the status file is older than the agent's last interaction.
+        // This prevents stale status files from overwriting manually-set status
+        // (e.g., when user clicks "Allow" in UI but Claude hasn't written a new file yet).
+        if (parsedStatus.fileTimestamp !== undefined) {
+            const lastInteractionMs = agent.lastInteractionTime.getTime();
+            if (parsedStatus.fileTimestamp < lastInteractionMs) {
+                this.debugLog(`Skipping stale status file for agent ${agent.name} (file: ${parsedStatus.fileTimestamp}, interaction: ${lastInteractionMs})`);
+                return false;
+            }
+        }
+
         const previousStatus = agent.status;
         const hadApproval = agent.pendingApproval !== null;
 

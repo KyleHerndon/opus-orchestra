@@ -123,7 +123,7 @@ suite('AgentPanel HTML Test Suite', () => {
 
 suite('Message Handler Test Suite', () => {
     const srcPath = path.resolve(__dirname, '../../../src/agentPanel.ts');
-    const content = fs.readFileSync(srcPath, 'utf-8');
+    const content = fs.readFileSync(srcPath, 'utf-8').replace(/\r\n/g, '\n');
 
     test('All webview commands should have extension handlers', () => {
         // Extract commands sent via postMessage
