@@ -82,6 +82,11 @@ suite('AgentPanel HTML Test Suite', () => {
         assert.ok(cardHtml.includes('data-original='), 'Title input missing data-original');
     });
 
+    test('Agent cards should be draggable with repo path', () => {
+        assert.ok(cardHtml.includes('draggable="true"'), 'Agent card should have draggable attribute');
+        assert.ok(cardHtml.includes('data-repo-path='), 'Agent card should have data-repo-path for drag validation');
+    });
+
     test('Inline rename should have blur and keydown handlers', () => {
         assert.ok(
             content.includes("addEventListener('blur'") && content.includes('agent-title-input'),
@@ -95,6 +100,24 @@ suite('AgentPanel HTML Test Suite', () => {
             content.includes("command: 'renameAgent'") && content.includes('newName'),
             'Blur handler should post renameAgent command'
         );
+    });
+
+    test('Drag event handlers should exist', () => {
+        assert.ok(content.includes("addEventListener('dragstart'"), 'Missing dragstart handler');
+        assert.ok(content.includes("addEventListener('dragend'"), 'Missing dragend handler');
+        assert.ok(content.includes("addEventListener('dragover'"), 'Missing dragover handler');
+        assert.ok(content.includes("addEventListener('drop'"), 'Missing drop handler');
+    });
+
+    test('Drag drop should post reorderAgents command', () => {
+        assert.ok(
+            content.includes("command: 'reorderAgents'"),
+            'Drop handler should post reorderAgents command'
+        );
+    });
+
+    test('reorderAgents command should have handler', () => {
+        assert.ok(handledCases.has('reorderAgents'), 'reorderAgents should have a case in switch');
     });
 });
 
