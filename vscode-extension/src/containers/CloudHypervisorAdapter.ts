@@ -989,14 +989,15 @@ echo "Type 'oo' to start Claude Code"
                 let data = '';
                 res.on('data', (chunk: Buffer) => data += chunk);
                 res.on('end', () => {
-                    if (res.statusCode >= 200 && res.statusCode < 300) {
+                    const statusCode = res.statusCode ?? 0;
+                    if (statusCode >= 200 && statusCode < 300) {
                         try {
                             resolve(data ? JSON.parse(data) : {});
                         } catch {
                             resolve({});
                         }
                     } else {
-                        reject(new Error(`API error: ${res.statusCode} ${data}`));
+                        reject(new Error(`API error: ${statusCode} ${data}`));
                     }
                 });
             });
