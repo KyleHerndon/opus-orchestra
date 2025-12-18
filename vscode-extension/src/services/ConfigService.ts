@@ -126,8 +126,8 @@ export class ConfigService {
         return this.config.get<string>('containerCpuLimit', DEFAULT_CONFIG.containerCpuLimit);
     }
 
-    get firecrackerPath(): string {
-        return this.config.get<string>('firecrackerPath', DEFAULT_CONFIG.firecrackerPath);
+    get cloudHypervisorPath(): string {
+        return this.config.get<string>('cloudHypervisorPath', DEFAULT_CONFIG.cloudHypervisorPath);
     }
 
     // ========================================================================
@@ -154,7 +154,7 @@ export class ConfigService {
             containerImage: this.containerImage,
             containerMemoryLimit: this.containerMemoryLimit,
             containerCpuLimit: this.containerCpuLimit,
-            firecrackerPath: this.firecrackerPath,
+            cloudHypervisorPath: this.cloudHypervisorPath,
         };
     }
 

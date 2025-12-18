@@ -69,7 +69,8 @@ export class TmuxService {
      */
     killContainerSession(containerId: string, sessionName: string): void {
         try {
-            getCommandService().execSilent(`docker exec ${containerId} tmux kill-session -t "${sessionName}" 2>/dev/null`, '/tmp');
+            // Use timeout to prevent hanging if container doesn't exist or isn't running
+            getCommandService().execSilent(`timeout 2 docker exec ${containerId} tmux kill-session -t "${sessionName}" 2>/dev/null || true`, '/tmp');
             this.logger?.debug(`Killed container tmux session: ${sessionName} in ${containerId}`);
         } catch {
             // Session may not exist, that's fine

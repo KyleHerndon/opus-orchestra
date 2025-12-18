@@ -23,8 +23,9 @@ export class UnisolatedAdapter implements ContainerAdapter {
         };
     }
 
-    async create(_definitionPath: string, worktreePath: string, agentId: number): Promise<string> {
+    async create(_definitionPath: string, worktreePath: string, agentId: number, _sessionId?: string): Promise<string> {
         // Return a placeholder ID - no actual container is created
+        // Note: sessionId is not used for unisolated mode - Claude is started via terminal
         return `unisolated-${agentId}-${worktreePath.replace(/[^a-zA-Z0-9]/g, '_')}`;
     }
 
@@ -39,6 +40,11 @@ export class UnisolatedAdapter implements ContainerAdapter {
 
     async getStats(_containerId: string): Promise<{ memoryMB: number; cpuPercent: number } | null> {
         // No container stats available in unisolated mode
+        return null;
+    }
+
+    getShellCommand(_containerId: string, _worktreePath: string): { shellPath: string; shellArgs?: string[] } | null {
+        // Unisolated mode uses default shell - no special command needed
         return null;
     }
 }

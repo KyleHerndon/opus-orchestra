@@ -91,7 +91,7 @@ create_test_repo_cache() {
 
     # Create container configs for testing container discovery
     mkdir -p .opus-orchestra/containers/docker
-    mkdir -p .opus-orchestra/containers/firecracker
+    mkdir -p .opus-orchestra/containers/cloud-hypervisor
 
     # Docker dev config
     cat > .opus-orchestra/containers/dev.json << 'DEVEOF'
@@ -131,22 +131,23 @@ UITESTSEOF
 }
 DOCKERUITESTSEOF
 
-    # Firecracker dev config
-    cat > .opus-orchestra/containers/fc-dev.json << 'FCDEVEOF'
+    # Cloud Hypervisor dev config
+    cat > .opus-orchestra/containers/ch-dev.json << 'CHDEVEOF'
 {
-    "type": "firecracker",
-    "file": "firecracker/dev.json"
+    "type": "cloud-hypervisor",
+    "file": "cloud-hypervisor/dev.json"
 }
-FCDEVEOF
+CHDEVEOF
 
-    cat > .opus-orchestra/containers/firecracker/dev.json << 'FCDEVDEFEOF'
+    cat > .opus-orchestra/containers/cloud-hypervisor/dev.json << 'CHDEVDEFEOF'
 {
     "name": "Development VM",
-    "description": "Firecracker VM with full internet",
+    "description": "Cloud Hypervisor VM with virtio-fs mounts",
     "memoryMB": 4096,
-    "vcpuCount": 2
+    "vcpuCount": 2,
+    "mounts": []
 }
-FCDEVDEFEOF
+CHDEVDEFEOF
 
     git add .
     git commit -m "Initial commit"

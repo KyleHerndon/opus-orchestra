@@ -153,7 +153,7 @@ export class AgentPanel {
     private _getConfigLabel(config: DiscoveredConfig): string {
         const type = config.configRef.type;
         const typeIcon = type === 'docker' ? '🐳'
-            : type === 'firecracker' ? '🔥'
+            : type === 'cloud-hypervisor' ? '☁️'
             : '📦';
         const displayName = config.prefixedName.replace(/^(repo:|user:)/, '');
         return `${typeIcon} ${displayName}`;

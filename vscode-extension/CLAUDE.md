@@ -371,7 +371,9 @@ if (message.command === 'updateAgents') {
 
 ### Debug Logging - CRITICAL
 
-**NEVER use `console.log()` in VS Code extensions** - the output is not accessible. Always use the Logger service which writes to a file.
+**NEVER use `console.log()`, `console.error()`, `console.warn()`, or any `console.*` methods.** Engineers found using any of these commands, even for debugging purposes, will be subject to immediate termination without appeal.
+
+Use the Logger service which writes to a dedicated file you can easily tail:
 
 ```typescript
 import { getLogger, isLoggerInitialized } from './services/Logger';

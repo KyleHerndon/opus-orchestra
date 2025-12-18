@@ -11,7 +11,6 @@ import {
     ITerminalService,
     TerminalOptions,
     TerminalType,
-    TERMINAL_DELAYS,
 } from '../types';
 import { getConfigService } from './ConfigService';
 import { getContainerConfigService } from './ContainerConfigService';
@@ -40,7 +39,7 @@ export function getTerminalIcon(containerConfigName?: string): vscode.ThemeIcon 
         switch (configRef.type) {
             case 'docker':
                 return new vscode.ThemeIcon('package');
-            case 'firecracker':
+            case 'cloud-hypervisor':
                 return new vscode.ThemeIcon('vm');
         }
     }
@@ -118,79 +117,6 @@ export class TerminalService implements ITerminalService {
      */
     showTerminal(terminal: vscode.Terminal, preserveFocus: boolean = true): void {
         terminal.show(preserveFocus);
-    }
-
-    /**
-     * Create a terminal for an agent and optionally start Claude
-     */
-    createAgentTerminal(
-        name: string,
-        worktreePath: string,
-        containerConfigName?: string,
-        options?: {
-            autoStartClaude?: boolean;
-            claudeCommand?: string;
-            sessionId?: string;
-            resumeSession?: boolean;
-            containerId?: string;
-        }
-    ): vscode.Terminal {
-        const terminal = this.createTerminal({
-            name,
-            cwd: worktreePath,
-            iconPath: getTerminalIcon(containerConfigName),
-        });
-
-        if (options?.autoStartClaude && options.claudeCommand && options.sessionId) {
-            const isContainerized = !!(containerConfigName && containerConfigName !== 'unisolated');
-            const delay = isContainerized
-                ? TERMINAL_DELAYS.containerized
-                : TERMINAL_DELAYS.standard;
-
-            setTimeout(() => {
-                this.startClaudeInTerminal(terminal, {
-                    claudeCommand: options.claudeCommand!,
-                    sessionId: options.sessionId!,
-                    resumeSession: options.resumeSession,
-                    containerId: options.containerId,
-                    isContainerized: isContainerized && !!options.containerId,
-                });
-            }, delay);
-        }
-
-        return terminal;
-    }
-
-    /**
-     * Start Claude in a terminal
-     */
-    startClaudeInTerminal(
-        terminal: vscode.Terminal,
-        options: {
-            claudeCommand: string;
-            sessionId: string;
-            resumeSession?: boolean;
-            containerId?: string;
-            isContainerized?: boolean;
-        }
-    ): void {
-        const { claudeCommand, sessionId, resumeSession, containerId, isContainerized } = options;
-
-        if (isContainerized && containerId) {
-            // For containerized agents, exec into the container
-            let claudeArgs = resumeSession
-                ? `--resume "${sessionId}"`
-                : `--session-id "${sessionId}"`;
-            claudeArgs += ' --dangerously-skip-permissions';
-            terminal.sendText(`docker exec -it ${containerId} ${claudeCommand} ${claudeArgs}`);
-        } else {
-            // Standard mode - run directly
-            if (resumeSession) {
-                terminal.sendText(`${claudeCommand} --resume "${sessionId}"`);
-            } else {
-                terminal.sendText(`${claudeCommand} --session-id "${sessionId}"`);
-            }
-        }
     }
 
     /**

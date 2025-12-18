@@ -5,12 +5,12 @@
 
 export { ContainerAdapter, ContainerDisplayInfo } from './ContainerAdapter';
 export { DockerAdapter, DockerDefinition } from './DockerAdapter';
-export { FirecrackerAdapter, FirecrackerDefinition } from './FirecrackerAdapter';
+export { CloudHypervisorAdapter, CloudHypervisorDefinition } from './CloudHypervisorAdapter';
 export { UnisolatedAdapter } from './UnisolatedAdapter';
 
 import { ContainerAdapter } from './ContainerAdapter';
 import { DockerAdapter } from './DockerAdapter';
-import { FirecrackerAdapter } from './FirecrackerAdapter';
+import { CloudHypervisorAdapter } from './CloudHypervisorAdapter';
 import { UnisolatedAdapter } from './UnisolatedAdapter';
 
 /**
@@ -58,7 +58,7 @@ export async function getAvailableTypes(): Promise<string[]> {
 export function initializeAdapters(): void {
     registerAdapter(new UnisolatedAdapter());
     registerAdapter(new DockerAdapter());
-    registerAdapter(new FirecrackerAdapter());
+    registerAdapter(new CloudHypervisorAdapter());
 }
 
 // Initialize on module load

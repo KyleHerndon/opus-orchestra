@@ -2,7 +2,7 @@
   "name": "opus-orchestra",
   "displayName": "Claude Agents",
   "description": "Manage multiple Claude Code agents in parallel with git worktrees",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publisher": "your-publisher-id",
   "engines": {
     "vscode": "^1.85.0"
@@ -347,7 +347,7 @@
             "sandbox",
             "docker",
             "gvisor",
-            "firecracker"
+            "cloud-hypervisor"
           ],
           "default": "standard",
           "enumDescriptions": [
@@ -355,7 +355,7 @@
             "Sandbox Runtime - Lightweight OS-level isolation using bubblewrap/sandbox-exec",
             "Docker Container - Container isolation with hardened security options",
             "gVisor - Kernel-level isolation via userspace syscall interception",
-            "Firecracker VM - Full VM isolation with dedicated kernel"
+            "Cloud Hypervisor VM - Full VM isolation with virtio-fs mounts"
           ],
           "description": "Default isolation tier for new agents. Higher tiers provide more isolation and allow more autonomous operation."
         },
@@ -384,10 +384,10 @@
           "default": false,
           "description": "Use gVisor runtime (runsc) for Docker containers"
         },
-        "claudeAgents.firecrackerPath": {
+        "claudeAgents.cloudHypervisorPath": {
           "type": "string",
           "default": "",
-          "description": "Path to Firecracker binary. Leave empty if not available."
+          "description": "Path to Cloud Hypervisor binary. Leave empty to use default from PATH."
         },
         "claudeAgents.allowedDomains": {
           "type": "array",

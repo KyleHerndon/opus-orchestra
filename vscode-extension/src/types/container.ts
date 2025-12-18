@@ -8,10 +8,10 @@
 
 /**
  * Container type - extensible string for adapter lookup.
- * Built-in types: 'unisolated', 'docker', 'firecracker'
+ * Built-in types: 'unisolated', 'docker', 'cloud-hypervisor'
  * Additional types can be registered via adapters.
  */
-export type ContainerType = 'unisolated' | 'docker' | 'firecracker' | string;
+export type ContainerType = 'unisolated' | 'docker' | 'cloud-hypervisor' | string;
 
 /**
  * Container config reference - points to type + definition file.
@@ -87,7 +87,7 @@ export interface PersistedContainerInfo {
 export const CONTAINER_TYPE_DESCRIPTIONS: Record<string, string> = {
     'unisolated': 'No isolation - runs directly on host',
     'docker': 'Container isolation with hardened security options',
-    'firecracker': 'Full VM isolation with dedicated kernel',
+    'cloud-hypervisor': 'Full VM isolation with virtio-fs mounts',
 };
 
 /**

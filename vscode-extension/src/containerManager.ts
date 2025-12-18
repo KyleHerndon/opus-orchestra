@@ -28,7 +28,7 @@ export { ContainerState, ContainerInfo, PersistedContainerInfo, ContainerType };
 
 /**
  * ContainerManager handles lifecycle of isolated agent environments.
- * Uses adapters to support multiple container types: unisolated, docker, firecracker.
+ * Uses adapters to support multiple container types: unisolated, docker, cloud-hypervisor.
  */
 export class ContainerManager {
     private containers: Map<number, ContainerInfo> = new Map();
@@ -74,14 +74,16 @@ export class ContainerManager {
      * @param worktreePath - Path to the worktree to mount
      * @param agentId - Agent ID for labeling
      * @param repoPath - Repository path for config discovery
+     * @param sessionId - Claude session ID for auto-starting Claude in the container
      */
     async createContainer(
         configName: string,
         worktreePath: string,
         agentId: number,
-        repoPath: string
+        repoPath: string,
+        sessionId?: string
     ): Promise<ContainerInfo> {
-        this.debugLog(`Creating container from config '${configName}' for agent ${agentId}`);
+        this.debugLog(`createContainer: START configName='${configName}', agentId=${agentId}, repoPath='${repoPath}'`);
 
         const configService = getContainerConfigService();
 
@@ -93,20 +95,26 @@ export class ContainerManager {
 
         // Get the adapter for this container type
         const adapter = getAdapter(configRef.type);
+        this.debugLog(`createContainer: configRef.type='${configRef.type}', adapter=${adapter ? adapter.type : 'null'}`);
         if (!adapter) {
             throw new Error(`No adapter registered for container type '${configRef.type}'`);
         }
 
         // Check if adapter is available
-        if (!await adapter.isAvailable()) {
+        const available = await adapter.isAvailable();
+        this.debugLog(`createContainer: adapter.isAvailable()=${available}`);
+        if (!available) {
             throw new Error(`Container type '${configRef.type}' is not available on this system`);
         }
 
         // Get the definition file path (if any)
         const definitionPath = configService.getDefinitionPath(configName, repoPath) || '';
+        this.debugLog(`createContainer: definitionPath='${definitionPath}'`);
 
         // Create the container via adapter
-        const containerId = await adapter.create(definitionPath, worktreePath, agentId);
+        this.debugLog(`createContainer: calling adapter.create() with sessionId='${sessionId || 'none'}'`);
+        const containerId = await adapter.create(definitionPath, worktreePath, agentId, sessionId);
+        this.debugLog(`createContainer: adapter.create() returned containerId='${containerId}'`);
 
         const containerInfo: ContainerInfo = {
             id: containerId,
@@ -190,6 +198,25 @@ export class ContainerManager {
         }
 
         return adapter.getStats(container.id);
+    }
+
+    /**
+     * Get shell command for opening a terminal in a container.
+     * Returns null if the container type doesn't support interactive terminals.
+     */
+    getShellCommand(agentId: number): { shellPath: string; shellArgs?: string[] } | null {
+        const container = this.containers.get(agentId);
+        if (!container) {
+            return null;
+        }
+
+        const adapter = getAdapter(container.type);
+
+        if (!adapter || !adapter.getShellCommand) {
+            return null;
+        }
+
+        return adapter.getShellCommand(container.id, container.worktreePath);
     }
 
     // ========== Container Queries ==========
@@ -300,6 +327,34 @@ export class ContainerManager {
             }
         }
         return orphans.length;
+    }
+
+    /**
+     * Clean up any container resources associated with a worktree path.
+     * Called when deleting a worktree to ensure container resources are cleaned up.
+     */
+    async cleanupByWorktree(worktreePath: string): Promise<void> {
+        this.debugLog(`Cleaning up containers for worktree: ${worktreePath}`);
+
+        // Find any container for this worktree and remove it
+        for (const [agentId, container] of this.containers) {
+            if (container.worktreePath === worktreePath) {
+                await this.removeContainer(agentId);
+            }
+        }
+
+        // Also ask each adapter to clean up (handles orphaned VMs not in our state)
+        const types = await this.getAvailableContainerTypes();
+        for (const type of types) {
+            const adapter = getAdapter(type);
+            if (adapter?.cleanupByWorktree) {
+                try {
+                    await adapter.cleanupByWorktree(worktreePath);
+                } catch (e) {
+                    this.debugLog(`Adapter ${type} cleanup failed: ${e}`);
+                }
+            }
+        }
     }
 
     // ========== Proxy Service ==========

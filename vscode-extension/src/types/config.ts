@@ -38,7 +38,7 @@ export interface ExtensionConfig {
     containerImage: string;
     containerMemoryLimit: string;
     containerCpuLimit: string;
-    firecrackerPath: string;
+    cloudHypervisorPath: string;
 }
 
 // ============================================================================
@@ -64,7 +64,7 @@ export const DEFAULT_CONFIG: ExtensionConfig = {
     containerImage: 'ghcr.io/kyleherndon/opus-orchestra-sandbox:latest',
     containerMemoryLimit: '4g',
     containerCpuLimit: '2',
-    firecrackerPath: '',
+    cloudHypervisorPath: '',
 };
 
 /**

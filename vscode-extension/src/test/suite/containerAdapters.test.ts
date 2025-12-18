@@ -37,12 +37,12 @@ const ADAPTERS: AdapterConfig[] = [
         availabilityChecks: ['docker info'],
     },
     {
-        name: 'FirecrackerAdapter',
-        filename: 'FirecrackerAdapter.ts',
-        type: 'firecracker',
+        name: 'CloudHypervisorAdapter',
+        filename: 'CloudHypervisorAdapter.ts',
+        type: 'cloud-hypervisor',
         hasDefinitionFile: true,
         execMethod: 'vsock',
-        availabilityChecks: ['firecracker', '/dev/kvm'],
+        availabilityChecks: ['cloud-hypervisor', '/dev/kvm'],
     },
 ];
 
@@ -81,7 +81,7 @@ suite('Container Adapters Test Suite', () => {
                 'readonly type: string',
                 'isAvailable(): Promise<boolean>',
                 'getDisplayInfo(definitionPath: string): Promise<ContainerDisplayInfo>',
-                'create(definitionPath: string, worktreePath: string, agentId: number): Promise<string>',
+                'create(definitionPath: string, worktreePath: string, agentId: number, sessionId?: string): Promise<string>',
                 'exec(containerId: string, command: string): Promise<string>',
                 'destroy(containerId: string): Promise<void>',
             ];
@@ -233,7 +233,7 @@ suite('Container Adapters Test Suite', () => {
                     test('should export definition interface', () => {
                         const expectedInterface = adapter.name === 'DockerAdapter'
                             ? 'export interface DockerDefinition'
-                            : 'export interface FirecrackerDefinition';
+                            : 'export interface CloudHypervisorDefinition';
                         assert.ok(
                             adapterContent.includes(expectedInterface),
                             `${adapter.name} should export its definition interface`
@@ -260,9 +260,9 @@ suite('Container Adapters Test Suite', () => {
                 } else if (adapter.execMethod === 'vsock') {
                     test('exec should use vsock connection', () => {
                         assert.ok(
-                            adapterContent.includes('vsockPath') &&
+                            adapterContent.includes('vsockSocketPath') &&
                             adapterContent.includes('net.createConnection'),
-                            'FirecrackerAdapter should use vsock for commands'
+                            'CloudHypervisorAdapter should use vsock for commands'
                         );
                     });
                 }
@@ -329,60 +329,53 @@ suite('Container Adapters Test Suite', () => {
                 });
             }
 
-            if (adapter.name === 'FirecrackerAdapter') {
-                suite('Firecracker-Specific Features', () => {
-                    test('should configure VM via REST API', () => {
+            if (adapter.name === 'CloudHypervisorAdapter') {
+                suite('Cloud Hypervisor-Specific Features', () => {
+                    test('should support virtio-fs mounts via virtiofsd', () => {
                         assert.ok(
-                            adapterContent.includes('apiRequest('),
-                            'FirecrackerAdapter should use REST API for configuration'
+                            adapterContent.includes('virtiofsd') &&
+                            adapterContent.includes('startVirtiofsd'),
+                            'CloudHypervisorAdapter should use virtiofsd for mounts'
                         );
                     });
 
-                    test('should configure boot-source, machine-config, and drives', () => {
-                        const endpoints = ['/boot-source', '/machine-config', '/drives/'];
-                        for (const endpoint of endpoints) {
-                            assert.ok(
-                                adapterContent.includes(`'${endpoint}`),
-                                `FirecrackerAdapter should configure ${endpoint}`
-                            );
-                        }
+                    test('should configure VM via CLI arguments', () => {
+                        assert.ok(
+                            adapterContent.includes('--kernel') &&
+                            adapterContent.includes('--memory') &&
+                            adapterContent.includes('--cpus'),
+                            'CloudHypervisorAdapter should configure VM via CLI'
+                        );
                     });
 
                     test('should support vsock for host-guest communication', () => {
                         assert.ok(
-                            adapterContent.includes("'/vsock'") &&
-                            adapterContent.includes('VsockConfig'),
-                            'FirecrackerAdapter should support vsock'
+                            adapterContent.includes('vsock') &&
+                            adapterContent.includes('vsockSocketPath'),
+                            'CloudHypervisorAdapter should support vsock'
                         );
                     });
 
                     test('should check for kernel and rootfs files', () => {
                         assert.ok(
-                            adapterContent.includes('Firecracker kernel not found') &&
-                            adapterContent.includes('Firecracker rootfs not found'),
-                            'FirecrackerAdapter should validate kernel and rootfs'
+                            adapterContent.includes('Cloud Hypervisor kernel not found') &&
+                            adapterContent.includes('Cloud Hypervisor rootfs not found'),
+                            'CloudHypervisorAdapter should validate kernel and rootfs'
                         );
                     });
 
-                    test('should gracefully shutdown with SendCtrlAltDel', () => {
+                    test('should support workspace mounts', () => {
                         assert.ok(
-                            adapterContent.includes("'SendCtrlAltDel'"),
-                            'FirecrackerAdapter should use SendCtrlAltDel for graceful shutdown'
-                        );
-                    });
-
-                    test('should support TAP network devices', () => {
-                        assert.ok(
-                            adapterContent.includes('setupTapDevice') &&
-                            adapterContent.includes('ip tuntap'),
-                            'FirecrackerAdapter should support TAP networking'
+                            adapterContent.includes('workspace') &&
+                            adapterContent.includes('/workspace'),
+                            'CloudHypervisorAdapter should mount workspace'
                         );
                     });
 
                     test('should track running VMs', () => {
                         assert.ok(
                             adapterContent.includes('runningVMs = new Map<string, RunningVM>()'),
-                            'FirecrackerAdapter should track running VMs'
+                            'CloudHypervisorAdapter should track running VMs'
                         );
                     });
 
@@ -390,7 +383,7 @@ suite('Container Adapters Test Suite', () => {
                         assert.ok(
                             adapterContent.includes('/proc/') &&
                             adapterContent.includes('/stat'),
-                            'FirecrackerAdapter should read process stats from /proc'
+                            'CloudHypervisorAdapter should read process stats from /proc'
                         );
                     });
                 });

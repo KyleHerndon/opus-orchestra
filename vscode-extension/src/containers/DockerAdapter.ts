@@ -83,7 +83,7 @@ export class DockerAdapter implements ContainerAdapter {
         };
     }
 
-    async create(definitionPath: string, worktreePath: string, agentId: number): Promise<string> {
+    async create(definitionPath: string, worktreePath: string, agentId: number, sessionId?: string): Promise<string> {
         const definition = this.loadDefinition(definitionPath);
 
         this.debugLog(`Creating docker container for agent ${agentId} with definition: ${definitionPath}`);
@@ -166,6 +166,11 @@ export class DockerAdapter implements ContainerAdapter {
             for (const [key, value] of Object.entries(definition.environment)) {
                 args.push('-e', `${key}=${value}`);
             }
+        }
+
+        // Pass Claude session ID for auto-start
+        if (sessionId) {
+            args.push('-e', `CLAUDE_SESSION_ID=${sessionId}`);
         }
 
         // Custom entrypoint
@@ -270,6 +275,14 @@ export class DockerAdapter implements ContainerAdapter {
         } catch (e) {
             throw new Error(`Failed to parse docker definition: ${e}`);
         }
+    }
+
+    getShellCommand(containerId: string, _worktreePath: string): { shellPath: string; shellArgs?: string[] } | null {
+        // Use docker exec to get an interactive shell in the container
+        return {
+            shellPath: 'docker',
+            shellArgs: ['exec', '-it', '-w', '/workspace', containerId, '/bin/bash'],
+        };
     }
 
     /**
