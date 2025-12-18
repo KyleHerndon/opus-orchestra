@@ -99,17 +99,17 @@ suite('Terminal Auto-Start Feature Test Suite', () => {
             );
         });
 
-        test('focusAgent should check autoStartClaudeOnFocus config', () => {
+        test('focusAgent should set up oo alias for Claude', () => {
             assert.ok(
-                agentManagerContent.includes('config.autoStartClaudeOnFocus'),
-                'focusAgent should check autoStartClaudeOnFocus config'
+                agentManagerContent.includes("alias oo="),
+                'focusAgent should set up oo alias'
             );
         });
 
-        test('focusAgent should call startClaudeInAgent when terminal is created', () => {
+        test('focusAgent should include session ID in oo alias', () => {
             assert.ok(
-                agentManagerContent.includes('this.startClaudeInAgent(agentId)'),
-                'focusAgent should call startClaudeInAgent'
+                agentManagerContent.includes('--session-id'),
+                'oo alias should include --session-id'
             );
         });
 
@@ -128,12 +128,12 @@ suite('Terminal Auto-Start Feature Test Suite', () => {
             );
             assert.ok(focusAgentMethod, 'focusAgent method should exist');
             assert.ok(
-                focusAgentMethod[0].includes('if (config.useTmux)'),
+                focusAgentMethod[0].includes('if (config.useTmux'),
                 'focusAgent should check useTmux config'
             );
             assert.ok(
-                focusAgentMethod[0].includes('config.autoStartClaudeOnFocus'),
-                'Non-tmux mode should check autoStartClaudeOnFocus config'
+                focusAgentMethod[0].includes('ooAlias'),
+                'focusAgent should set up oo alias'
             );
         });
 
