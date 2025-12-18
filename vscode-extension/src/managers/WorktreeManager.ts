@@ -156,7 +156,7 @@ export class WorktreeManager {
                 worktreePath: agent.worktreePath,
                 repoPath: agent.repoPath,
                 taskFile: agent.taskFile,
-                isolationTier: agent.isolationTier,
+                containerConfigName: agent.containerConfigName,
                 sessionStarted: agent.sessionStarted,
             };
 

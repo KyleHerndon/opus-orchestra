@@ -4,10 +4,35 @@
 # vscode-extension-tester needs the VS Code GUI, which runs on Windows.
 # This script detects WSL and runs tests via cmd.exe when needed.
 #
+# IMPORTANT NOTES FOR FUTURE DEVELOPERS:
+# =====================================
+# 1. TEST REPO PATH: The test repository path is configured in TWO places:
+#    - This script (TEST_REPO_WSL, TEST_REPO_WIN) - used for creating/resetting the repo
+#    - test-settings.json (claudeAgents.repositoryPaths) - used by the extension
+#    If you change the path, update BOTH locations!
+#
+# 2. WSL REMOTE NOT SUPPORTED: vscode-extension-tester does NOT support opening
+#    folders via WSL remote (vscode-remote://wsl+...). The extension runs in
+#    Windows VS Code context, not WSL remote. This means:
+#    - Terminals created by the extension are Windows terminals, not WSL
+#    - tmux must be DISABLED for tests (it's a Linux command)
+#    - Git commands work because CommandService wraps them with `wsl bash -c`
+#
+# 3. TMUX DISABLED: test-settings.json sets useTmux=false because VS Code
+#    terminals in the test environment are Windows terminals, not WSL shells.
+#    The extension's tmux mode expects `shellPath: 'tmux'` to work, which
+#    only works when VS Code is connected to WSL remote (not supported here).
+#
+# 4. WHY TESTS MIGHT FAIL:
+#    - "No repository configured" -> Check test-settings.json has correct repositoryPaths
+#    - Agent creation timeout -> Check the test repo exists and is a git repo
+#    - Container configs not found -> Check .opus-orchestra/containers/ exists in test repo
+#    - Terminal errors -> Ensure useTmux is false in test-settings.json
+#
 # Tests run with:
 # - Extension isolation (clean extensions directory with only our extension)
 # - WSL terminal type configured via test-settings.json
-# - A test git repository opened
+# - A test git repository with container configs
 #
 # Usage:
 #   ./scripts/test-ui.sh setup    # Download VS Code + ChromeDriver + create test repo
@@ -19,7 +44,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
-# Test configuration - use Windows path for test repo
+# Test configuration
+# IMPORTANT: If you change this path, also update test-settings.json repositoryPaths!
 TEST_REPO_WSL="/mnt/c/Users/Kyle/Documents/claude-agents-test-repo"
 TEST_REPO_WIN="C:\\Users\\Kyle\\Documents\\claude-agents-test-repo"
 TEST_REPO_CACHE="/mnt/c/Users/Kyle/Documents/.claude-agents-test-repo-cache"
@@ -41,6 +67,14 @@ check_windows_node() {
     "/mnt/c/Program Files/nodejs/node.exe" --version &> /dev/null 2>&1
 }
 
+# Run a command on Windows via cmd.exe
+# Uses .cmd versions of npm/npx to avoid PowerShell issues
+run_win_cmd() {
+    local win_path=$(wsl_to_windows "$PROJECT_DIR")
+    # Replace forward slashes in remaining args for Windows compatibility
+    cmd.exe /c "cd /d $win_path && $*"
+}
+
 # Create cached test repo template (run once)
 create_test_repo_cache() {
     if [[ -d "$TEST_REPO_CACHE/.git" ]]; then
@@ -54,6 +88,66 @@ create_test_repo_cache() {
     git config user.email "test@test.com"
     git config user.name "Test User"
     echo "# Test Repository for Claude Agents" > README.md
+
+    # Create container configs for testing container discovery
+    mkdir -p .opus-orchestra/containers/docker
+    mkdir -p .opus-orchestra/containers/firecracker
+
+    # Docker dev config
+    cat > .opus-orchestra/containers/dev.json << 'DEVEOF'
+{
+    "type": "docker",
+    "file": "docker/dev.json"
+}
+DEVEOF
+
+    cat > .opus-orchestra/containers/docker/dev.json << 'DOCKERDEVEOF'
+{
+    "name": "Development",
+    "description": "Full internet access for development",
+    "image": "ghcr.io/kyleherndon/opus-orchestra-sandbox:latest",
+    "memoryLimit": "4g",
+    "cpuLimit": "2",
+    "network": "bridge"
+}
+DOCKERDEVEOF
+
+    # Docker ui-tests config
+    cat > .opus-orchestra/containers/ui-tests.json << 'UITESTSEOF'
+{
+    "type": "docker",
+    "file": "docker/ui-tests.json"
+}
+UITESTSEOF
+
+    cat > .opus-orchestra/containers/docker/ui-tests.json << 'DOCKERUITESTSEOF'
+{
+    "name": "UI Tests",
+    "description": "VS Code UI testing with xvfb",
+    "image": "ghcr.io/kyleherndon/opus-orchestra-sandbox:ui-tests",
+    "memoryLimit": "8g",
+    "cpuLimit": "4",
+    "network": "bridge"
+}
+DOCKERUITESTSEOF
+
+    # Firecracker dev config
+    cat > .opus-orchestra/containers/fc-dev.json << 'FCDEVEOF'
+{
+    "type": "firecracker",
+    "file": "firecracker/dev.json"
+}
+FCDEVEOF
+
+    cat > .opus-orchestra/containers/firecracker/dev.json << 'FCDEVDEFEOF'
+{
+    "name": "Development VM",
+    "description": "Firecracker VM with full internet",
+    "memoryMB": 4096,
+    "vcpuCount": 2
+}
+FCDEVDEFEOF
+
     git add .
     git commit -m "Initial commit"
     cd - > /dev/null
@@ -71,8 +165,6 @@ reset_test_repo() {
 
 # Run setup (download VS Code + ChromeDriver + create test repo)
 run_setup() {
-    local win_path=$(wsl_to_windows "$PROJECT_DIR")
-
     if is_wsl; then
         if ! check_windows_node; then
             echo "ERROR: Node.js not found on Windows"
@@ -81,9 +173,18 @@ run_setup() {
         fi
 
         echo "WSL detected - running setup via Windows cmd.exe..."
-        cmd.exe /c "cd /d $win_path && npx extest get-vscode --storage .vscode-test"
-        cmd.exe /c "cd /d $win_path && npx extest get-chromedriver --storage .vscode-test"
+
+        # Use npm.cmd explicitly to avoid PowerShell issues
+        echo "Installing npm dependencies..."
+        run_win_cmd "npm.cmd install"
+
+        echo "Downloading VS Code..."
+        run_win_cmd "npx.cmd extest get-vscode --storage .vscode-test"
+
+        echo "Downloading ChromeDriver..."
+        run_win_cmd "npx.cmd extest get-chromedriver --storage .vscode-test"
     else
+        npm install
         npx extest get-vscode --storage .vscode-test
         npx extest get-chromedriver --storage .vscode-test
     fi
@@ -97,7 +198,6 @@ run_setup() {
 
 # Run tests
 run_tests() {
-    local win_path=$(wsl_to_windows "$PROJECT_DIR")
     local test_exit_code=0
 
     # Reset test repo from cache for clean state
@@ -115,15 +215,26 @@ run_tests() {
         echo "  - Test repository: $TEST_REPO_WIN"
         echo ""
 
+        # Ensure dependencies are installed and code is compiled
+        echo "Checking npm dependencies..."
+        run_win_cmd "npm.cmd install" || true
+
+        echo "Compiling TypeScript..."
+        run_win_cmd "npm.cmd run compile" || { echo "ERROR: TypeScript compilation failed"; exit 1; }
+
         # First, install Remote-WSL extension to the isolated directory (needed for WSL terminal support)
         echo "Installing Remote-WSL extension..."
-        cmd.exe /c "cd /d $win_path && npx extest install-from-marketplace ms-vscode-remote.remote-wsl --storage .vscode-test --extensions_dir $TEST_EXTENSIONS_DIR" 2>/dev/null || true
+        run_win_cmd "npx.cmd extest install-from-marketplace ms-vscode-remote.remote-wsl --storage .vscode-test --extensions_dir $TEST_EXTENSIONS_DIR" 2>/dev/null || true
 
         # Run setup-and-run which handles extension packaging and installation
-        cmd.exe /c "cd /d $win_path && npx extest setup-and-run ./out/test/ui/*.test.js --mocha_config .mocharc.json --storage .vscode-test --extensions_dir $TEST_EXTENSIONS_DIR --code_settings $TEST_SETTINGS_FILE --open_resource $TEST_REPO_WIN" || test_exit_code=$?
+        # Note: Explicit test file path since Windows cmd.exe doesn't expand glob patterns
+        echo "Running tests..."
+        run_win_cmd "npx.cmd extest setup-and-run out/test/ui/dashboard.test.js --mocha_config .mocharc.json --storage .vscode-test --extensions_dir $TEST_EXTENSIONS_DIR --code_settings $TEST_SETTINGS_FILE --open_resource \"$TEST_REPO_WIN\"" || test_exit_code=$?
 
         exit $test_exit_code
     else
+        npm install
+        npm run compile
         npx extest setup-and-run ./out/test/ui/*.test.js \
             --mocha_config .mocharc.json \
             --storage .vscode-test \
@@ -139,7 +250,8 @@ run_check() {
     if is_wsl; then
         echo "  Platform: WSL"
         if check_windows_node; then
-            echo "  Windows Node.js: ✓"
+            local node_ver=$("/mnt/c/Program Files/nodejs/node.exe" --version 2>/dev/null)
+            echo "  Windows Node.js: $node_ver ✓"
         else
             echo "  Windows Node.js: not found ✗"
             echo "    Install Node.js on Windows to run UI tests"
@@ -161,6 +273,13 @@ run_check() {
     else
         echo "  Test settings: $TEST_SETTINGS_FILE not found ✗"
         exit 1
+    fi
+
+    # Check if vscode-extension-tester is installed
+    if [[ -d "$PROJECT_DIR/node_modules/vscode-extension-tester" ]]; then
+        echo "  vscode-extension-tester: installed ✓"
+    else
+        echo "  vscode-extension-tester: not installed (run 'npm install')"
     fi
 
     echo ""

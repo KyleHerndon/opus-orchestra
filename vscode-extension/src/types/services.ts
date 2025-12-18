@@ -4,7 +4,7 @@
 
 import * as vscode from 'vscode';
 import { DiffStats } from './agent';
-import { ContainerConfig, ContainerInfo, IsolationTier } from './container';
+import { ContainerInfo } from './container';
 import { TerminalOptions } from './terminal';
 import { ParsedStatus } from './hooks';
 
@@ -46,8 +46,10 @@ export interface IStatusService {
  * Container management service interface
  */
 export interface IContainerService {
-    getAvailableTiers(): Promise<IsolationTier[]>;
-    createContainer(agentId: number, worktreePath: string, tier: IsolationTier, config?: ContainerConfig): Promise<ContainerInfo>;
+    /** Get available container config names for a repo */
+    getAvailableConfigs(repoPath: string): string[];
+    /** Create a container using a config name */
+    createContainer(agentId: number, worktreePath: string, configName: string, repoPath: string): Promise<ContainerInfo>;
     removeContainer(agentId: number): Promise<void>;
     getContainer(agentId: number): ContainerInfo | undefined;
     execInContainer(agentId: number, command: string): Promise<string>;

@@ -71,7 +71,7 @@ export class PersistenceService {
                 worktreePath: agent.worktreePath,
                 repoPath: agent.repoPath,
                 taskFile: agent.taskFile,
-                isolationTier: agent.isolationTier,
+                containerConfigName: agent.containerConfigName,
                 sessionStarted: agent.sessionStarted,
             });
         }
@@ -170,7 +170,8 @@ export class PersistenceService {
         for (const container of containers.values()) {
             persisted.push({
                 id: container.id,
-                tier: container.tier,
+                configName: container.configName,
+                type: container.type,
                 agentId: container.agentId,
                 worktreePath: container.worktreePath,
                 proxyPort: container.proxyPort,

@@ -322,4 +322,8 @@ suite('Terminal Auto-Start Feature Test Suite', () => {
             );
         });
     });
+
+    // Note: AgentPanel has been refactored to use Svelte components.
+    // The event-driven UI is now handled by Svelte's reactive stores.
+    // See src/agentPanel/webview/ for the Svelte implementation.
 });

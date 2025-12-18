@@ -7,15 +7,23 @@
 // ============================================================================
 
 /**
- * Isolation tiers for sandboxed agents.
- * Higher tiers provide more isolation and allow more autonomy.
+ * Container type - extensible string for adapter lookup.
+ * Built-in types: 'unisolated', 'docker', 'firecracker'
+ * Additional types can be registered via adapters.
  */
-export type IsolationTier =
-    | 'standard'    // No isolation - manual approval required
-    | 'sandbox'     // Lightweight OS-level isolation (bubblewrap/sandbox-exec)
-    | 'docker'      // Container isolation with hardened security
-    | 'gvisor'      // Kernel-level isolation via userspace syscall interception
-    | 'firecracker'; // Full VM isolation with dedicated kernel
+export type ContainerType = 'unisolated' | 'docker' | 'firecracker' | string;
+
+/**
+ * Container config reference - points to type + definition file.
+ * The extension doesn't parse container-specific fields; it passes the
+ * definition file path to the adapter.
+ */
+export interface ContainerConfigRef {
+    /** Container type (determines which adapter to use) */
+    type: ContainerType;
+    /** Path to container definition file (relative to config location) */
+    file?: string;
+}
 
 /**
  * Container lifecycle state
@@ -37,35 +45,14 @@ export interface ContainerMount {
 }
 
 /**
- * Container configuration for a repository
- */
-export interface ContainerConfig {
-    /** Minimum required tier (won't run with less isolation) */
-    minimumTier?: IsolationTier;
-    /** Recommended tier */
-    recommendedTier?: IsolationTier;
-    /** Custom Docker image */
-    image?: string;
-    /** Dockerfile path (relative to repo) */
-    dockerfile?: string;
-    /** Network allowlist additions */
-    allowedDomains?: string[];
-    /** Memory limit (e.g., '4g') */
-    memoryLimit?: string;
-    /** CPU limit (e.g., '2') */
-    cpuLimit?: string;
-    /** Additional mounts */
-    additionalMounts?: ContainerMount[];
-    /** Environment variables (non-sensitive only) */
-    environment?: Record<string, string>;
-}
-
-/**
  * Runtime container/sandbox info
  */
 export interface ContainerInfo {
     id: string;
-    tier: IsolationTier;
+    /** Config name (e.g., 'unisolated', 'repo:dev', 'user:secure') */
+    configName: string;
+    /** Container type from the config */
+    type: ContainerType;
     state: ContainerState;
     agentId: number;
     worktreePath: string;
@@ -80,7 +67,10 @@ export interface ContainerInfo {
  */
 export interface PersistedContainerInfo {
     id: string;
-    tier: IsolationTier;
+    /** Config name (e.g., 'unisolated', 'repo:dev', 'user:secure') */
+    configName: string;
+    /** Container type from the config */
+    type: ContainerType;
     agentId: number;
     worktreePath: string;
     proxyPort?: number;
@@ -92,22 +82,13 @@ export interface PersistedContainerInfo {
 // ============================================================================
 
 /**
- * Isolation tier descriptions for UI
+ * Container type descriptions for UI
  */
-export const ISOLATION_TIER_DESCRIPTIONS: Record<IsolationTier, string> = {
-    'standard': 'No isolation - manual approval for all operations',
-    'sandbox': 'Lightweight OS-level isolation (bubblewrap/sandbox-exec)',
+export const CONTAINER_TYPE_DESCRIPTIONS: Record<string, string> = {
+    'unisolated': 'No isolation - runs directly on host',
     'docker': 'Container isolation with hardened security options',
-    'gvisor': 'Kernel-level isolation via userspace syscall interception',
     'firecracker': 'Full VM isolation with dedicated kernel',
 };
-
-/**
- * Isolation tier order (for comparison)
- */
-export const ISOLATION_TIER_ORDER: IsolationTier[] = [
-    'standard', 'sandbox', 'docker', 'gvisor', 'firecracker'
-];
 
 /**
  * Container labels for identification

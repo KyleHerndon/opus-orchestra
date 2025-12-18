@@ -2,7 +2,6 @@
  * Configuration types and defaults
  */
 
-import { IsolationTier } from './container';
 import { TerminalType } from './terminal';
 
 // ============================================================================
@@ -35,8 +34,7 @@ export interface ExtensionConfig {
     // Polling intervals (ms)
     diffPollingInterval: number;
 
-    // Isolation settings
-    isolationTier: IsolationTier;
+    // Container settings (legacy - for reference, these are in package.json)
     containerImage: string;
     containerMemoryLimit: string;
     containerCpuLimit: string;
@@ -63,7 +61,6 @@ export const DEFAULT_CONFIG: ExtensionConfig = {
     repositoryPaths: [],
     terminalType: 'wsl',
     diffPollingInterval: 60000,
-    isolationTier: 'standard',
     containerImage: 'ghcr.io/kyleherndon/opus-orchestra-sandbox:latest',
     containerMemoryLimit: '4g',
     containerCpuLimit: '2',

@@ -11,30 +11,42 @@ import {
     ITerminalService,
     TerminalOptions,
     TerminalType,
-    IsolationTier,
     TERMINAL_DELAYS,
 } from '../types';
 import { getConfigService } from './ConfigService';
+import { getContainerConfigService } from './ContainerConfigService';
 
 // ============================================================================
 // Terminal Icon Strategy
 // ============================================================================
 
 /**
- * Get the appropriate icon for an agent based on isolation tier
+ * Get the appropriate icon for an agent based on container config name.
+ * Looks up the config type to determine the icon.
  */
-export function getTerminalIcon(isolationTier?: IsolationTier): vscode.ThemeIcon {
-    switch (isolationTier) {
-        case 'docker':
-        case 'gvisor':
-            return new vscode.ThemeIcon('package');
-        case 'sandbox':
-            return new vscode.ThemeIcon('shield');
-        case 'firecracker':
-            return new vscode.ThemeIcon('vm');
-        default:
-            return new vscode.ThemeIcon('hubot');
+export function getTerminalIcon(containerConfigName?: string): vscode.ThemeIcon {
+    if (!containerConfigName || containerConfigName === 'unisolated') {
+        return new vscode.ThemeIcon('hubot');
     }
+
+    // Try to get the config type from the config service
+    // For prefixed names like "repo:dev", we need to look up the type
+    const configService = getContainerConfigService();
+    // Default to workspace root if we can't determine repoPath
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+    const configRef = configService.loadConfigRef(containerConfigName, workspaceRoot);
+
+    if (configRef) {
+        switch (configRef.type) {
+            case 'docker':
+                return new vscode.ThemeIcon('package');
+            case 'firecracker':
+                return new vscode.ThemeIcon('vm');
+        }
+    }
+
+    // Default icon for unknown container types
+    return new vscode.ThemeIcon('shield');
 }
 
 // ============================================================================
@@ -114,7 +126,7 @@ export class TerminalService implements ITerminalService {
     createAgentTerminal(
         name: string,
         worktreePath: string,
-        isolationTier?: IsolationTier,
+        containerConfigName?: string,
         options?: {
             autoStartClaude?: boolean;
             claudeCommand?: string;
@@ -126,11 +138,12 @@ export class TerminalService implements ITerminalService {
         const terminal = this.createTerminal({
             name,
             cwd: worktreePath,
-            iconPath: getTerminalIcon(isolationTier),
+            iconPath: getTerminalIcon(containerConfigName),
         });
 
         if (options?.autoStartClaude && options.claudeCommand && options.sessionId) {
-            const delay = (isolationTier && isolationTier !== 'standard')
+            const isContainerized = !!(containerConfigName && containerConfigName !== 'unisolated');
+            const delay = isContainerized
                 ? TERMINAL_DELAYS.containerized
                 : TERMINAL_DELAYS.standard;
 
@@ -140,7 +153,7 @@ export class TerminalService implements ITerminalService {
                     sessionId: options.sessionId!,
                     resumeSession: options.resumeSession,
                     containerId: options.containerId,
-                    isContainerized: isolationTier !== 'standard' && !!options.containerId,
+                    isContainerized: isContainerized && !!options.containerId,
                 });
             }, delay);
         }

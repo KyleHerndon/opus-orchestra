@@ -1,5 +1,8 @@
 {
   "claudeAgents.terminalType": "wsl",
-  "claudeAgents.useTmux": true,
-  "claudeAgents.autoStartClaudeOnFocus": true
+  "claudeAgents.useTmux": false,
+  "claudeAgents.autoStartClaudeOnFocus": false,
+  "claudeAgents.repositoryPaths": [
+    "C:\\Users\\Kyle\\Documents\\claude-agents-test-repo"
+  ]
 }

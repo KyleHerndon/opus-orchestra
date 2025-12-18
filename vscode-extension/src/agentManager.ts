@@ -11,8 +11,8 @@ import {
     PersistedAgent,
     DiffStats,
     PendingApproval,
-    IsolationTier,
     ContainerInfo,
+    ContainerType,
     AGENT_NAMES,
 } from './types';
 
@@ -28,10 +28,11 @@ import {
     getTerminalIcon,
     getPersistenceService,
     getTmuxService,
+    getContainerConfigService,
 } from './services';
 
 // Re-export types for backward compatibility
-export { Agent, AgentStatus, PersistedAgent, DiffStats, PendingApproval, IsolationTier, ContainerInfo };
+export { Agent, AgentStatus, PersistedAgent, DiffStats, PendingApproval, ContainerInfo, ContainerType };
 
 /**
  * Coordinates agent lifecycle and delegates to specialized managers.
@@ -76,8 +77,18 @@ export class AgentManager {
         return this.containerManager;
     }
 
-    async getAvailableIsolationTiers(): Promise<IsolationTier[]> {
-        return this.containerManager.getAvailableTiers();
+    /**
+     * Get available container config names for a repository.
+     */
+    getAvailableContainerConfigs(repoPath: string): string[] {
+        return getContainerConfigService().listAvailableConfigs(repoPath);
+    }
+
+    /**
+     * Get the default container config name for a repository.
+     */
+    getDefaultContainerConfig(repoPath: string): string {
+        return getContainerConfigService().getDefaultConfigName(repoPath);
     }
 
     private debugLog(message: string): void {
@@ -123,7 +134,7 @@ export class AgentManager {
     // Agent Lifecycle
     // ========================================================================
 
-    async createAgents(count: number, repoPath?: string, isolationTier?: IsolationTier): Promise<void> {
+    async createAgents(count: number, repoPath?: string, containerConfigName?: string): Promise<void> {
         const repoPaths = this.getRepositoryPaths();
 
         if (repoPaths.length === 0) {
@@ -154,20 +165,8 @@ export class AgentManager {
             return;
         }
 
-        const defaultTier = isolationTier || getConfigService().isolationTier;
-        const repoConfig = this.containerManager.loadRepoConfig(targetRepo);
-        const availableTiers = await this.containerManager.getAvailableTiers();
-
-        if (!availableTiers.includes(defaultTier)) {
-            const fallback = availableTiers[availableTiers.length - 1];
-            const useAlternative = await vscode.window.showWarningMessage(
-                `Isolation tier '${defaultTier}' is not available. Use '${fallback}' instead?`,
-                'Yes', 'No'
-            );
-            if (useAlternative !== 'Yes') {
-                return;
-            }
-        }
+        // Use provided config name or get default for this repo
+        const configName = containerConfigName || this.getDefaultContainerConfig(targetRepo);
 
         const baseBranch = this.execCommand('git branch --show-current', targetRepo).trim();
 
@@ -229,7 +228,7 @@ export class AgentManager {
                                 pendingApproval: null,
                                 lastInteractionTime: new Date(),
                                 diffStats: { insertions: 0, deletions: 0, filesChanged: 0 },
-                                isolationTier: existingMetadata.isolationTier || defaultTier,
+                                containerConfigName: existingMetadata.containerConfigName || configName,
                                 sessionStarted: existingMetadata.sessionStarted,
                             };
 
@@ -261,7 +260,7 @@ export class AgentManager {
                         pendingApproval: null,
                         lastInteractionTime: new Date(),
                         diffStats: { insertions: 0, deletions: 0, filesChanged: 0 },
-                        isolationTier: defaultTier
+                        containerConfigName: configName
                     };
 
                     this.agents.set(nextId, agent);
@@ -271,20 +270,21 @@ export class AgentManager {
                     this.worktreeManager.copyCoordinationFiles(agent);
                     this.worktreeManager.saveAgentMetadata(agent);
 
-                    if (defaultTier !== 'standard') {
+                    // Create container if not unisolated
+                    if (configName !== 'unisolated') {
                         try {
                             const containerInfo = await this.containerManager.createContainer(
-                                nextId,
+                                configName,
                                 worktreePath,
-                                defaultTier,
-                                repoConfig
+                                nextId,
+                                targetRepo
                             );
                             agent.containerInfo = containerInfo;
                         } catch (containerError) {
                             vscode.window.showWarningMessage(
-                                `Failed to create container for agent ${agentName}: ${containerError}. Running in standard mode.`
+                                `Failed to create container for agent ${agentName}: ${containerError}. Running unisolated.`
                             );
-                            agent.isolationTier = 'standard';
+                            agent.containerConfigName = 'unisolated';
                         }
                     }
 
@@ -302,10 +302,10 @@ export class AgentManager {
             // Persist agents to storage (both VS Code state and worktree metadata)
             this.persistence.saveAgents(this.agents);
 
-            const tierInfo = defaultTier !== 'standard' ? ` (${defaultTier} isolation)` : '';
+            const configInfo = configName !== 'unisolated' ? ` (${configName})` : '';
             const message = restoredCount > 0
-                ? `Created ${createdCount} new, restored ${restoredCount} existing agent worktrees${tierInfo}`
-                : `Created ${createdCount} agent worktrees${tierInfo}`;
+                ? `Created ${createdCount} new, restored ${restoredCount} existing agent worktrees${configInfo}`
+                : `Created ${createdCount} agent worktrees${configInfo}`;
 
             // Complete operation successfully
             commandHandler.completeOperation(operation, message);
@@ -462,49 +462,50 @@ export class AgentManager {
     }
 
     // ========================================================================
-    // Isolation Tier Management
+    // Container Config Management
     // ========================================================================
 
-    async changeAgentIsolationTier(agentId: number, newTier: IsolationTier): Promise<boolean> {
+    async changeAgentContainerConfig(agentId: number, newConfigName: string): Promise<boolean> {
         const agent = this.agents.get(agentId);
         if (!agent) {
-            this.debugLog(`Cannot change tier: agent ${agentId} not found`);
+            this.debugLog(`Cannot change container config: agent ${agentId} not found`);
             return false;
         }
 
-        const currentTier = agent.isolationTier || 'standard';
-        if (currentTier === newTier) {
-            this.debugLog(`Agent ${agentId} already at tier ${newTier}`);
+        const currentConfig = agent.containerConfigName || 'unisolated';
+        if (currentConfig === newConfigName) {
+            this.debugLog(`Agent ${agentId} already using config ${newConfigName}`);
             return true;
         }
 
-        this.debugLog(`Changing agent ${agentId} isolation from ${currentTier} to ${newTier}`);
+        this.debugLog(`Changing agent ${agentId} container config from ${currentConfig} to ${newConfigName}`);
 
         try {
-            if (currentTier !== 'standard') {
+            // Remove existing container if any
+            if (currentConfig !== 'unisolated') {
                 await this.containerManager.removeContainer(agentId);
             }
 
-            if (newTier !== 'standard') {
-                const repoConfig = this.containerManager.loadRepoConfig(agent.repoPath);
+            // Create new container if not unisolated
+            if (newConfigName !== 'unisolated') {
                 const containerInfo = await this.containerManager.createContainer(
-                    agentId,
+                    newConfigName,
                     agent.worktreePath,
-                    newTier,
-                    repoConfig
+                    agentId,
+                    agent.repoPath
                 );
                 agent.containerInfo = containerInfo;
             } else {
                 agent.containerInfo = undefined;
             }
 
-            agent.isolationTier = newTier;
+            agent.containerConfigName = newConfigName;
             this.persistence.saveAgents(this.agents);
 
             return true;
         } catch (error) {
-            this.debugLog(`Failed to change isolation tier: ${error}`);
-            vscode.window.showErrorMessage(`Failed to change isolation tier: ${error}`);
+            this.debugLog(`Failed to change container config: ${error}`);
+            vscode.window.showErrorMessage(`Failed to change container config: ${error}`);
             return false;
         }
     }
@@ -530,7 +531,7 @@ export class AgentManager {
             // Create VS Code terminal that creates/attaches to tmux session
             agent.terminal = terminalService.createTerminal({
                 name: agent.name,
-                iconPath: getTerminalIcon(agent.isolationTier),
+                iconPath: getTerminalIcon(agent.containerConfigName),
                 shellPath: 'tmux',
                 shellArgs: ['new-session', '-A', '-s', sessionName, '-c', agent.worktreePath],
             });
@@ -551,7 +552,7 @@ export class AgentManager {
             agent.terminal = terminalService.createAgentTerminal(
                 agent.name,
                 agent.worktreePath,
-                agent.isolationTier,
+                agent.containerConfigName,
                 {
                     autoStartClaude: config.autoStartClaude,
                     claudeCommand: config.claudeCommand,
@@ -584,7 +585,7 @@ export class AgentManager {
         agent.terminal = terminalService.createTerminal({
             name: agent.name,
             cwd: agent.worktreePath,
-            iconPath: getTerminalIcon(agent.isolationTier),
+            iconPath: getTerminalIcon(agent.containerConfigName),
         });
 
         getEventBus().emit('agent:terminalCreated', { agent, isNew: true });
@@ -659,7 +660,7 @@ export class AgentManager {
             // Create VS Code terminal that creates/attaches to tmux session
             agent.terminal = terminalService.createTerminal({
                 name: agent.name,
-                iconPath: getTerminalIcon(agent.isolationTier),
+                iconPath: getTerminalIcon(agent.containerConfigName),
                 shellPath: 'tmux',
                 shellArgs: ['new-session', '-A', '-s', sessionName, '-c', agent.worktreePath],
             });
@@ -680,7 +681,7 @@ export class AgentManager {
             agent.terminal = terminalService.createTerminal({
                 name: agent.name,
                 cwd: agent.worktreePath,
-                iconPath: getTerminalIcon(agent.isolationTier),
+                iconPath: getTerminalIcon(agent.containerConfigName),
             });
 
             if (config.autoStartClaudeOnFocus) {
