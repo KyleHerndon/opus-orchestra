@@ -1,0 +1,17 @@
+{
+  "name": "opus-orchestra-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "build:core": "npm run build -w @opus-orchestra/core",
+    "build:vscode": "npm run build -w opus-orchestra",
+    "test": "npm run test --workspaces",
+    "test:core": "npm run test -w @opus-orchestra/core",
+    "test:vscode": "npm run test -w opus-orchestra",
+    "lint": "npm run lint --workspaces",
+    "clean": "npm run clean --workspaces"
+  }
+}

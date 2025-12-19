@@ -1,0 +1,206 @@
+/**
+ * ConfigService - Type-safe configuration access
+ *
+ * Provides centralized, type-safe access to VS Code configuration
+ * with proper defaults and validation.
+ */
+
+import * as vscode from 'vscode';
+import {
+    ExtensionConfig,
+    DEFAULT_CONFIG,
+    CONFIG_SECTION,
+    TerminalType,
+} from '../types';
+import { LogLevel } from './Logger';
+
+// Re-export LogLevel for convenience
+export { LogLevel };
+
+/**
+ * Type-safe configuration service
+ */
+export class ConfigService {
+    private config: vscode.WorkspaceConfiguration;
+
+    constructor() {
+        this.config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+    }
+
+    /**
+     * Refresh the configuration (call after settings change)
+     */
+    refresh(): void {
+        this.config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+    }
+
+    // ========================================================================
+    // Agent Settings
+    // ========================================================================
+
+    get defaultAgentCount(): number {
+        return this.config.get<number>('defaultAgentCount', DEFAULT_CONFIG.defaultAgentCount);
+    }
+
+    get autoStartClaude(): boolean {
+        return this.config.get<boolean>('autoStartClaude', DEFAULT_CONFIG.autoStartClaude);
+    }
+
+    get autoStartClaudeOnFocus(): boolean {
+        return this.config.get<boolean>('autoStartClaudeOnFocus', DEFAULT_CONFIG.autoStartClaudeOnFocus);
+    }
+
+    get claudeCommand(): string {
+        return this.config.get<string>('claudeCommand', DEFAULT_CONFIG.claudeCommand);
+    }
+
+    // ========================================================================
+    // Tmux Settings
+    // ========================================================================
+
+    get useTmux(): boolean {
+        return this.config.get<boolean>('useTmux', DEFAULT_CONFIG.useTmux);
+    }
+
+    get tmuxSessionPrefix(): string {
+        return this.config.get<string>('tmuxSessionPrefix', DEFAULT_CONFIG.tmuxSessionPrefix);
+    }
+
+    // ========================================================================
+    // Directory Settings
+    // ========================================================================
+
+    get worktreeDirectory(): string {
+        return this.config.get<string>('worktreeDirectory', DEFAULT_CONFIG.worktreeDirectory);
+    }
+
+    get coordinationScriptsPath(): string {
+        return this.config.get<string>('coordinationScriptsPath', DEFAULT_CONFIG.coordinationScriptsPath);
+    }
+
+    get backlogPath(): string {
+        return this.config.get<string>('backlogPath', DEFAULT_CONFIG.backlogPath);
+    }
+
+    get repositoryPaths(): string[] {
+        return this.config.get<string[]>('repositoryPaths', DEFAULT_CONFIG.repositoryPaths);
+    }
+
+    // ========================================================================
+    // Terminal Settings
+    // ========================================================================
+
+    get terminalType(): TerminalType {
+        return this.config.get<TerminalType>('terminalType', DEFAULT_CONFIG.terminalType);
+    }
+
+    // ========================================================================
+    // Logging Settings
+    // ========================================================================
+
+    get logLevel(): LogLevel {
+        return this.config.get<LogLevel>('logLevel', 'debug');
+    }
+
+    // ========================================================================
+    // Polling Intervals
+    // ========================================================================
+
+    get diffPollingInterval(): number {
+        return this.config.get<number>('diffPollingInterval', DEFAULT_CONFIG.diffPollingInterval);
+    }
+
+    // ========================================================================
+    // Container Settings (legacy - kept for backward compatibility)
+    // ========================================================================
+
+    get containerImage(): string {
+        return this.config.get<string>('containerImage', DEFAULT_CONFIG.containerImage);
+    }
+
+    get containerMemoryLimit(): string {
+        return this.config.get<string>('containerMemoryLimit', DEFAULT_CONFIG.containerMemoryLimit);
+    }
+
+    get containerCpuLimit(): string {
+        return this.config.get<string>('containerCpuLimit', DEFAULT_CONFIG.containerCpuLimit);
+    }
+
+    get cloudHypervisorPath(): string {
+        return this.config.get<string>('cloudHypervisorPath', DEFAULT_CONFIG.cloudHypervisorPath);
+    }
+
+    // ========================================================================
+    // Utility Methods
+    // ========================================================================
+
+    /**
+     * Get all configuration as a single object
+     */
+    getAll(): ExtensionConfig {
+        return {
+            defaultAgentCount: this.defaultAgentCount,
+            autoStartClaude: this.autoStartClaude,
+            autoStartClaudeOnFocus: this.autoStartClaudeOnFocus,
+            claudeCommand: this.claudeCommand,
+            useTmux: this.useTmux,
+            tmuxSessionPrefix: this.tmuxSessionPrefix,
+            worktreeDirectory: this.worktreeDirectory,
+            coordinationScriptsPath: this.coordinationScriptsPath,
+            backlogPath: this.backlogPath,
+            repositoryPaths: this.repositoryPaths,
+            terminalType: this.terminalType,
+            diffPollingInterval: this.diffPollingInterval,
+            containerImage: this.containerImage,
+            containerMemoryLimit: this.containerMemoryLimit,
+            containerCpuLimit: this.containerCpuLimit,
+            cloudHypervisorPath: this.cloudHypervisorPath,
+        };
+    }
+
+    /**
+     * Update a configuration value
+     */
+    async update<K extends keyof ExtensionConfig>(
+        key: K,
+        value: ExtensionConfig[K],
+        target: vscode.ConfigurationTarget = vscode.ConfigurationTarget.Global
+    ): Promise<void> {
+        await this.config.update(key, value, target);
+        this.refresh();
+    }
+
+    /**
+     * Check if a configuration key has been explicitly set
+     */
+    hasValue(key: keyof ExtensionConfig): boolean {
+        const inspection = this.config.inspect(key);
+        return inspection !== undefined && (
+            inspection.globalValue !== undefined ||
+            inspection.workspaceValue !== undefined ||
+            inspection.workspaceFolderValue !== undefined
+        );
+    }
+}
+
+/**
+ * Singleton instance for global access
+ */
+let configServiceInstance: ConfigService | null = null;
+
+/**
+ * Get the global ConfigService instance
+ */
+export function getConfigService(): ConfigService {
+    if (!configServiceInstance) {
+        configServiceInstance = new ConfigService();
+    }
+    return configServiceInstance;
+}
+
+/**
+ * Reset the global ConfigService instance (for testing)
+ */
+export function resetConfigService(): void {
+    configServiceInstance = null;
+}
