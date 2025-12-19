@@ -227,10 +227,27 @@ UI tests run with **extension isolation** - a clean VS Code instance with only o
 - Node.js installed on Windows (for running VS Code)
 - WSL configured
 
-**Test configuration:**
-- `test-settings.json` - VS Code settings for tests (sets `claudeAgents.terminalType: "wsl"`)
-- `.vscode-test/test-extensions/` - Isolated extensions directory (gitignored)
-- Test repo: `C:\Users\Kyle\Documents\claude-agents-test-repo`
+**CRITICAL: Why tmux is disabled for tests:**
+vscode-extension-tester runs VS Code as a **Windows application**, not connected to WSL remote. This means:
+- Terminals created by VS Code are Windows terminals, not WSL shells
+- `shellPath: 'tmux'` won't work (tmux is a Linux command)
+- Git commands still work because `CommandService` wraps them with `wsl bash -c`
+
+Therefore, `test-settings.json` MUST have `useTmux: false`.
+
+**Test configuration (TWO files must match):**
+1. `scripts/test-ui.sh` - `TEST_REPO_WIN` variable defines the test repo path
+2. `test-settings.json` - `claudeAgents.repositoryPaths` must have the SAME path
+
+If these don't match, tests will fail with "No repository configured".
+
+**Test settings (`test-settings.json`):**
+- `terminalType: "wsl"` - Git commands run via WSL
+- `useTmux: false` - **REQUIRED** - tmux doesn't work in test environment
+- `autoStartClaudeOnFocus: false` - Prevents Claude from starting during tests
+- `repositoryPaths: [...]` - Must match test repo path in script
+
+**Test repo:** `C:\Users\Kyle\Documents\claude-agents-test-repo`
 
 **Running UI tests:**
 ```bash
@@ -244,13 +261,19 @@ UI tests run with **extension isolation** - a clean VS Code instance with only o
 ./scripts/test-ui.sh check
 ```
 
+**Troubleshooting test failures:**
+- "No repository configured" → Check `repositoryPaths` in test-settings.json matches script
+- Agent creation timeout → Dashboard not refreshing (check `_update()` handles empty→non-empty transition)
+- Container configs not found → Test repo missing `.opus-orchestra/containers/` directory
+- Terminal errors → Ensure `useTmux: false` in test-settings.json
+
 **What the test script does:**
-1. Creates a test git repository if it doesn't exist
+1. Creates a test git repository with container configs if it doesn't exist
 2. Installs Remote-WSL extension to isolated directory
 3. Packages and installs our extension
 4. Runs tests with:
    - `--extensions_dir .vscode-test/test-extensions` - Extension isolation
-   - `--code_settings test-settings.json` - WSL terminal type configured
+   - `--code_settings test-settings.json` - Test configuration
    - `--open_resource C:\Users\Kyle\Documents\claude-agents-test-repo` - Opens test repo
 
 **Manual test command (if needed):**
@@ -273,11 +296,84 @@ cmd.exe /c "cd /d C:\\path\\to\\vscode-extension && npx extest setup-and-run ./o
 - `src/extension.ts` - Extension activation, commands, polling intervals
 - `coordination/` - Bundled hooks and slash commands copied to worktrees
 
+## Event-Driven UI Architecture - MUST READ
+
+### The Problem
+
+Full HTML re-renders in VS Code webviews disrupt user interactions:
+- Lose input focus (user typing gets interrupted)
+- Reset scroll position
+- Interrupt drag-and-drop operations
+- Clear form inputs
+- Flash/flicker the entire UI
+
+### The Solution: Incremental Updates via postMessage
+
+The dashboard (`agentPanel.ts`) uses an **event-driven** architecture where all updates after initial load are incremental DOM updates.
+
+**CRITICAL RULE: `_fullRender()` is called ONLY ONCE in the constructor. NEVER call it elsewhere.**
+
+### How It Works
+
+1. **Initial Render**: Constructor calls `_fullRender()` to generate initial HTML
+2. **All Updates**: `_update()` sends incremental messages via `postMessage`:
+   - `addCard`: Insert new agent card into DOM
+   - `removeCard`: Remove agent card from DOM
+   - `updateAgents`: Update status/stats in existing cards
+   - `swapCards`: Reorder cards for drag/drop
+   - `updateContainerOptions`: Update dropdown options
+
+3. **JavaScript Handlers**: The webview JavaScript receives messages and updates DOM in place
+
+### Empty State Transition
+
+When adding the first agent (empty → non-empty), the JS `addCard` handler:
+1. Detects `.empty-state` exists but no `.agents-grid`
+2. Creates full dashboard structure (stats-bar, repo-section, agents-grid)
+3. Inserts the agent card into the new grid
+
+This avoids a full re-render for state transitions.
+
+### Adding New Update Types
+
+1. Add message type to `WebviewOutgoingMessage` in agentPanel.ts
+2. Add handler in `window.addEventListener('message', ...)` in `_getHtml()`
+3. Update DOM in place - **NEVER regenerate full HTML**
+4. Add unit test in `terminalAutoStart.test.ts` to verify pattern compliance
+
+### Common Mistakes - DO NOT DO THESE
+
+```typescript
+// WRONG - Never call _fullRender() in _update() or event handlers!
+private _update(): void {
+    this._fullRender(this._agentManager.getAgents()); // FORBIDDEN!
+}
+
+// WRONG - Never regenerate HTML in webview JS handlers!
+window.addEventListener('message', function(event) {
+    document.body.innerHTML = event.data.fullHtml; // FORBIDDEN!
+});
+
+// CORRECT - Send incremental update message
+private _update(): void {
+    this._postMessage({ command: 'addCard', ... });
+    this._postMessage({ command: 'updateAgents', ... });
+}
+
+// CORRECT - Update specific DOM elements
+if (message.command === 'updateAgents') {
+    const card = document.querySelector('.agent-card[data-agent-id="' + agent.id + '"]');
+    card.querySelector('.agent-status').textContent = agent.status;
+}
+```
+
 ## Debugging
 
 ### Debug Logging - CRITICAL
 
-**NEVER use `console.log()` in VS Code extensions** - the output is not accessible. Always use the Logger service which writes to a file.
+**NEVER use `console.log()`, `console.error()`, `console.warn()`, or any `console.*` methods.** Engineers found using any of these commands, even for debugging purposes, will be subject to immediate termination without appeal.
+
+Use the Logger service which writes to a dedicated file you can easily tail:
 
 ```typescript
 import { getLogger, isLoggerInitialized } from './services/Logger';

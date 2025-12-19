@@ -2,7 +2,7 @@
 
 ## Summary
 
-Run agents in isolated environments with `--dangerously-skip-permissions` for autonomous operation. Multiple isolation tiers available based on security requirements: sandbox runtime, Docker containers, gVisor, and Firecracker VMs.
+Run agents in isolated environments with `--dangerously-skip-permissions` for autonomous operation. Multiple isolation tiers available based on security requirements: sandbox runtime, Docker containers, gVisor, and Cloud Hypervisor VMs.
 
 ## Motivation
 
@@ -22,7 +22,7 @@ Based on [Anthropic's secure deployment guide](https://platform.claude.com/docs/
 | 1 | Sandbox Runtime | Good | Very Low | Low | Single developer, CI/CD |
 | 2 | Docker | Good (setup dependent) | Low | Medium | Most production use |
 | 3 | gVisor | Excellent | Medium-High | Medium | Multi-tenant, untrusted content |
-| 4 | Firecracker VM | Excellent | High | High | Maximum isolation requirements |
+| 4 | Cloud Hypervisor VM | Excellent | High | High | Maximum isolation requirements |
 
 ### Tier 0: Standard Mode (No Isolation)
 
@@ -136,22 +136,23 @@ docker run --runtime=runsc opus-orchestra-sandbox
 
 **Best for**: Multi-tenant environments, processing untrusted content where kernel isolation is worth the overhead.
 
-### Tier 4: Firecracker MicroVMs
+### Tier 4: Cloud Hypervisor VMs
 
-Hardware-level isolation via CPU virtualization. Each agent runs in its own VM with its own kernel.
+Hardware-level isolation via CPU virtualization. Each agent runs in its own VM with its own kernel. Uses virtio-fs for fast file mounting from host to guest.
 
 **Characteristics**:
 - Boot time: <125ms
 - Memory overhead: <5 MiB
 - Full kernel isolation
 - Communication via vsock (virtual sockets)
+- virtio-fs for live file access (no copying)
 
 **Architecture**:
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ Host                                                    │
 │ ┌─────────────────┐  ┌─────────────────────────────┐   │
-│ │ Proxy Service   │  │ Firecracker VM              │   │
+│ │ Proxy Service   │  │ Cloud Hypervisor VM         │   │
 │ │ - Domain allow  │◄─┤ - Agent + Claude            │   │
 │ │ - Cred inject   │  │ - vsock connection          │   │
 │ │ - Logging       │  │ - Isolated kernel           │   │
@@ -215,7 +216,7 @@ All isolated agents communicate through a proxy running on the host:
 {
   "claudeAgents.isolationTier": {
     "type": "string",
-    "enum": ["standard", "sandbox", "docker", "gvisor", "firecracker"],
+    "enum": ["standard", "sandbox", "docker", "gvisor", "cloud-hypervisor"],
     "default": "standard",
     "description": "Isolation tier for new agents"
   },
@@ -249,10 +250,10 @@ All isolated agents communicate through a proxy running on the host:
     "default": false,
     "description": "Use gVisor runtime for Docker containers"
   },
-  "claudeAgents.firecrackerPath": {
+  "claudeAgents.cloudHypervisorPath": {
     "type": "string",
     "default": "",
-    "description": "Path to Firecracker binary (empty = not available)"
+    "description": "Path to Cloud Hypervisor binary (empty = not available)"
   }
 }
 ```
@@ -277,7 +278,7 @@ All isolated agents communicate through a proxy running on the host:
 │ │ ○ gVisor (excellent isolation)                      │ │
 │ │   Kernel-level isolation, higher overhead           │ │
 │ │                                                     │ │
-│ │ ○ Firecracker VM (maximum isolation)                │ │
+│ │ ○ Cloud Hypervisor VM (maximum isolation)           │ │
 │ │   Full VM isolation, highest overhead               │ │
 │ └─────────────────────────────────────────────────────┘ │
 │                                                         │
@@ -365,7 +366,7 @@ Different visual treatment per tier:
 | Sandbox | Light Blue | Shield | "Sandboxed" |
 | Docker | Blue | Container | "Contained" |
 | gVisor | Purple | Shield+ | "gVisor" |
-| Firecracker | Green | VM | "VM Isolated" |
+| Cloud Hypervisor | Green | VM | "VM Isolated" |
 
 ### Workflow
 
@@ -374,7 +375,7 @@ Different visual treatment per tier:
    - Sandbox: Check for bubblewrap/sandbox-exec
    - Docker: Check Docker daemon running
    - gVisor: Check runsc runtime available
-   - Firecracker: Check binary and permissions
+   - Cloud Hypervisor: Check binary and KVM permissions
 3. Extension starts proxy service (if not running)
 4. Extension creates isolated environment:
    - Mount worktree
@@ -418,11 +419,11 @@ Different visual treatment per tier:
    - gVisor runtime support
    - Seccomp profiles
 
-4. **Firecracker Integration**:
+4. **Cloud Hypervisor Integration**:
    - VM lifecycle management
    - vsock communication
+   - virtio-fs mounts
    - Kernel/rootfs management
-   - Boot time optimization
 
 5. **Settings UI**:
    - Tier selection with explanations
@@ -437,8 +438,8 @@ Different visual treatment per tier:
 ## Open Questions
 
 1. **Proxy implementation**: Build custom or use existing (Envoy, etc.)?
-2. **Firecracker on Windows**: WSL2 support? Or Linux-only?
-3. **macOS Firecracker**: Not supported - what's the fallback?
+2. **Cloud Hypervisor on Windows**: WSL2 with KVM support required
+3. **macOS Cloud Hypervisor**: Not supported - what's the fallback?
 4. **Tier upgrades**: Can a running agent be "upgraded" to higher isolation?
 
 ## Dependencies
@@ -446,7 +447,7 @@ Different visual treatment per tier:
 - Tier 1: `bubblewrap` (Linux) or `sandbox-exec` (macOS)
 - Tier 2: Docker
 - Tier 3: Docker + gVisor (runsc)
-- Tier 4: Firecracker + Linux with KVM
+- Tier 4: Cloud Hypervisor + Linux with KVM
 
 ## Risks
 

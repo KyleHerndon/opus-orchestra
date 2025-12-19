@@ -21,14 +21,13 @@ export {
 
 // Container types
 export {
-    IsolationTier,
+    ContainerType,
+    ContainerConfigRef,
     ContainerState,
     ContainerMount,
-    ContainerConfig,
     ContainerInfo,
     PersistedContainerInfo,
-    ISOLATION_TIER_DESCRIPTIONS,
-    ISOLATION_TIER_ORDER,
+    CONTAINER_TYPE_DESCRIPTIONS,
     CONTAINER_LABELS,
     BLOCKED_HOST_PATHS,
     DEFAULT_CONTAINER_IMAGE,

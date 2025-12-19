@@ -1,35 +1,34 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
-import * as fs from 'fs';
-import { exec, execSync, ChildProcess } from 'child_process';
-import { agentPath } from './pathUtils';
+import { execSync, ChildProcess } from 'child_process';
 
 // Import types from centralized types module
 import {
-    IsolationTier,
     ContainerState,
-    ContainerConfig,
     ContainerInfo,
     PersistedContainerInfo,
+    ContainerType,
     CONTAINER_LABELS,
 } from './types';
 
 // Import services
 import {
-    getConfigService,
     getEventBus,
     getLogger,
     isLoggerInitialized,
     getPersistenceService,
     isPersistenceServiceInitialized,
+    getContainerConfigService,
 } from './services';
 
-// Re-export types for backward compatibility
-export { IsolationTier, ContainerState, ContainerConfig, ContainerInfo, PersistedContainerInfo };
+// Import container adapters
+import { getAdapter, getAvailableTypes } from './containers';
+
+// Re-export types
+export { ContainerState, ContainerInfo, PersistedContainerInfo, ContainerType };
 
 /**
  * ContainerManager handles lifecycle of isolated agent environments.
- * Supports multiple isolation tiers: sandbox runtime, Docker, gVisor, Firecracker.
+ * Uses adapters to support multiple container types: unisolated, docker, cloud-hypervisor.
  */
 export class ContainerManager {
     private containers: Map<number, ContainerInfo> = new Map();
@@ -59,150 +58,72 @@ export class ContainerManager {
         }
     }
 
-    // ========== Tier Availability Checks ==========
+    // ========== Adapter-Based Methods (New) ==========
 
     /**
-     * Check which isolation tiers are available on this system
+     * Get available container types via adapters.
      */
-    async getAvailableTiers(): Promise<IsolationTier[]> {
-        const tiers: IsolationTier[] = ['standard'];  // Always available
-
-        // Check for sandbox-runtime (bubblewrap on Linux, sandbox-exec on macOS)
-        if (await this.checkSandboxAvailable()) {
-            tiers.push('sandbox');
-        }
-
-        // Check for Docker
-        if (await this.checkDockerAvailable()) {
-            tiers.push('docker');
-
-            // Check for gVisor runtime
-            if (await this.checkGvisorAvailable()) {
-                tiers.push('gvisor');
-            }
-        }
-
-        // Check for Firecracker
-        if (await this.checkFirecrackerAvailable()) {
-            tiers.push('firecracker');
-        }
-
-        return tiers;
+    async getAvailableContainerTypes(): Promise<ContainerType[]> {
+        return getAvailableTypes();
     }
-
-    private async checkSandboxAvailable(): Promise<boolean> {
-        try {
-            // Check for bubblewrap on Linux
-            execSync('which bwrap', { stdio: 'ignore' });
-            return true;
-        } catch {
-            try {
-                // Check for sandbox-exec on macOS
-                execSync('which sandbox-exec', { stdio: 'ignore' });
-                return true;
-            } catch {
-                return false;
-            }
-        }
-    }
-
-    private async checkDockerAvailable(): Promise<boolean> {
-        try {
-            execSync('docker info', { stdio: 'ignore', timeout: 5000 });
-            return true;
-        } catch {
-            return false;
-        }
-    }
-
-    private async checkGvisorAvailable(): Promise<boolean> {
-        try {
-            // Check if runsc runtime is configured in Docker
-            const output = execSync('docker info --format "{{json .Runtimes}}"', {
-                encoding: 'utf8',
-                timeout: 5000
-            });
-            return output.includes('runsc');
-        } catch {
-            return false;
-        }
-    }
-
-    private async checkFirecrackerAvailable(): Promise<boolean> {
-        try {
-            const firecrackerPath = getConfigService().firecrackerPath;
-            if (!firecrackerPath) {
-                return false;
-            }
-            execSync(`${firecrackerPath} --version`, { stdio: 'ignore', timeout: 5000 });
-            return true;
-        } catch {
-            return false;
-        }
-    }
-
-    // ========== Container Lifecycle ==========
 
     /**
-     * Create an isolated environment for an agent
+     * Create a container from a named config.
+     *
+     * @param configName - Prefixed config name (e.g., "repo:development", "user:secure", "unisolated")
+     * @param worktreePath - Path to the worktree to mount
+     * @param agentId - Agent ID for labeling
+     * @param repoPath - Repository path for config discovery
+     * @param sessionId - Claude session ID for auto-starting Claude in the container
      */
     async createContainer(
-        agentId: number,
+        configName: string,
         worktreePath: string,
-        tier: IsolationTier,
-        repoConfig?: ContainerConfig
+        agentId: number,
+        repoPath: string,
+        sessionId?: string
     ): Promise<ContainerInfo> {
-        this.debugLog(`Creating ${tier} container for agent ${agentId}`);
+        this.debugLog(`createContainer: START configName='${configName}', agentId=${agentId}, repoPath='${repoPath}'`);
 
-        // Validate tier is available
-        const available = await this.getAvailableTiers();
-        if (!available.includes(tier)) {
-            throw new Error(`Isolation tier '${tier}' is not available on this system`);
+        const configService = getContainerConfigService();
+
+        // Load the config reference
+        const configRef = configService.loadConfigRef(configName, repoPath);
+        if (!configRef) {
+            throw new Error(`Container config '${configName}' not found`);
         }
 
-        // Check minimum tier requirement from repo config
-        if (repoConfig?.minimumTier) {
-            const tierOrder: IsolationTier[] = ['standard', 'sandbox', 'docker', 'gvisor', 'firecracker'];
-            const minIndex = tierOrder.indexOf(repoConfig.minimumTier);
-            const requestedIndex = tierOrder.indexOf(tier);
-            if (requestedIndex < minIndex) {
-                throw new Error(
-                    `Repository requires minimum isolation tier '${repoConfig.minimumTier}', ` +
-                    `but '${tier}' was requested`
-                );
-            }
+        // Get the adapter for this container type
+        const adapter = getAdapter(configRef.type);
+        this.debugLog(`createContainer: configRef.type='${configRef.type}', adapter=${adapter ? adapter.type : 'null'}`);
+        if (!adapter) {
+            throw new Error(`No adapter registered for container type '${configRef.type}'`);
         }
 
-        let containerId: string;
-
-        switch (tier) {
-            case 'standard':
-                // No container - just return a placeholder
-                containerId = `standard-${agentId}`;
-                break;
-            case 'sandbox':
-                containerId = await this.createSandbox(agentId, worktreePath, repoConfig);
-                break;
-            case 'docker':
-                containerId = await this.createDockerContainer(agentId, worktreePath, repoConfig, false);
-                break;
-            case 'gvisor':
-                containerId = await this.createDockerContainer(agentId, worktreePath, repoConfig, true);
-                break;
-            case 'firecracker':
-                containerId = await this.createFirecrackerVM(agentId, worktreePath, repoConfig);
-                break;
-            default:
-                throw new Error(`Unknown isolation tier: ${tier}`);
+        // Check if adapter is available
+        const available = await adapter.isAvailable();
+        this.debugLog(`createContainer: adapter.isAvailable()=${available}`);
+        if (!available) {
+            throw new Error(`Container type '${configRef.type}' is not available on this system`);
         }
+
+        // Get the definition file path (if any)
+        const definitionPath = configService.getDefinitionPath(configName, repoPath) || '';
+        this.debugLog(`createContainer: definitionPath='${definitionPath}'`);
+
+        // Create the container via adapter
+        this.debugLog(`createContainer: calling adapter.create() with sessionId='${sessionId || 'none'}'`);
+        const containerId = await adapter.create(definitionPath, worktreePath, agentId, sessionId);
+        this.debugLog(`createContainer: adapter.create() returned containerId='${containerId}'`);
 
         const containerInfo: ContainerInfo = {
             id: containerId,
-            tier,
+            configName,
+            type: configRef.type,
             state: 'running',
             agentId,
             worktreePath,
-            proxyPort: tier !== 'standard' ? this.proxyPort : undefined,
+            proxyPort: configRef.type !== 'unisolated' ? this.proxyPort : undefined,
             createdAt: new Date(),
         };
 
@@ -216,153 +137,7 @@ export class ContainerManager {
     }
 
     /**
-     * Create a sandbox using sandbox-runtime (bubblewrap/sandbox-exec)
-     */
-    private async createSandbox(
-        _agentId: number,
-        _worktreePath: string,
-        _config?: ContainerConfig
-    ): Promise<string> {
-        // TODO: Implement sandbox-runtime integration
-        // For now, throw not implemented
-        throw new Error('Sandbox runtime not yet implemented. Use Docker tier instead.');
-    }
-
-    /**
-     * Create a hardened Docker container
-     */
-    private async createDockerContainer(
-        agentId: number,
-        worktreePath: string,
-        config?: ContainerConfig,
-        useGvisor: boolean = false
-    ): Promise<string> {
-        const appConfig = getConfigService();
-
-        // Determine image
-        const image = config?.image || appConfig.containerImage;
-
-        // Resource limits
-        const memoryLimit = config?.memoryLimit || appConfig.containerMemoryLimit;
-        const cpuLimit = config?.cpuLimit || appConfig.containerCpuLimit;
-
-        // Convert worktree path for Docker (needs to be accessible from Docker daemon)
-        const dockerWorktreePath = this.toDockerPath(worktreePath);
-
-        // Build docker run command with security hardening
-        const args: string[] = [
-            'run',
-            '-d',  // Detached
-            '--name', `opus-agent-${agentId}`,
-
-            // Labels for identification
-            '-l', CONTAINER_LABELS.managed,
-            '-l', CONTAINER_LABELS.agentId(agentId),
-            '-l', CONTAINER_LABELS.worktree(worktreePath),
-
-            // Security hardening
-            '--cap-drop', 'ALL',
-            '--security-opt', 'no-new-privileges',
-            '--read-only',
-
-            // Writable temp directories
-            '--tmpfs', '/tmp:rw,noexec,nosuid,size=100m',
-            '--tmpfs', '/home/agent:rw,noexec,nosuid,size=500m',
-
-            // Network isolation - use none and communicate via unix socket
-            '--network', 'none',
-
-            // Resource limits
-            '--memory', memoryLimit,
-            '--cpus', cpuLimit,
-            '--pids-limit', '100',
-
-            // Run as non-root
-            '--user', '1000:1000',
-
-            // Mount worktree
-            '-v', `${dockerWorktreePath}:/workspace:rw`,
-
-            // Mount proxy socket (created by proxy service)
-            // '-v', '/var/run/opus-proxy.sock:/var/run/proxy.sock:ro',
-        ];
-
-        // Use gVisor runtime if requested
-        if (useGvisor) {
-            args.push('--runtime', 'runsc');
-        }
-
-        // Add additional mounts from config (read-only by default)
-        if (config?.additionalMounts) {
-            for (const mount of config.additionalMounts) {
-                const sourcePath = this.toDockerPath(
-                    path.isAbsolute(mount.source)
-                        ? mount.source
-                        : path.join(worktreePath, mount.source)
-                );
-                const mode = mount.readonly !== false ? 'ro' : 'rw';
-                args.push('-v', `${sourcePath}:${mount.target}:${mode}`);
-            }
-        }
-
-        // Add environment variables
-        if (config?.environment) {
-            for (const [key, value] of Object.entries(config.environment)) {
-                args.push('-e', `${key}=${value}`);
-            }
-        }
-
-        // Add image and command (sleep infinity to keep container running)
-        args.push(image, 'sleep', 'infinity');
-
-        this.debugLog(`Docker command: docker ${args.join(' ')}`);
-
-        return new Promise((resolve, reject) => {
-            exec(`docker ${args.join(' ')}`, (error, stdout, stderr) => {
-                if (error) {
-                    this.debugLog(`Docker create failed: ${stderr}`);
-                    reject(new Error(`Failed to create container: ${stderr}`));
-                    return;
-                }
-                const containerId = stdout.trim();
-                this.debugLog(`Created container: ${containerId}`);
-                resolve(containerId);
-            });
-        });
-    }
-
-    /**
-     * Create a Firecracker microVM
-     */
-    private async createFirecrackerVM(
-        _agentId: number,
-        _worktreePath: string,
-        _config?: ContainerConfig
-    ): Promise<string> {
-        // TODO: Implement Firecracker integration
-        throw new Error('Firecracker VMs not yet implemented. Use Docker or gVisor tier instead.');
-    }
-
-    /**
-     * Convert a path for Docker daemon access
-     * On Windows with Docker Desktop, /mnt/c/... becomes /c/...
-     */
-    private toDockerPath(inputPath: string): string {
-        const ap = agentPath(inputPath);
-        const nodePath = ap.forNodeFs();
-
-        // Docker Desktop on Windows uses /c/... format
-        // Convert C:/Users/... to /c/Users/...
-        const match = nodePath.match(/^([A-Za-z]):[\\/](.*)$/);
-        if (match) {
-            return `/${match[1].toLowerCase()}/${match[2].replace(/\\/g, '/')}`;
-        }
-
-        return nodePath;
-    }
-
-    /**
-     * Stop and remove a container
+     * Remove a container.
      */
     async removeContainer(agentId: number): Promise<void> {
         const container = this.containers.get(agentId);
@@ -372,14 +147,14 @@ export class ContainerManager {
 
         this.debugLog(`Removing container for agent ${agentId}`);
 
-        if (container.tier === 'docker' || container.tier === 'gvisor') {
+        const adapter = getAdapter(container.type);
+
+        if (adapter) {
             try {
-                execSync(`docker rm -f ${container.id}`, { stdio: 'ignore' });
+                await adapter.destroy(container.id);
             } catch (e) {
-                this.debugLog(`Failed to remove container: ${e}`);
+                this.debugLog(`Failed to destroy container via adapter: ${e}`);
             }
-        } else if (container.tier === 'firecracker') {
-            // TODO: Implement Firecracker cleanup
         }
 
         this.containers.delete(agentId);
@@ -390,7 +165,7 @@ export class ContainerManager {
     }
 
     /**
-     * Execute a command inside a container
+     * Execute a command in container.
      */
     async execInContainer(agentId: number, command: string): Promise<string> {
         const container = this.containers.get(agentId);
@@ -398,29 +173,53 @@ export class ContainerManager {
             throw new Error(`No container found for agent ${agentId}`);
         }
 
-        if (container.tier === 'standard') {
-            // No container - execute directly
-            return execSync(command, { encoding: 'utf8' });
+        const adapter = getAdapter(container.type);
+
+        if (!adapter) {
+            throw new Error(`No adapter for container type '${container.type}'`);
         }
 
-        if (container.tier === 'docker' || container.tier === 'gvisor') {
-            return new Promise((resolve, reject) => {
-                exec(
-                    `docker exec ${container.id} ${command}`,
-                    { encoding: 'utf8' },
-                    (error, stdout, stderr) => {
-                        if (error) {
-                            reject(new Error(`Exec failed: ${stderr}`));
-                            return;
-                        }
-                        resolve(stdout);
-                    }
-                );
-            });
-        }
-
-        throw new Error(`Exec not implemented for tier: ${container.tier}`);
+        return adapter.exec(container.id, command);
     }
+
+    /**
+     * Get container stats.
+     */
+    async getContainerStats(agentId: number): Promise<{ memoryMB: number; cpuPercent: number } | null> {
+        const container = this.containers.get(agentId);
+        if (!container) {
+            return null;
+        }
+
+        const adapter = getAdapter(container.type);
+
+        if (!adapter || !adapter.getStats) {
+            return null;
+        }
+
+        return adapter.getStats(container.id);
+    }
+
+    /**
+     * Get shell command for opening a terminal in a container.
+     * Returns null if the container type doesn't support interactive terminals.
+     */
+    getShellCommand(agentId: number): { shellPath: string; shellArgs?: string[] } | null {
+        const container = this.containers.get(agentId);
+        if (!container) {
+            return null;
+        }
+
+        const adapter = getAdapter(container.type);
+
+        if (!adapter || !adapter.getShellCommand) {
+            return null;
+        }
+
+        return adapter.getShellCommand(container.id, container.worktreePath);
+    }
+
+    // ========== Container Queries ==========
 
     /**
      * Get container info for an agent
@@ -437,59 +236,11 @@ export class ContainerManager {
     }
 
     /**
-     * Check if an agent is running in a container
+     * Check if an agent is running in a container (not unisolated)
      */
     isContainerized(agentId: number): boolean {
         const container = this.containers.get(agentId);
-        return container !== undefined && container.tier !== 'standard';
-    }
-
-    // ========== Container Stats ==========
-
-    /**
-     * Get resource usage for a container
-     */
-    async getContainerStats(agentId: number): Promise<{ memoryMB: number; cpuPercent: number } | null> {
-        const container = this.containers.get(agentId);
-        if (!container || container.tier === 'standard') {
-            return null;
-        }
-
-        if (container.tier === 'docker' || container.tier === 'gvisor') {
-            try {
-                const output = execSync(
-                    `docker stats ${container.id} --no-stream --format "{{.MemUsage}},{{.CPUPerc}}"`,
-                    { encoding: 'utf8', timeout: 5000 }
-                );
-
-                // Parse "100MiB / 4GiB,5.00%"
-                const [memPart, cpuPart] = output.trim().split(',');
-                const memMatch = memPart.match(/^([\d.]+)([A-Za-z]+)/);
-                const cpuMatch = cpuPart?.match(/^([\d.]+)%/);
-
-                let memoryMB = 0;
-                if (memMatch) {
-                    const value = parseFloat(memMatch[1]);
-                    const unit = memMatch[2].toLowerCase();
-                    if (unit.includes('gib') || unit.includes('gb')) {
-                        memoryMB = value * 1024;
-                    } else if (unit.includes('mib') || unit.includes('mb')) {
-                        memoryMB = value;
-                    } else if (unit.includes('kib') || unit.includes('kb')) {
-                        memoryMB = value / 1024;
-                    }
-                }
-
-                const cpuPercent = cpuMatch ? parseFloat(cpuMatch[1]) : 0;
-
-                return { memoryMB, cpuPercent };
-            } catch (e) {
-                this.debugLog(`Failed to get container stats: ${e}`);
-                return null;
-            }
-        }
-
-        return null;
+        return container !== undefined && container.type !== 'unisolated';
     }
 
     // ========== Persistence ==========
@@ -511,7 +262,7 @@ export class ContainerManager {
             // Check if container is still running
             let state: ContainerState = 'stopped';
 
-            if (p.tier === 'docker' || p.tier === 'gvisor') {
+            if (p.type === 'docker') {
                 try {
                     const output = execSync(
                         `docker inspect -f '{{.State.Running}}' ${p.id}`,
@@ -521,13 +272,14 @@ export class ContainerManager {
                 } catch {
                     state = 'stopped';
                 }
-            } else if (p.tier === 'standard') {
-                state = 'running';  // Standard mode is always "running"
+            } else if (p.type === 'unisolated') {
+                state = 'running';  // Unisolated mode is always "running"
             }
 
             this.containers.set(p.agentId, {
                 id: p.id,
-                tier: p.tier,
+                configName: p.configName,
+                type: p.type,
                 state,
                 agentId: p.agentId,
                 worktreePath: p.worktreePath,
@@ -552,7 +304,7 @@ export class ContainerManager {
             const runningIds = output.trim().split('\n').filter(id => id);
             const knownIds = new Set(
                 Array.from(this.containers.values())
-                    .filter(c => c.tier === 'docker' || c.tier === 'gvisor')
+                    .filter(c => c.type === 'docker')
                     .map(c => c.id)
             );
 
@@ -577,26 +329,31 @@ export class ContainerManager {
         return orphans.length;
     }
 
-    // ========== Repository Config ==========
-
     /**
-     * Load container configuration from repository
+     * Clean up any container resources associated with a worktree path.
+     * Called when deleting a worktree to ensure container resources are cleaned up.
      */
-    loadRepoConfig(repoPath: string): ContainerConfig | undefined {
-        const configPath = agentPath(repoPath)
-            .join('.opus-orchestra', 'isolation.json')
-            .forNodeFs();
+    async cleanupByWorktree(worktreePath: string): Promise<void> {
+        this.debugLog(`Cleaning up containers for worktree: ${worktreePath}`);
 
-        if (!fs.existsSync(configPath)) {
-            return undefined;
+        // Find any container for this worktree and remove it
+        for (const [agentId, container] of this.containers) {
+            if (container.worktreePath === worktreePath) {
+                await this.removeContainer(agentId);
+            }
         }
 
-        try {
-            const content = fs.readFileSync(configPath, 'utf8');
-            return JSON.parse(content) as ContainerConfig;
-        } catch (e) {
-            this.debugLog(`Failed to load repo config: ${e}`);
-            return undefined;
+        // Also ask each adapter to clean up (handles orphaned VMs not in our state)
+        const types = await this.getAvailableContainerTypes();
+        for (const type of types) {
+            const adapter = getAdapter(type);
+            if (adapter?.cleanupByWorktree) {
+                try {
+                    await adapter.cleanupByWorktree(worktreePath);
+                } catch (e) {
+                    this.debugLog(`Adapter ${type} cleanup failed: ${e}`);
+                }
+            }
         }
     }
 

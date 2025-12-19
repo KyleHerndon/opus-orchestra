@@ -109,7 +109,7 @@ function Invoke-CheckAll {
     Write-Host "Isolation Tiers:"
     Test-Docker | Out-Null
     Write-Status 'info' 'gVisor' 'not supported on Windows'
-    Write-Status 'info' 'Firecracker' 'not supported on Windows'
+    Write-Status 'info' 'Cloud Hypervisor' 'not supported on Windows'
     Write-Status 'info' 'Sandbox Runtime' 'use Docker on Windows'
     Write-Host ""
 
@@ -198,7 +198,7 @@ function Show-Help {
     Write-Host "Run without arguments for interactive mode."
     Write-Host ""
     Write-Host "Note: On Windows, Docker Desktop is the recommended isolation method."
-    Write-Host "      gVisor and Firecracker are only available on Linux."
+    Write-Host "      gVisor and Cloud Hypervisor are only available on Linux."
 }
 
 # Main

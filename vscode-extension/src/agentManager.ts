@@ -11,8 +11,8 @@ import {
     PersistedAgent,
     DiffStats,
     PendingApproval,
-    IsolationTier,
     ContainerInfo,
+    ContainerType,
     AGENT_NAMES,
 } from './types';
 
@@ -28,10 +28,11 @@ import {
     getTerminalIcon,
     getPersistenceService,
     getTmuxService,
+    getContainerConfigService,
 } from './services';
 
 // Re-export types for backward compatibility
-export { Agent, AgentStatus, PersistedAgent, DiffStats, PendingApproval, IsolationTier, ContainerInfo };
+export { Agent, AgentStatus, PersistedAgent, DiffStats, PendingApproval, ContainerInfo, ContainerType };
 
 /**
  * Coordinates agent lifecycle and delegates to specialized managers.
@@ -76,8 +77,18 @@ export class AgentManager {
         return this.containerManager;
     }
 
-    async getAvailableIsolationTiers(): Promise<IsolationTier[]> {
-        return this.containerManager.getAvailableTiers();
+    /**
+     * Get available container config names for a repository.
+     */
+    getAvailableContainerConfigs(repoPath: string): string[] {
+        return getContainerConfigService().listAvailableConfigs(repoPath);
+    }
+
+    /**
+     * Get the default container config name for a repository.
+     */
+    getDefaultContainerConfig(repoPath: string): string {
+        return getContainerConfigService().getDefaultConfigName(repoPath);
     }
 
     private debugLog(message: string): void {
@@ -123,7 +134,7 @@ export class AgentManager {
     // Agent Lifecycle
     // ========================================================================
 
-    async createAgents(count: number, repoPath?: string, isolationTier?: IsolationTier): Promise<void> {
+    async createAgents(count: number, repoPath?: string, containerConfigName?: string): Promise<void> {
         const repoPaths = this.getRepositoryPaths();
 
         if (repoPaths.length === 0) {
@@ -154,20 +165,8 @@ export class AgentManager {
             return;
         }
 
-        const defaultTier = isolationTier || getConfigService().isolationTier;
-        const repoConfig = this.containerManager.loadRepoConfig(targetRepo);
-        const availableTiers = await this.containerManager.getAvailableTiers();
-
-        if (!availableTiers.includes(defaultTier)) {
-            const fallback = availableTiers[availableTiers.length - 1];
-            const useAlternative = await vscode.window.showWarningMessage(
-                `Isolation tier '${defaultTier}' is not available. Use '${fallback}' instead?`,
-                'Yes', 'No'
-            );
-            if (useAlternative !== 'Yes') {
-                return;
-            }
-        }
+        // Use provided config name or get default for this repo
+        const configName = containerConfigName || this.getDefaultContainerConfig(targetRepo);
 
         const baseBranch = this.execCommand('git branch --show-current', targetRepo).trim();
 
@@ -229,7 +228,7 @@ export class AgentManager {
                                 pendingApproval: null,
                                 lastInteractionTime: new Date(),
                                 diffStats: { insertions: 0, deletions: 0, filesChanged: 0 },
-                                isolationTier: existingMetadata.isolationTier || defaultTier,
+                                containerConfigName: existingMetadata.containerConfigName || configName,
                                 sessionStarted: existingMetadata.sessionStarted,
                             };
 
@@ -261,7 +260,7 @@ export class AgentManager {
                         pendingApproval: null,
                         lastInteractionTime: new Date(),
                         diffStats: { insertions: 0, deletions: 0, filesChanged: 0 },
-                        isolationTier: defaultTier
+                        containerConfigName: configName
                     };
 
                     this.agents.set(nextId, agent);
@@ -271,20 +270,22 @@ export class AgentManager {
                     this.worktreeManager.copyCoordinationFiles(agent);
                     this.worktreeManager.saveAgentMetadata(agent);
 
-                    if (defaultTier !== 'standard') {
+                    // Create container if not unisolated
+                    if (configName !== 'unisolated') {
                         try {
                             const containerInfo = await this.containerManager.createContainer(
-                                nextId,
+                                configName,
                                 worktreePath,
-                                defaultTier,
-                                repoConfig
+                                nextId,
+                                targetRepo,
+                                agent.sessionId  // Pass session ID for auto-starting Claude
                             );
                             agent.containerInfo = containerInfo;
                         } catch (containerError) {
                             vscode.window.showWarningMessage(
-                                `Failed to create container for agent ${agentName}: ${containerError}. Running in standard mode.`
+                                `Failed to create container for agent ${agentName}: ${containerError}. Running unisolated.`
                             );
-                            agent.isolationTier = 'standard';
+                            agent.containerConfigName = 'unisolated';
                         }
                     }
 
@@ -302,10 +303,10 @@ export class AgentManager {
             // Persist agents to storage (both VS Code state and worktree metadata)
             this.persistence.saveAgents(this.agents);
 
-            const tierInfo = defaultTier !== 'standard' ? ` (${defaultTier} isolation)` : '';
+            const configInfo = configName !== 'unisolated' ? ` (${configName})` : '';
             const message = restoredCount > 0
-                ? `Created ${createdCount} new, restored ${restoredCount} existing agent worktrees${tierInfo}`
-                : `Created ${createdCount} agent worktrees${tierInfo}`;
+                ? `Created ${createdCount} new, restored ${restoredCount} existing agent worktrees${configInfo}`
+                : `Created ${createdCount} agent worktrees${configInfo}`;
 
             // Complete operation successfully
             commandHandler.completeOperation(operation, message);
@@ -328,7 +329,9 @@ export class AgentManager {
             const tmuxService = getTmuxService();
             const sessionName = tmuxService.getSessionName(agent);
 
-            if (agent.containerInfo?.id) {
+            // Only use killContainerSession for actual containers (docker, cloud-hypervisor)
+            // Unisolated agents run tmux on the host, not in a container
+            if (agent.containerInfo?.id && agent.containerInfo.type !== 'unisolated') {
                 tmuxService.killContainerSession(agent.containerInfo.id, sessionName);
             } else {
                 tmuxService.killSession(sessionName);
@@ -339,8 +342,23 @@ export class AgentManager {
             agent.terminal.dispose();
         }
 
+        // Clean up containers - both tracked and orphaned (via worktree reference files)
         if (agent.containerInfo) {
             await this.containerManager.removeContainer(agentId);
+        }
+        // Also clean up by worktree path to catch any orphaned VMs
+        await this.containerManager.cleanupByWorktree(agent.worktreePath);
+
+        // Delete agent metadata first (prevents agent from being restored if worktree removal fails)
+        try {
+            const metadataDir = agentPath(agent.worktreePath).join('.opus-orchestra').forNodeFs();
+            const metadataFile = `${metadataDir}/agent.json`;
+            if (fs.existsSync(metadataFile)) {
+                fs.unlinkSync(metadataFile);
+                this.debugLog(`Deleted agent metadata: ${metadataFile}`);
+            }
+        } catch (e) {
+            this.debugLog(`Failed to delete agent metadata: ${e}`);
         }
 
         try {
@@ -430,7 +448,8 @@ export class AgentManager {
             // Clean up tmux session if enabled
             if (tmuxService) {
                 const sessionName = tmuxService.getSessionName(agent);
-                if (agent.containerInfo?.id) {
+                // Only use killContainerSession for actual containers (docker, cloud-hypervisor)
+                if (agent.containerInfo?.id && agent.containerInfo.type !== 'unisolated') {
                     tmuxService.killContainerSession(agent.containerInfo.id, sessionName);
                 } else {
                     tmuxService.killSession(sessionName);
@@ -462,51 +481,88 @@ export class AgentManager {
     }
 
     // ========================================================================
-    // Isolation Tier Management
+    // Container Config Management
     // ========================================================================
 
-    async changeAgentIsolationTier(agentId: number, newTier: IsolationTier): Promise<boolean> {
+    async changeAgentContainerConfig(agentId: number, newConfigName: string): Promise<boolean> {
         const agent = this.agents.get(agentId);
         if (!agent) {
-            this.debugLog(`Cannot change tier: agent ${agentId} not found`);
+            this.debugLog(`Cannot change container config: agent ${agentId} not found`);
             return false;
         }
 
-        const currentTier = agent.isolationTier || 'standard';
-        if (currentTier === newTier) {
-            this.debugLog(`Agent ${agentId} already at tier ${newTier}`);
+        const currentConfig = agent.containerConfigName || 'unisolated';
+        if (currentConfig === newConfigName) {
+            this.debugLog(`Agent ${agentId} already using config ${newConfigName}`);
             return true;
         }
 
-        this.debugLog(`Changing agent ${agentId} isolation from ${currentTier} to ${newTier}`);
+        this.debugLog(`Changing agent ${agentId} container config from '${currentConfig}' to '${newConfigName}'`);
 
-        try {
-            if (currentTier !== 'standard') {
-                await this.containerManager.removeContainer(agentId);
+        return vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: `Changing container config for ${agent.name}`,
+            cancellable: false
+        }, async (progress) => {
+            try {
+                // Gracefully stop Claude if running (so session can be saved)
+                if (agent.terminal) {
+                    progress.report({ message: 'Stopping Claude gracefully...' });
+                    this.debugLog(`Sending /exit to gracefully stop Claude for agent ${agentId}`);
+                    agent.terminal.sendText('/exit');
+                    // Wait for Claude to save session and exit
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    agent.terminal.dispose();
+                    agent.terminal = null;
+                }
+
+                // Kill tmux session if exists
+                const config = getConfigService();
+                if (config.useTmux) {
+                    const tmuxService = getTmuxService();
+                    const sessionName = tmuxService.getSessionName(agent);
+                    this.debugLog(`Killing tmux session ${sessionName} for agent ${agentId}`);
+                    if (agent.containerInfo?.id && agent.containerInfo.type !== 'unisolated') {
+                        tmuxService.killContainerSession(agent.containerInfo.id, sessionName);
+                    } else {
+                        tmuxService.killSession(sessionName);
+                    }
+                }
+
+                // Remove existing container if any
+                if (currentConfig !== 'unisolated') {
+                    progress.report({ message: 'Removing existing container...' });
+                    this.debugLog(`Removing existing container for agent ${agentId}`);
+                    await this.containerManager.removeContainer(agentId);
+                }
+
+                // Create new container if not unisolated
+                this.debugLog(`newConfigName !== 'unisolated': ${newConfigName !== 'unisolated'}`);
+                if (newConfigName !== 'unisolated') {
+                    progress.report({ message: `Creating ${newConfigName} container...` });
+                    this.debugLog(`Calling containerManager.createContainer for ${newConfigName}`);
+                    const containerInfo = await this.containerManager.createContainer(
+                        newConfigName,
+                        agent.worktreePath,
+                        agentId,
+                        agent.repoPath,
+                        agent.sessionId  // Pass session ID for auto-starting Claude
+                    );
+                    agent.containerInfo = containerInfo;
+                } else {
+                    agent.containerInfo = undefined;
+                }
+
+                agent.containerConfigName = newConfigName;
+                this.persistence.saveAgents(this.agents);
+
+                return true;
+            } catch (error) {
+                this.debugLog(`Failed to change container config: ${error}`);
+                vscode.window.showErrorMessage(`Failed to change container config: ${error}`);
+                return false;
             }
-
-            if (newTier !== 'standard') {
-                const repoConfig = this.containerManager.loadRepoConfig(agent.repoPath);
-                const containerInfo = await this.containerManager.createContainer(
-                    agentId,
-                    agent.worktreePath,
-                    newTier,
-                    repoConfig
-                );
-                agent.containerInfo = containerInfo;
-            } else {
-                agent.containerInfo = undefined;
-            }
-
-            agent.isolationTier = newTier;
-            this.persistence.saveAgents(this.agents);
-
-            return true;
-        } catch (error) {
-            this.debugLog(`Failed to change isolation tier: ${error}`);
-            vscode.window.showErrorMessage(`Failed to change isolation tier: ${error}`);
-            return false;
-        }
+        });
     }
 
     async getAgentContainerStats(agentId: number): Promise<{ memoryMB: number; cpuPercent: number } | null> {
@@ -521,8 +577,22 @@ export class AgentManager {
         const config = getConfigService();
         const terminalService = getTerminalService();
 
-        if (config.useTmux) {
-            // Tmux mode: create terminal with tmux as shell, then send Claude command
+        // Check if agent uses a container
+        const isContainerized = this.containerManager.isContainerized(agent.id);
+        const shellCommand = isContainerized ? this.containerManager.getShellCommand(agent.id) : null;
+
+        // If containerized but no shell command available, skip terminal creation
+        if (isContainerized && !shellCommand) {
+            this.debugLog(`createTerminalForAgent: container type doesn't support interactive terminals`);
+            return;
+        }
+
+        // Build the oo alias command
+        const claudeCmd = config.claudeCommand;
+        const ooAlias = `alias oo='${claudeCmd} --session-id "${agent.sessionId}"'`;
+
+        if (config.useTmux && !isContainerized) {
+            // Tmux mode (only for unisolated): create terminal with tmux as shell
             const tmuxService = getTmuxService();
             const sessionName = tmuxService.getSessionName(agent);
             const isNewSession = !tmuxService.sessionExists(sessionName);
@@ -530,37 +600,47 @@ export class AgentManager {
             // Create VS Code terminal that creates/attaches to tmux session
             agent.terminal = terminalService.createTerminal({
                 name: agent.name,
-                iconPath: getTerminalIcon(agent.isolationTier),
+                iconPath: getTerminalIcon(agent.containerConfigName),
                 shellPath: 'tmux',
                 shellArgs: ['new-session', '-A', '-s', sessionName, '-c', agent.worktreePath],
             });
 
-            // Start Claude in new sessions
+            // Set up oo alias in new sessions
             if (isNewSession) {
-                const claudeCmd = `${config.claudeCommand} --session-id "${agent.sessionId}"`;
                 agent.terminal.processId.then(() => {
                     setTimeout(() => {
-                        agent.terminal?.sendText(claudeCmd);
+                        agent.terminal?.sendText(ooAlias);
                     }, 200);
                 });
-                agent.status = 'waiting-input';
-                this.statusTracker.updateAgentIcon(agent);
             }
+        } else if (shellCommand) {
+            // Container mode: use adapter's shell command
+            // The oo alias is set up in the container's .bashrc
+            this.debugLog(`createTerminalForAgent: creating container terminal with shellPath=${shellCommand.shellPath}`);
+
+            agent.terminal = terminalService.createTerminal({
+                name: agent.name,
+                iconPath: getTerminalIcon(agent.containerConfigName),
+                shellPath: shellCommand.shellPath,
+                shellArgs: shellCommand.shellArgs,
+            });
         } else {
-            // Non-tmux mode: use createAgentTerminal which handles Claude auto-start
-            agent.terminal = terminalService.createAgentTerminal(
-                agent.name,
-                agent.worktreePath,
-                agent.isolationTier,
-                {
-                    autoStartClaude: config.autoStartClaude,
-                    claudeCommand: config.claudeCommand,
-                    sessionId: agent.sessionId,
-                    resumeSession: false,
-                    containerId: agent.containerInfo?.id,
-                }
-            );
+            // Non-tmux, non-container mode: create regular terminal
+            agent.terminal = terminalService.createTerminal({
+                name: agent.name,
+                cwd: agent.worktreePath,
+                iconPath: getTerminalIcon(agent.containerConfigName),
+            });
+
+            // Set up oo alias
+            setTimeout(() => {
+                agent.terminal?.sendText(ooAlias);
+            }, 500);
         }
+
+        // Set status to idle (user needs to run 'oo' to start Claude)
+        agent.status = 'idle';
+        this.statusTracker.updateAgentIcon(agent);
     }
 
     /**
@@ -584,7 +664,7 @@ export class AgentManager {
         agent.terminal = terminalService.createTerminal({
             name: agent.name,
             cwd: agent.worktreePath,
-            iconPath: getTerminalIcon(agent.isolationTier),
+            iconPath: getTerminalIcon(agent.containerConfigName),
         });
 
         getEventBus().emit('agent:terminalCreated', { agent, isNew: true });
@@ -647,9 +727,27 @@ export class AgentManager {
             return;
         }
 
+        // Check if agent uses a container
+        const isContainerized = this.containerManager.isContainerized(agentId);
+        const shellCommand = isContainerized ? this.containerManager.getShellCommand(agentId) : null;
+
+        // If containerized but no shell command available, show error
+        if (isContainerized && !shellCommand) {
+            const containerInfo = this.containerManager.getContainer(agentId);
+            vscode.window.showErrorMessage(
+                `Interactive terminals not supported for ${containerInfo?.type || 'this container type'}. ` +
+                'Use programmatic execution via the adapter instead.'
+            );
+            return;
+        }
+
+        // Build the oo alias command
+        const claudeCmd = config.claudeCommand;
+        const ooAlias = `alias oo='${claudeCmd} --session-id "${agent.sessionId}"'`;
+
         // Need to create a new terminal
-        if (config.useTmux) {
-            // Tmux mode: create terminal with tmux, then send Claude command once ready
+        if (config.useTmux && !isContainerized) {
+            // Tmux mode (only for unisolated): create terminal with tmux
             const tmuxService = getTmuxService();
             const sessionName = tmuxService.getSessionName(agent);
             const isNewSession = !tmuxService.sessionExists(sessionName);
@@ -659,36 +757,47 @@ export class AgentManager {
             // Create VS Code terminal that creates/attaches to tmux session
             agent.terminal = terminalService.createTerminal({
                 name: agent.name,
-                iconPath: getTerminalIcon(agent.isolationTier),
+                iconPath: getTerminalIcon(agent.containerConfigName),
                 shellPath: 'tmux',
                 shellArgs: ['new-session', '-A', '-s', sessionName, '-c', agent.worktreePath],
             });
 
-            // Wait for terminal process to be ready, then send Claude command
+            // Set up oo alias in new sessions
             if (isNewSession) {
-                const claudeCmd = `${config.claudeCommand} --resume "${agent.sessionId}"`;
                 agent.terminal.processId.then(() => {
                     setTimeout(() => {
-                        agent.terminal?.sendText(claudeCmd);
+                        agent.terminal?.sendText(ooAlias);
                     }, 200);
                 });
-                agent.status = 'waiting-input';
-                this.statusTracker.updateAgentIcon(agent);
             }
+        } else if (shellCommand) {
+            // Container mode: use adapter's shell command
+            // The oo alias is set up in the container's .bashrc
+            this.debugLog(`focusAgent: creating container terminal with shellPath=${shellCommand.shellPath}`);
+
+            agent.terminal = terminalService.createTerminal({
+                name: agent.name,
+                iconPath: getTerminalIcon(agent.containerConfigName),
+                shellPath: shellCommand.shellPath,
+                shellArgs: shellCommand.shellArgs,
+            });
         } else {
-            // Non-tmux mode: create regular terminal
+            // Non-tmux, non-container mode: create regular terminal
             agent.terminal = terminalService.createTerminal({
                 name: agent.name,
                 cwd: agent.worktreePath,
-                iconPath: getTerminalIcon(agent.isolationTier),
+                iconPath: getTerminalIcon(agent.containerConfigName),
             });
 
-            if (config.autoStartClaudeOnFocus) {
-                setTimeout(() => {
-                    this.startClaudeInAgent(agentId);
-                }, 500);
-            }
+            // Set up oo alias
+            setTimeout(() => {
+                agent.terminal?.sendText(ooAlias);
+            }, 500);
         }
+
+        // Set status to idle (user needs to run 'oo' to start Claude)
+        agent.status = 'idle';
+        this.statusTracker.updateAgentIcon(agent);
 
         agent.terminal.show(true);
         getEventBus().emit('agent:terminalCreated', { agent, isNew: true });

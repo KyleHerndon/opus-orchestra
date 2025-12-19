@@ -58,7 +58,19 @@ export class WorktreeManager {
      * Remove a git worktree and optionally its branch
      */
     removeWorktree(repoPath: string, worktreePath: string, branchName?: string): void {
+        // Try git worktree remove first
         this.execCommandSilent(`git worktree remove "${worktreePath}" --force`, repoPath);
+
+        // If directory still exists (git worktree remove failed), remove it directly
+        const fsPath = agentPath(worktreePath).forNodeFs();
+        if (fs.existsSync(fsPath)) {
+            this.debugLog(`Worktree dir still exists after git remove, deleting directly: ${fsPath}`);
+            fs.rmSync(fsPath, { recursive: true, force: true });
+        }
+
+        // Prune any stale worktree references
+        this.execCommandSilent('git worktree prune', repoPath);
+
         if (branchName) {
             this.execCommandSilent(`git branch -D "${branchName}"`, repoPath);
         }
@@ -156,7 +168,7 @@ export class WorktreeManager {
                 worktreePath: agent.worktreePath,
                 repoPath: agent.repoPath,
                 taskFile: agent.taskFile,
-                isolationTier: agent.isolationTier,
+                containerConfigName: agent.containerConfigName,
                 sessionStarted: agent.sessionStarted,
             };
 

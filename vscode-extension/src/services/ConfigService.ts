@@ -10,9 +10,12 @@ import {
     ExtensionConfig,
     DEFAULT_CONFIG,
     CONFIG_SECTION,
-    IsolationTier,
     TerminalType,
 } from '../types';
+import { LogLevel } from './Logger';
+
+// Re-export LogLevel for convenience
+export { LogLevel };
 
 /**
  * Type-safe configuration service
@@ -92,6 +95,14 @@ export class ConfigService {
     }
 
     // ========================================================================
+    // Logging Settings
+    // ========================================================================
+
+    get logLevel(): LogLevel {
+        return this.config.get<LogLevel>('logLevel', 'debug');
+    }
+
+    // ========================================================================
     // Polling Intervals
     // ========================================================================
 
@@ -100,12 +111,8 @@ export class ConfigService {
     }
 
     // ========================================================================
-    // Isolation Settings
+    // Container Settings (legacy - kept for backward compatibility)
     // ========================================================================
-
-    get isolationTier(): IsolationTier {
-        return this.config.get<IsolationTier>('isolationTier', DEFAULT_CONFIG.isolationTier);
-    }
 
     get containerImage(): string {
         return this.config.get<string>('containerImage', DEFAULT_CONFIG.containerImage);
@@ -119,8 +126,8 @@ export class ConfigService {
         return this.config.get<string>('containerCpuLimit', DEFAULT_CONFIG.containerCpuLimit);
     }
 
-    get firecrackerPath(): string {
-        return this.config.get<string>('firecrackerPath', DEFAULT_CONFIG.firecrackerPath);
+    get cloudHypervisorPath(): string {
+        return this.config.get<string>('cloudHypervisorPath', DEFAULT_CONFIG.cloudHypervisorPath);
     }
 
     // ========================================================================
@@ -144,11 +151,10 @@ export class ConfigService {
             repositoryPaths: this.repositoryPaths,
             terminalType: this.terminalType,
             diffPollingInterval: this.diffPollingInterval,
-            isolationTier: this.isolationTier,
             containerImage: this.containerImage,
             containerMemoryLimit: this.containerMemoryLimit,
             containerCpuLimit: this.containerCpuLimit,
-            firecrackerPath: this.firecrackerPath,
+            cloudHypervisorPath: this.cloudHypervisorPath,
         };
     }
 

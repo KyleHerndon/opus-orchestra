@@ -3,7 +3,7 @@
  */
 
 import * as vscode from 'vscode';
-import { ContainerInfo, IsolationTier } from './container';
+import { ContainerInfo } from './container';
 
 // ============================================================================
 // Types
@@ -40,7 +40,8 @@ export interface PersistedAgent {
     worktreePath: string;
     repoPath: string;
     taskFile: string | null;
-    isolationTier?: IsolationTier;
+    /** Container config name (e.g., 'unisolated', 'repo:dev', 'user:secure') */
+    containerConfigName?: string;
     /** Whether Claude has been started with this sessionId (use -r to resume if true) */
     sessionStarted?: boolean;
 }
@@ -80,7 +81,8 @@ export interface AgentDisplayData {
     pendingApproval: string | null;
     diffStats: DiffStats;
     hasTerminal: boolean;
-    isolationTier?: IsolationTier;
+    /** Container config name (e.g., 'unisolated', 'repo:dev', 'user:secure') */
+    containerConfigName?: string;
     containerState?: string;
     memoryUsageMB?: number;
     cpuPercent?: number;

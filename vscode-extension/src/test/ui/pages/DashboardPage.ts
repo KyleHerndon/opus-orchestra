@@ -123,7 +123,7 @@ export class DashboardPage {
         return inputs[0] || null;
     }
 
-    async getIsolationTierSelect(): Promise<WebElement | null> {
+    async getContainerConfigSelect(): Promise<WebElement | null> {
         const selects = await this.driver.findElements(By.id('isolation-tier-select'));
         return selects[0] || null;
     }
@@ -141,7 +141,7 @@ export class DashboardPage {
     }
 
     async getAgentId(card: WebElement): Promise<string | null> {
-        const select = await this.getAgentCardElement(card, 'select[data-action="changeIsolation"]');
+        const select = await this.getAgentCardElement(card, 'select[data-action="changeContainerConfig"]');
         return select ? select.getAttribute('data-agent-id') : null;
     }
 
@@ -153,8 +153,8 @@ export class DashboardPage {
         return this.getAgentCardElement(card, '.agent-status');
     }
 
-    async getAgentIsolationSelect(card: WebElement): Promise<WebElement | null> {
-        return this.getAgentCardElement(card, 'select[data-action="changeIsolation"]');
+    async getAgentContainerConfigSelect(card: WebElement): Promise<WebElement | null> {
+        return this.getAgentCardElement(card, 'select[data-action="changeContainerConfig"]');
     }
 
     async getAgentButton(card: WebElement, action: string): Promise<WebElement | null> {
@@ -189,28 +189,85 @@ export class DashboardPage {
         await btn.click();
     }
 
-    async setIsolationTier(agentId: string, tier: string): Promise<void> {
+    async setContainerConfig(agentId: string, configName: string): Promise<void> {
         const select = await this.driver.findElement(
-            By.css(`select[data-action="changeIsolation"][data-agent-id="${agentId}"]`)
+            By.css(`select[data-action="changeContainerConfig"][data-agent-id="${agentId}"]`)
         );
-        const option = await select.findElement(By.css(`option[value="${tier}"]`));
+        const option = await select.findElement(By.css(`option[value="${configName}"]`));
         await option.click();
         await this.driver.sleep(1000);
     }
 
-    async getIsolationTierOptions(agentId: string): Promise<string[]> {
+    async getContainerConfigOptions(agentId: string): Promise<string[]> {
         const select = await this.driver.findElement(
-            By.css(`select[data-action="changeIsolation"][data-agent-id="${agentId}"]`)
+            By.css(`select[data-action="changeContainerConfig"][data-agent-id="${agentId}"]`)
         );
         const options = await select.findElements(By.css('option'));
         return Promise.all(options.map(o => o.getAttribute('value')));
     }
 
-    async getCurrentIsolationTier(agentId: string): Promise<string> {
+    async getCurrentContainerConfig(agentId: string): Promise<string> {
         const select = await this.driver.findElement(
-            By.css(`select[data-action="changeIsolation"][data-agent-id="${agentId}"]`)
+            By.css(`select[data-action="changeContainerConfig"][data-agent-id="${agentId}"]`)
         );
         return select.getAttribute('value');
+    }
+
+    async getEmptyStateContainerOptions(): Promise<{ value: string; label: string; group?: string }[]> {
+        const select = await this.getContainerConfigSelect();
+        if (!select) {
+            return [];
+        }
+
+        const results: { value: string; label: string; group?: string }[] = [];
+
+        // Get ungrouped options first
+        const directOptions = await select.findElements(By.xpath('./option'));
+        for (const opt of directOptions) {
+            results.push({
+                value: await opt.getAttribute('value'),
+                label: await opt.getText(),
+            });
+        }
+
+        // Get optgroups and their options
+        const optgroups = await select.findElements(By.css('optgroup'));
+        for (const group of optgroups) {
+            const groupLabel = await group.getAttribute('label');
+            const groupOptions = await group.findElements(By.css('option'));
+            for (const opt of groupOptions) {
+                results.push({
+                    value: await opt.getAttribute('value'),
+                    label: await opt.getText(),
+                    group: groupLabel,
+                });
+            }
+        }
+
+        return results;
+    }
+
+    async getSelectInnerHTML(): Promise<string> {
+        const select = await this.getContainerConfigSelect();
+        if (!select) {
+            return '';
+        }
+        return this.driver.executeScript('return arguments[0].innerHTML', select) as Promise<string>;
+    }
+
+    async debugContainerDiscovery(): Promise<{
+        selectExists: boolean;
+        innerHTML: string;
+        options: { value: string; label: string; group?: string }[];
+        bodyText: string;
+    }> {
+        const select = await this.getContainerConfigSelect();
+        const selectExists = select !== null;
+        const innerHTML = selectExists ? await this.getSelectInnerHTML() : '';
+        const options = await this.getEmptyStateContainerOptions();
+        const bodyText = await this.getVisibleText();
+
+        return { selectExists, innerHTML, options, bodyText };
     }
 
     async renameAgent(input: WebElement, newName: string): Promise<void> {

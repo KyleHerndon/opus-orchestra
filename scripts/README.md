@@ -16,7 +16,7 @@ Scripts for setting up various isolation features for Opus Orchestra agents.
 # Set up specific features
 ./setup.sh docker      # Docker isolation
 ./setup.sh gvisor      # gVisor (enhanced Docker)
-./setup.sh firecracker # Firecracker VMs (Linux only)
+./setup.sh cloud-hypervisor # Cloud Hypervisor VMs (Linux/WSL)
 ./setup.sh sandbox     # Lightweight sandbox
 
 # Set up everything
@@ -47,7 +47,7 @@ scripts/
     ├── common.sh      # Shared utilities and functions
     ├── docker.sh      # Docker setup
     ├── gvisor.sh      # gVisor setup
-    ├── firecracker.sh # Firecracker setup
+    ├── cloud-hypervisor.sh # Cloud Hypervisor setup
     └── sandbox.sh     # Sandbox runtime setup
 ```
 
@@ -65,11 +65,12 @@ Each setup module can be run independently:
 ./setup/gvisor.sh check   # Check gVisor status
 ./setup/gvisor.sh setup   # Install and configure gVisor
 
-# Firecracker
-./setup/firecracker.sh check   # Check Firecracker status
-./setup/firecracker.sh kernel  # Download kernel only
-./setup/firecracker.sh kvm     # Fix KVM permissions
-./setup/firecracker.sh setup   # Full Firecracker setup
+# Cloud Hypervisor
+./setup/cloud-hypervisor.sh check   # Check Cloud Hypervisor status
+./setup/cloud-hypervisor.sh kernel  # Download kernel only
+./setup/cloud-hypervisor.sh rootfs  # Build rootfs only
+./setup/cloud-hypervisor.sh kvm     # Fix KVM permissions
+./setup/cloud-hypervisor.sh setup   # Full Cloud Hypervisor setup
 
 # Sandbox
 ./setup/sandbox.sh check  # Check sandbox runtime
@@ -85,7 +86,7 @@ Each setup module can be run independently:
 | Sandbox | Linux/macOS | Good | Very Low | Single developer, CI/CD |
 | Docker | All* | Good | Low | Most production use |
 | gVisor | Linux | Excellent | Medium | Multi-tenant, untrusted content |
-| Firecracker | Linux | Excellent | High startup | Maximum isolation |
+| Cloud Hypervisor | Linux/WSL | Excellent | High startup | Maximum isolation + virtio-fs mounts |
 
 *Docker on Windows/macOS runs in a Linux VM
 
@@ -100,9 +101,10 @@ Each setup module can be run independently:
 - Docker with runsc runtime configured
 - Requires `curl`, `python3` for installation
 
-### Firecracker
-- Linux only with KVM support
+### Cloud Hypervisor
+- Linux or WSL 2 with KVM support
 - `/dev/kvm` accessible (user must be in `kvm` group)
+- virtiofsd for virtio-fs mounts
 - Kernel and rootfs images
 
 ### Sandbox Runtime
@@ -167,9 +169,9 @@ cat /proc/sys/kernel/unprivileged_userns_clone
 Some scripts support environment variables:
 
 ```bash
-# Firecracker version
-FC_VERSION=v1.5.0 ./setup/firecracker.sh setup
+# Cloud Hypervisor version
+CH_VERSION=v41.0 ./setup/cloud-hypervisor.sh setup
 
-# Firecracker data directory
-FC_DATA_DIR=/opt/firecracker ./setup/firecracker.sh setup
+# Cloud Hypervisor data directory
+CH_DATA_DIR=/opt/cloud-hypervisor ./setup/cloud-hypervisor.sh setup
 ```

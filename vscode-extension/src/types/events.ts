@@ -8,7 +8,7 @@
  */
 
 import { Agent, AgentStatus, PendingApproval } from './agent';
-import { ContainerInfo, ContainerState, IsolationTier } from './container';
+import { ContainerInfo, ContainerState } from './container';
 
 // ============================================================================
 // Operation Types
@@ -21,7 +21,7 @@ export type OperationType =
     | 'createAgents'
     | 'deleteAgent'
     | 'renameAgent'
-    | 'changeIsolationTier'
+    | 'changeContainerConfig'
     | 'cleanup'
     | 'initProject'
     | 'initCoordination';
@@ -46,7 +46,7 @@ export type EventType =
     | 'command:startClaude'
     | 'command:sendToAgent'
     | 'command:focusAgent'
-    | 'command:changeIsolationTier'
+    | 'command:changeContainerConfig'
     | 'command:cleanup'
     // Operations (progress tracking)
     | 'operation:started'
@@ -76,7 +76,8 @@ export interface CommandPayloads {
     'command:createAgents': {
         count: number;
         repoPath?: string;
-        isolationTier?: IsolationTier;
+        /** Container config name (e.g., 'unisolated', 'repo:dev') */
+        containerConfigName?: string;
     };
     'command:deleteAgent': {
         agentId: number;
@@ -95,9 +96,10 @@ export interface CommandPayloads {
     'command:focusAgent': {
         agentId: number;
     };
-    'command:changeIsolationTier': {
+    'command:changeContainerConfig': {
         agentId: number;
-        tier: IsolationTier;
+        /** Container config name (e.g., 'unisolated', 'repo:dev') */
+        configName: string;
     };
     'command:cleanup': Record<string, never>;
 }

@@ -6,7 +6,7 @@ import { BacklogTreeProvider } from './backlogTreeView';
 import { StatusBarManager } from './statusBar';
 import { AgentPanel } from './agentPanel';
 import { SettingsPanel } from './settingsPanel';
-import { initLogger, initPersistenceService, getStatusWatcher } from './services';
+import { initLogger, initPersistenceService, getStatusWatcher, getConfigService } from './services';
 
 let agentManager: AgentManager;
 let agentTreeProvider: AgentTreeProvider;
@@ -16,8 +16,13 @@ let statusBarManager: StatusBarManager;
 
 export function activate(context: vscode.ExtensionContext) {
     // Initialize services
-    initLogger(context.extensionPath);
+    const configService = getConfigService();
+    const logger = initLogger(context.extensionPath, configService.logLevel);
+    logger.info('Extension activating', { logLevel: configService.logLevel });
+
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+    logger.debug('Workspace root', { workspaceRoot });
+
     const persistenceService = initPersistenceService(workspaceRoot);
     persistenceService.setContext(context);
 
@@ -255,35 +260,40 @@ export function activate(context: vscode.ExtensionContext) {
             }
         }),
 
-        // Check available isolation tiers
+        // Check available container configs
         vscode.commands.registerCommand('claudeAgents.checkIsolation', async () => {
-            const tiers = await agentManager.getAvailableIsolationTiers();
-            const config = vscode.workspace.getConfiguration('claudeAgents');
-            const currentTier = config.get<string>('isolationTier', 'standard');
+            const repoPaths = agentManager.getRepositoryPaths();
+            if (repoPaths.length === 0) {
+                vscode.window.showWarningMessage('No repository paths configured');
+                return;
+            }
 
-            const tierDescriptions: Record<string, string> = {
-                'standard': 'No isolation - manual approval for all operations',
-                'sandbox': 'Lightweight OS-level isolation (bubblewrap/sandbox-exec)',
-                'docker': 'Container isolation with hardened security options',
-                'gvisor': 'Kernel-level isolation via userspace syscall interception',
-                'firecracker': 'Full VM isolation with dedicated kernel'
-            };
+            // Get available configs from all repos
+            const allConfigs: Array<{name: string, repoPath: string}> = [];
+            for (const repoPath of repoPaths) {
+                const configs = agentManager.getAvailableContainerConfigs(repoPath);
+                for (const configName of configs) {
+                    if (!allConfigs.some(c => c.name === configName)) {
+                        allConfigs.push({ name: configName, repoPath });
+                    }
+                }
+            }
 
-            const items = tiers.map(tier => ({
-                label: `$(${tier === currentTier ? 'check' : 'circle-outline'}) ${tier}`,
-                description: tier === currentTier ? '(current)' : '',
-                detail: tierDescriptions[tier] || tier,
-                tier
+            const items = allConfigs.map(config => ({
+                label: config.name,
+                description: config.name.startsWith('repo:') ? '(repository config)' :
+                             config.name.startsWith('user:') ? '(user config)' :
+                             config.name === 'unisolated' ? '(no isolation)' : '',
+                configName: config.name
             }));
 
             const selected = await vscode.window.showQuickPick(items, {
-                placeHolder: `Available isolation tiers (current: ${currentTier})`,
-                title: 'Isolation Tiers'
+                placeHolder: 'Available container configurations',
+                title: 'Container Configurations'
             });
 
-            if (selected && selected.tier !== currentTier) {
-                await config.update('isolationTier', selected.tier, vscode.ConfigurationTarget.Global);
-                vscode.window.showInformationMessage(`Isolation tier set to: ${selected.tier}`);
+            if (selected) {
+                vscode.window.showInformationMessage(`Selected config: ${selected.configName}`);
             }
         }),
 

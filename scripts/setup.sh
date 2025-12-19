@@ -7,7 +7,7 @@
 #   ./setup.sh check        # Check what's available
 #   ./setup.sh docker       # Set up Docker isolation
 #   ./setup.sh gvisor       # Set up gVisor (requires Docker)
-#   ./setup.sh firecracker  # Set up Firecracker VMs
+#   ./setup.sh cloud-hypervisor  # Set up Cloud Hypervisor VMs
 #   ./setup.sh sandbox      # Set up sandbox-runtime
 #   ./setup.sh all          # Set up everything available for this platform
 
@@ -39,13 +39,11 @@ check_all() {
     # Sandbox
     "$SETUP_DIR/sandbox.sh" check 2>/dev/null || true
 
-    # Firecracker (Linux only)
-    if [[ "$OS" == "linux" ]]; then
-        "$SETUP_DIR/firecracker.sh" check 2>/dev/null || true
-    elif [[ "$OS" == "wsl" ]]; then
-        print_status "info" "Firecracker" "not supported in WSL (no KVM)"
+    # Cloud Hypervisor (Linux/WSL with KVM)
+    if [[ "$OS" == "linux" ]] || [[ "$OS" == "wsl" ]]; then
+        "$SETUP_DIR/cloud-hypervisor.sh" check 2>/dev/null || true
     elif [[ "$OS" == "macos" ]]; then
-        print_status "info" "Firecracker" "not supported on macOS"
+        print_status "info" "Cloud Hypervisor" "not supported on macOS (no KVM)"
     fi
 
     echo ""
@@ -72,13 +70,13 @@ setup_all() {
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         "$SETUP_DIR/gvisor.sh" setup || true
         echo ""
+    fi
 
-        # Firecracker (Linux with KVM only)
-        if [[ -e /dev/kvm ]]; then
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            "$SETUP_DIR/firecracker.sh" setup || true
-            echo ""
-        fi
+    # Cloud Hypervisor (Linux/WSL with KVM)
+    if [[ -e /dev/kvm ]]; then
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        "$SETUP_DIR/cloud-hypervisor.sh" setup || true
+        echo ""
     fi
 
     echo ""
@@ -99,7 +97,7 @@ interactive_mode() {
     echo ""
     echo "  1) Docker isolation (recommended)"
     echo "  2) gVisor (enhanced Docker isolation, Linux only)"
-    echo "  3) Firecracker VMs (Linux only)"
+    echo "  3) Cloud Hypervisor VMs (Linux/WSL with KVM)"
     echo "  4) Sandbox runtime (lightweight)"
     echo "  5) All available features"
     echo "  6) Exit"
@@ -111,7 +109,7 @@ interactive_mode() {
     case "$choice" in
         1) "$SETUP_DIR/docker.sh" setup ;;
         2) "$SETUP_DIR/gvisor.sh" setup ;;
-        3) "$SETUP_DIR/firecracker.sh" setup ;;
+        3) "$SETUP_DIR/cloud-hypervisor.sh" setup ;;
         4) "$SETUP_DIR/sandbox.sh" setup ;;
         5) setup_all ;;
         6) echo "Exiting."; exit 0 ;;
@@ -126,19 +124,19 @@ show_help() {
     echo "Usage: $0 [command]"
     echo ""
     echo "Commands:"
-    echo "  check       Check what's available"
-    echo "  docker      Set up Docker isolation"
-    echo "  gvisor      Set up gVisor (requires Docker, Linux only)"
-    echo "  firecracker Set up Firecracker VMs (Linux only)"
-    echo "  sandbox     Set up sandbox-runtime"
-    echo "  all         Set up everything available"
+    echo "  check            Check what's available"
+    echo "  docker           Set up Docker isolation"
+    echo "  gvisor           Set up gVisor (requires Docker, Linux only)"
+    echo "  cloud-hypervisor Set up Cloud Hypervisor VMs (Linux/WSL with KVM)"
+    echo "  sandbox          Set up sandbox-runtime"
+    echo "  all              Set up everything available"
     echo ""
     echo "Run without arguments for interactive mode."
     echo ""
     echo "Individual setup scripts are in scripts/setup/:"
     echo "  ./scripts/setup/docker.sh [check|build|setup]"
     echo "  ./scripts/setup/gvisor.sh [check|setup]"
-    echo "  ./scripts/setup/firecracker.sh [check|kernel|kvm|setup]"
+    echo "  ./scripts/setup/cloud-hypervisor.sh [check|kernel|rootfs|kvm|setup]"
     echo "  ./scripts/setup/sandbox.sh [check|test|setup]"
 }
 
@@ -153,8 +151,8 @@ case "${1:-}" in
     gvisor)
         "$SETUP_DIR/gvisor.sh" setup
         ;;
-    firecracker)
-        "$SETUP_DIR/firecracker.sh" setup
+    cloud-hypervisor)
+        "$SETUP_DIR/cloud-hypervisor.sh" setup
         ;;
     sandbox)
         "$SETUP_DIR/sandbox.sh" setup

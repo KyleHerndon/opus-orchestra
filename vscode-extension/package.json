@@ -2,7 +2,7 @@
   "name": "opus-orchestra",
   "displayName": "Claude Agents",
   "description": "Manage multiple Claude Code agents in parallel with git worktrees",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publisher": "your-publisher-id",
   "engines": {
     "vscode": "^1.85.0"
@@ -267,6 +267,23 @@
           "default": true,
           "description": "Automatically start or resume Claude when opening/focusing an agent terminal"
         },
+        "claudeAgents.logLevel": {
+          "type": "string",
+          "enum": [
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ],
+          "default": "debug",
+          "enumDescriptions": [
+            "Debug - All messages including detailed diagnostics",
+            "Info - General information and above",
+            "Warn - Warnings and errors only",
+            "Error - Errors only"
+          ],
+          "description": "Minimum log level for debug.log file output"
+        },
         "claudeAgents.useTmux": {
           "type": "boolean",
           "default": true,
@@ -330,7 +347,7 @@
             "sandbox",
             "docker",
             "gvisor",
-            "firecracker"
+            "cloud-hypervisor"
           ],
           "default": "standard",
           "enumDescriptions": [
@@ -338,7 +355,7 @@
             "Sandbox Runtime - Lightweight OS-level isolation using bubblewrap/sandbox-exec",
             "Docker Container - Container isolation with hardened security options",
             "gVisor - Kernel-level isolation via userspace syscall interception",
-            "Firecracker VM - Full VM isolation with dedicated kernel"
+            "Cloud Hypervisor VM - Full VM isolation with virtio-fs mounts"
           ],
           "description": "Default isolation tier for new agents. Higher tiers provide more isolation and allow more autonomous operation."
         },
@@ -367,10 +384,10 @@
           "default": false,
           "description": "Use gVisor runtime (runsc) for Docker containers"
         },
-        "claudeAgents.firecrackerPath": {
+        "claudeAgents.cloudHypervisorPath": {
           "type": "string",
           "default": "",
-          "description": "Path to Firecracker binary. Leave empty if not available."
+          "description": "Path to Cloud Hypervisor binary. Leave empty to use default from PATH."
         },
         "claudeAgents.allowedDomains": {
           "type": "array",
@@ -399,8 +416,10 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
+    "compile": "tsc -p ./ && node src/agentPanel/build.js",
+    "compile:webview": "node src/agentPanel/build.js",
     "watch": "tsc -watch -p ./",
+    "watch:webview": "node src/agentPanel/build.js --watch",
     "lint": "eslint src --ext ts --max-warnings 0",
     "test": "npm run compile && node ./out/test/runTest.js",
     "test:unit": "npm run compile && mocha --ui tdd ./out/test/suite/agentPanel.test.js ./out/test/suite/statusWatcher.test.js",
@@ -421,8 +440,11 @@
     "@typescript-eslint/parser": "^6.x",
     "@vscode/test-electron": "^2.5.2",
     "chai": "^6.2.1",
+    "esbuild": "^0.27.2",
+    "esbuild-svelte": "^0.9.4",
     "eslint": "^8.x",
     "mocha": "^11.7.5",
+    "svelte": "^5.46.0",
     "typescript": "^5.x",
     "vscode-extension-tester": "^8.19.0"
   }

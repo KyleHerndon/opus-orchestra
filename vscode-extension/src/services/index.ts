@@ -22,3 +22,11 @@ export {
 } from './PersistenceService';
 export { TodoService, TodoItem, TodoState, getTodoService, resetTodoService } from './TodoService';
 export { TmuxService, getTmuxService, resetTmuxService } from './TmuxService';
+export {
+    ContainerConfigService,
+    getContainerConfigService,
+    isContainerConfigServiceInitialized,
+    RepoContainerSettings,
+    UserContainerSettings,
+    DiscoveredConfig,
+} from './ContainerConfigService';

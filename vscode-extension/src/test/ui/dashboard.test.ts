@@ -85,11 +85,11 @@ describe('Claude Agents Dashboard', function () {
             const countInput = await page.getAgentCountInput();
             expect(countInput).to.not.be.null;
 
-            const tierSelect = await page.getIsolationTierSelect();
-            if (tierSelect) {
-                const options = await tierSelect.findElements(By.css('option'));
+            const configSelect = await page.getContainerConfigSelect();
+            if (configSelect) {
+                const options = await configSelect.findElements(By.css('option'));
                 const values = await Promise.all(options.map(o => o.getAttribute('value')));
-                expect(values).to.include('standard');
+                expect(values).to.include('unisolated');
             }
         });
 
@@ -109,7 +109,7 @@ describe('Claude Agents Dashboard', function () {
             const card = cards[0];
             expect(await page.getAgentTitleInput(card)).to.not.be.null;
             expect(await page.getAgentStatus(card)).to.not.be.null;
-            expect(await page.getAgentIsolationSelect(card)).to.not.be.null;
+            expect(await page.getAgentContainerConfigSelect(card)).to.not.be.null;
 
             for (const action of ['focus', 'startClaude', 'deleteAgent', 'viewDiff']) {
                 expect(await page.getAgentButton(card, action)).to.not.be.null;
@@ -136,21 +136,21 @@ describe('Claude Agents Dashboard', function () {
             await page.renameAgent(titleInput!, 'test-agent-name');
         });
 
-        it('should have isolation tier dropdown with options', async function () {
+        it('should have container config dropdown with options', async function () {
             const cards = await page.getAgentCards();
             if (cards.length === 0) {
                 this.skip();
             }
 
             const agentId = await page.getAgentId(cards[0]);
-            const options = await page.getIsolationTierOptions(agentId!);
-            expect(options).to.include('standard');
+            const options = await page.getContainerConfigOptions(agentId!);
+            expect(options).to.include('unisolated');
 
-            // Test tier change
-            const initialValue = await page.getCurrentIsolationTier(agentId!);
-            const newTier = options.find(o => o !== initialValue);
-            if (newTier) {
-                await page.setIsolationTier(agentId!, newTier);
+            // Test config change
+            const initialValue = await page.getCurrentContainerConfig(agentId!);
+            const newConfig = options.find(o => o !== initialValue);
+            if (newConfig) {
+                await page.setContainerConfig(agentId!, newConfig);
             }
         });
     });
@@ -179,6 +179,86 @@ describe('Claude Agents Dashboard', function () {
             expect(await progressElements[0].getText()).to.equal('Test progress');
 
             await page.removeProgressElements();
+        });
+    });
+
+    describe('Container Configuration Options', function () {
+        before(async () => await page.open());
+        after(async () => await page.close());
+
+        beforeEach(async function () {
+            await page.switchBack();
+            await driver.sleep(200);
+            await page.switchToFrame();
+        });
+
+        it('should show container options in empty state dropdown', async function () {
+            // Only test if we're in empty state
+            if (!(await page.hasEmptyState())) {
+                console.log('Skipping: agents already exist');
+                this.skip();
+            }
+
+            // Debug: capture current state
+            const debug = await page.debugContainerDiscovery();
+            console.log('=== Container Options Debug ===');
+            console.log('Select exists:', debug.selectExists);
+            console.log('innerHTML:', debug.innerHTML);
+            console.log('Options:', JSON.stringify(debug.options, null, 2));
+
+            // Basic assertions
+            expect(debug.selectExists).to.be.true;
+            expect(debug.options.length).to.be.greaterThan(0);
+
+            // Should have unisolated option
+            const hasUnisolated = debug.options.some(o => o.value === 'unisolated');
+            expect(hasUnisolated, 'Should have unisolated option').to.be.true;
+        });
+
+        it('should show repo container configs from .opus-orchestra/containers/', async function () {
+            if (!(await page.hasEmptyState())) {
+                this.skip();
+            }
+
+            // Wait a bit for async config discovery
+            await driver.sleep(2000);
+
+            const debug = await page.debugContainerDiscovery();
+            console.log('=== After Wait - Container Options ===');
+            console.log('Options:', JSON.stringify(debug.options, null, 2));
+
+            // Check for repo configs (should have dev, ui-tests, etc.)
+            const repoOptions = debug.options.filter(o =>
+                o.value.startsWith('repo:') || o.group?.includes('repo')
+            );
+            console.log('Repo options found:', repoOptions.length);
+
+            // This test will fail if configs aren't discovered - that's the point
+            expect(repoOptions.length,
+                'Should have repo container configs from .opus-orchestra/containers/. ' +
+                `Found options: ${JSON.stringify(debug.options)}`
+            ).to.be.greaterThan(0);
+        });
+
+        it('should group options by source and type', async function () {
+            if (!(await page.hasEmptyState())) {
+                this.skip();
+            }
+
+            const debug = await page.debugContainerDiscovery();
+
+            // Check for optgroups in HTML
+            const hasOptgroups = debug.innerHTML.includes('<optgroup');
+            console.log('Has optgroups:', hasOptgroups);
+            console.log('Groups found:', [...new Set(debug.options.map(o => o.group).filter(Boolean))]);
+
+            if (debug.options.length > 1) {
+                // If we have more than just unisolated, we should have groups
+                const groupedOptions = debug.options.filter(o => o.group);
+                expect(groupedOptions.length,
+                    'Non-unisolated options should be in optgroups'
+                ).to.be.greaterThan(0);
+            }
         });
     });
 
