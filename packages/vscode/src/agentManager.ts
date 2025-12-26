@@ -3,7 +3,14 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { agentPath } from './pathUtils';
 import { ContainerManager } from './containerManager';
-import { WorktreeManager, AgentStatusTracker, AgentPersistence } from './managers';
+// Use core managers via ServiceContainer
+import { getContainer } from './ServiceContainer';
+import {
+    IWorktreeManager,
+    IAgentStatusTracker,
+    IAgentPersistence,
+    Agent as CoreAgent,
+} from '@opus-orchestra/core';
 
 import {
     Agent,
@@ -35,26 +42,49 @@ import {
 export { Agent, AgentStatus, PersistedAgent, DiffStats, PendingApproval, ContainerInfo, ContainerType };
 
 /**
+ * Helper to convert vscode Agent to core Agent for manager calls.
+ * The only difference is terminal type (vscode.Terminal vs TerminalHandle).
+ * Managers don't use the terminal field, so this is safe.
+ */
+function toCoreAgent(agent: Agent): CoreAgent {
+    return agent as unknown as CoreAgent;
+}
+
+/**
+ * Helper to convert vscode Agent map to core Agent map for manager calls.
+ */
+function toCoreAgentMap(agents: Map<number, Agent>): Map<number, CoreAgent> {
+    return agents as unknown as Map<number, CoreAgent>;
+}
+
+/**
  * Coordinates agent lifecycle and delegates to specialized managers.
  */
 export class AgentManager {
     private agents: Map<number, Agent> = new Map();
     private extensionPath: string;
 
-    // Specialized managers
+    // Specialized managers - now from ServiceContainer (core implementations)
     private containerManager: ContainerManager;
-    private worktreeManager: WorktreeManager;
-    private statusTracker: AgentStatusTracker;
-    private persistence: AgentPersistence;
+
+    // Getters for core managers from ServiceContainer
+    private get worktreeManager(): IWorktreeManager {
+        return getContainer().worktreeManager;
+    }
+
+    private get statusTracker(): IAgentStatusTracker {
+        return getContainer().statusTracker;
+    }
+
+    private get persistence(): IAgentPersistence {
+        return getContainer().persistence;
+    }
 
     constructor(extensionPath: string) {
         this.extensionPath = extensionPath;
 
-        // Initialize managers
+        // Initialize container manager (still local for now)
         this.containerManager = new ContainerManager(extensionPath);
-        this.worktreeManager = new WorktreeManager(extensionPath);
-        this.statusTracker = new AgentStatusTracker();
-        this.persistence = new AgentPersistence(this.worktreeManager, this.containerManager);
     }
 
     /**
@@ -70,7 +100,63 @@ export class AgentManager {
 
     setContext(context: vscode.ExtensionContext): void {
         this.containerManager.setContext(context);
-        this.agents = this.persistence.restoreAgents(this.getRepositoryPaths());
+        this.agents = this.restoreAgentsFromCore(this.getRepositoryPaths());
+    }
+
+    /**
+     * Restore agents using core persistence methods.
+     * This converts PersistedAgent data to runtime Agent objects with vscode-specific fields.
+     */
+    private restoreAgentsFromCore(repoPaths: string[]): Map<number, Agent> {
+        this.debugLog(`[restoreAgents] Starting agent restoration`);
+
+        const agents = new Map<number, Agent>();
+
+        // Use core persistence to scan and merge agent data
+        const worktreeAgents = this.persistence.scanWorktreesForAgents(repoPaths);
+        const storageAgents = this.persistence.loadPersistedAgents();
+
+        // Build map from worktree agents
+        const worktreeMap = new Map<string, PersistedAgent>();
+        for (const agent of worktreeAgents) {
+            worktreeMap.set(agent.worktreePath, agent);
+        }
+
+        // Merge sources (worktree takes priority)
+        const allAgents = this.persistence.mergeAgentSources(worktreeMap, storageAgents);
+
+        this.debugLog(`[restoreAgents] Found ${allAgents.size} merged agents`);
+
+        // Log available terminals
+        const terminalNames = vscode.window.terminals.map(t => t.name);
+        this.debugLog(`[restoreAgents] Available terminals: ${JSON.stringify(terminalNames)}`);
+
+        // Create runtime Agent objects from persisted data
+        for (const persisted of allAgents.values()) {
+            const existingTerminal = vscode.window.terminals.find(
+                t => t.name === persisted.name
+            );
+
+            const containerInfo = this.containerManager.getContainer(persisted.id);
+
+            const agent: Agent = {
+                ...persisted,
+                sessionId: persisted.sessionId || this.persistence.generateSessionId(),
+                terminal: existingTerminal || null,
+                status: 'idle',
+                statusIcon: existingTerminal ? 'circle-filled' : 'circle-outline',
+                pendingApproval: null,
+                lastInteractionTime: new Date(),
+                diffStats: { insertions: 0, deletions: 0, filesChanged: 0 },
+                containerInfo,
+            };
+
+            agents.set(agent.id, agent);
+            this.debugLog(`[restoreAgents] Restored agent ${agent.name} (id=${agent.id})`);
+        }
+
+        this.debugLog(`[restoreAgents] Restored ${agents.size} total agents`);
+        return agents;
     }
 
     getContainerManager(): ContainerManager {
@@ -267,8 +353,8 @@ export class AgentManager {
                     existingIds.add(nextId);
                     createdCount++;
 
-                    this.worktreeManager.copyCoordinationFiles(agent);
-                    this.worktreeManager.saveAgentMetadata(agent);
+                    this.worktreeManager.copyCoordinationFiles(toCoreAgent(agent), this.extensionPath);
+                    this.worktreeManager.saveAgentMetadata(toCoreAgent(agent));
 
                     // Create container if not unisolated
                     if (configName !== 'unisolated') {
@@ -301,7 +387,7 @@ export class AgentManager {
             });
 
             // Persist agents to storage (both VS Code state and worktree metadata)
-            this.persistence.saveAgents(this.agents);
+            this.persistence.saveAgents(toCoreAgentMap(this.agents));
 
             const configInfo = configName !== 'unisolated' ? ` (${configName})` : '';
             const message = restoredCount > 0
@@ -371,7 +457,7 @@ export class AgentManager {
         const repoPath = agent.repoPath;
 
         this.agents.delete(agentId);
-        this.persistence.saveAgents(this.agents);
+        this.persistence.saveAgents(toCoreAgentMap(this.agents));
 
         // Clean up agent from display order
         getPersistenceService().removeAgentFromOrder(agentId, repoPath);
@@ -428,8 +514,8 @@ export class AgentManager {
             agent.branch = newBranch;
             agent.worktreePath = newWorktreePath;
 
-            this.worktreeManager.copyCoordinationFiles(agent);
-            this.persistence.saveAgents(this.agents);
+            this.worktreeManager.copyCoordinationFiles(toCoreAgent(agent), this.extensionPath);
+            this.persistence.saveAgents(toCoreAgentMap(this.agents));
 
             getEventBus().emit('agent:renamed', { agent, previousName });
             vscode.window.showInformationMessage(`Agent renamed to "${sanitizedName}"`);
@@ -476,7 +562,7 @@ export class AgentManager {
         });
 
         this.agents.clear();
-        this.persistence.saveAgents(this.agents);
+        this.persistence.saveAgents(toCoreAgentMap(this.agents));
         vscode.window.showInformationMessage('Agent worktrees cleaned up');
     }
 
@@ -554,7 +640,7 @@ export class AgentManager {
                 }
 
                 agent.containerConfigName = newConfigName;
-                this.persistence.saveAgents(this.agents);
+                this.persistence.saveAgents(toCoreAgentMap(this.agents));
 
                 return true;
             } catch (error) {
@@ -640,7 +726,7 @@ export class AgentManager {
 
         // Set status to idle (user needs to run 'oo' to start Claude)
         agent.status = 'idle';
-        this.statusTracker.updateAgentIcon(agent);
+        this.statusTracker.updateAgentIcon(toCoreAgent(agent));
     }
 
     /**
@@ -689,11 +775,11 @@ export class AgentManager {
 
         if (!agent.sessionStarted) {
             agent.sessionStarted = true;
-            this.persistence.saveAgents(this.agents);
+            this.persistence.saveAgents(toCoreAgentMap(this.agents));
         }
 
         agent.status = 'waiting-input';
-        this.statusTracker.updateAgentIcon(agent);
+        this.statusTracker.updateAgentIcon(toCoreAgent(agent));
     }
 
     /**
@@ -797,7 +883,7 @@ export class AgentManager {
 
         // Set status to idle (user needs to run 'oo' to start Claude)
         agent.status = 'idle';
-        this.statusTracker.updateAgentIcon(agent);
+        this.statusTracker.updateAgentIcon(toCoreAgent(agent));
 
         agent.terminal.show(true);
         getEventBus().emit('agent:terminalCreated', { agent, isNew: true });
@@ -811,7 +897,7 @@ export class AgentManager {
             agent.pendingApproval = null;
             agent.status = 'working';
             agent.lastInteractionTime = new Date();
-            this.statusTracker.updateAgentIcon(agent);
+            this.statusTracker.updateAgentIcon(toCoreAgent(agent));
 
             if (hadPendingApproval) {
                 getEventBus().emit('approval:resolved', { agentId });
@@ -824,7 +910,7 @@ export class AgentManager {
             if (agent.terminal === terminal) {
                 agent.terminal = null;
                 agent.status = 'idle';
-                this.statusTracker.updateAgentIcon(agent);
+                this.statusTracker.updateAgentIcon(toCoreAgent(agent));
                 getEventBus().emit('agent:terminalClosed', { agentId: agent.id });
                 break;
             }
@@ -836,19 +922,19 @@ export class AgentManager {
     // ========================================================================
 
     refreshStatus(): void {
-        this.statusTracker.refreshStatus(this.agents);
+        this.statusTracker.refreshStatus(toCoreAgentMap(this.agents));
     }
 
     async refreshDiffStats(): Promise<void> {
-        await this.statusTracker.refreshDiffStats(this.agents);
+        await this.statusTracker.refreshDiffStats(toCoreAgentMap(this.agents));
     }
 
     getPendingApprovals(): PendingApproval[] {
-        return this.statusTracker.getPendingApprovals(this.agents);
+        return this.statusTracker.getPendingApprovals(toCoreAgentMap(this.agents));
     }
 
     getWaitingCount(): number {
-        return this.statusTracker.getWaitingCount(this.agents);
+        return this.statusTracker.getWaitingCount(toCoreAgentMap(this.agents));
     }
 
     getAgents(): Agent[] {
@@ -1137,7 +1223,7 @@ export class AgentManager {
             };
 
             this.agents.set(agentId, agent);
-            this.persistence.saveAgents(this.agents);
+            this.persistence.saveAgents(toCoreAgentMap(this.agents));
             this.createTerminalForAgent(agent);
             getEventBus().emit('agent:created', { agent });
 
