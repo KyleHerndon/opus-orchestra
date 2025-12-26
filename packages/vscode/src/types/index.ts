@@ -1,15 +1,18 @@
 /**
- * Opus Orchestra - Core Types
+ * Opus Orchestra VSCode Extension - Types
  *
- * Re-exports all types from their respective modules.
+ * Re-exports types from @opus-orchestra/core and adds VSCode-specific types.
  */
 
-// Agent types
+// ============================================================================
+// Re-export all core types
+// ============================================================================
+
+// Agent types from core
 export {
     AgentStatus,
     DiffStats,
     PersistedAgent,
-    Agent,
     PendingApproval,
     AgentDisplayData,
     AGENT_NAMES,
@@ -17,9 +20,13 @@ export {
     AGENTS_STORAGE_KEY,
     AgentOrderMap,
     AGENT_ORDER_STORAGE_KEY,
-} from './agent';
+} from '@opus-orchestra/core';
 
-// Container types
+// NOTE: Agent interface is defined locally because it uses vscode.Terminal
+// instead of TerminalHandle. This will be migrated in a future refactor.
+export { Agent } from './agent';
+
+// Container types from core
 export {
     ContainerType,
     ContainerConfigRef,
@@ -34,43 +41,10 @@ export {
     CONTAINERS_STORAGE_KEY,
     CONTAINER_RESOURCE_DEFAULTS,
     DEFAULT_PROXY_PORT,
-} from './container';
+} from '@opus-orchestra/core';
 
-// Terminal types
-export {
-    TerminalType,
-    TerminalOptions,
-    TERMINAL_DELAYS,
-    GIT_BASH_PATH,
-} from './terminal';
-
-// Hook types
-export {
-    HookEventType,
-    HookData,
-    ParsedStatus,
-} from './hooks';
-
-// Configuration types
-export {
-    ExtensionConfig,
-    DEFAULT_CONFIG,
-    POLLING_DEFAULTS,
-    CONFIG_SECTION,
-} from './config';
-
-// Service interfaces
-export {
-    IGitService,
-    ITerminalService,
-    IStatusService,
-    IContainerService,
-    IFileService,
-    ICommandService,
-    ILogger,
-} from './services';
-
-// Event types
+// Event types - uses local EventPayloads that references vscode Agent
+// TODO: When Agent is migrated to use TerminalHandle, import from core instead
 export {
     EventType,
     EventPayloads,
@@ -83,7 +57,49 @@ export {
     DomainEventPayloads,
 } from './events';
 
-// UI types and utilities
+// Hook types from core
+export {
+    HookEventType,
+    HookData,
+    ParsedStatus,
+} from '@opus-orchestra/core';
+
+// Adapter types from core
+export {
+    TerminalType,
+    ExtensionConfig,
+    DEFAULT_CONFIG,
+    POLLING_DEFAULTS,
+    TerminalHandle,
+    CreateTerminalOptions,
+} from '@opus-orchestra/core';
+
+// ============================================================================
+// VSCode-specific types (not in core)
+// ============================================================================
+
+// VSCode terminal options (uses vscode.ThemeIcon)
+export {
+    TerminalOptions,
+    TERMINAL_DELAYS,
+    GIT_BASH_PATH,
+} from './terminal';
+
+// VSCode-specific config section constant
+export { CONFIG_SECTION } from './config';
+
+// VSCode service interfaces (use vscode.Terminal)
+export {
+    IGitService,
+    ITerminalService,
+    IStatusService,
+    IContainerService,
+    IFileService,
+    ICommandService,
+    ILogger,
+} from './services';
+
+// Webview UI types
 export {
     formatTimeSince,
     AgentPanelMessageType,

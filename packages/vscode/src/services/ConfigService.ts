@@ -130,6 +130,54 @@ export class ConfigService {
         return this.config.get<string>('cloudHypervisorPath', DEFAULT_CONFIG.cloudHypervisorPath);
     }
 
+    get containerPidsLimit(): number {
+        return this.config.get<number>('containerPidsLimit', DEFAULT_CONFIG.containerPidsLimit);
+    }
+
+    get gvisorEnabled(): boolean {
+        return this.config.get<boolean>('gvisorEnabled', DEFAULT_CONFIG.gvisorEnabled);
+    }
+
+    // ========================================================================
+    // Isolation Settings
+    // ========================================================================
+
+    get isolationTier(): string {
+        return this.config.get<string>('isolationTier', DEFAULT_CONFIG.isolationTier);
+    }
+
+    get allowedDomains(): string[] {
+        return this.config.get<string[]>('allowedDomains', DEFAULT_CONFIG.allowedDomains);
+    }
+
+    get proxyPort(): number {
+        return this.config.get<number>('proxyPort', DEFAULT_CONFIG.proxyPort);
+    }
+
+    // ========================================================================
+    // Permission Settings
+    // ========================================================================
+
+    get showAllPermissionOptions(): boolean {
+        return this.config.get<boolean>('showAllPermissionOptions', DEFAULT_CONFIG.showAllPermissionOptions);
+    }
+
+    // ========================================================================
+    // UI Settings
+    // ========================================================================
+
+    get uiScale(): number {
+        return this.config.get<number>('uiScale', DEFAULT_CONFIG.uiScale);
+    }
+
+    // ========================================================================
+    // API Settings
+    // ========================================================================
+
+    get autoSwitchToApiOnRateLimit(): boolean {
+        return this.config.get<boolean>('autoSwitchToApiOnRateLimit', DEFAULT_CONFIG.autoSwitchToApiOnRateLimit);
+    }
+
     // ========================================================================
     // Utility Methods
     // ========================================================================
@@ -154,7 +202,16 @@ export class ConfigService {
             containerImage: this.containerImage,
             containerMemoryLimit: this.containerMemoryLimit,
             containerCpuLimit: this.containerCpuLimit,
+            containerPidsLimit: this.containerPidsLimit,
+            gvisorEnabled: this.gvisorEnabled,
             cloudHypervisorPath: this.cloudHypervisorPath,
+            isolationTier: this.isolationTier,
+            allowedDomains: this.allowedDomains,
+            proxyPort: this.proxyPort,
+            showAllPermissionOptions: this.showAllPermissionOptions,
+            uiScale: this.uiScale,
+            logLevel: this.logLevel,
+            autoSwitchToApiOnRateLimit: this.autoSwitchToApiOnRateLimit,
         };
     }
 

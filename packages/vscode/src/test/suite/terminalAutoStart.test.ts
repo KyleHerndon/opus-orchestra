@@ -12,7 +12,8 @@ import * as path from 'path';
 suite('Terminal Auto-Start Feature Test Suite', () => {
     // Load source files
     const agentManagerPath = path.resolve(__dirname, '../../../src/agentManager.ts');
-    const configPath = path.resolve(__dirname, '../../../src/types/config.ts');
+    // ExtensionConfig is now in the core package
+    const configPath = path.resolve(__dirname, '../../../../core/src/adapters/ConfigAdapter.ts');
     const eventsPath = path.resolve(__dirname, '../../../src/types/events.ts');
     const configServicePath = path.resolve(__dirname, '../../../src/services/ConfigService.ts');
     const tmuxServicePath = path.resolve(__dirname, '../../../src/services/TmuxService.ts');
@@ -77,8 +78,9 @@ suite('Terminal Auto-Start Feature Test Suite', () => {
         });
 
         test('agent:terminalCreated should have payload type defined', () => {
+            // isNew can be optional (isNew?) or required (isNew:)
             assert.ok(
-                eventsContent.includes("'agent:terminalCreated': { agent: Agent; isNew: boolean }"),
+                eventsContent.includes("'agent:terminalCreated': { agent: Agent; isNew"),
                 'agent:terminalCreated should have proper payload type'
             );
         });

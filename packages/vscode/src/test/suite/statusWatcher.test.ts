@@ -18,7 +18,8 @@ import * as path from 'path';
 suite('StatusWatcher Stale File Detection Test Suite', () => {
     const statusWatcherPath = path.resolve(__dirname, '../../../src/services/StatusWatcher.ts');
     const statusServicePath = path.resolve(__dirname, '../../../src/services/StatusService.ts');
-    const hooksTypesPath = path.resolve(__dirname, '../../../src/types/hooks.ts');
+    // ParsedStatus is now in the core package
+    const hooksTypesPath = path.resolve(__dirname, '../../../../core/src/types/hooks.ts');
 
     let statusWatcherContent: string;
     let statusServiceContent: string;
@@ -176,7 +177,8 @@ suite('Approval Flow Integration Test Suite', () => {
      */
 
     test('All approval flow components are in sync', () => {
-        const hooksTypesPath = path.resolve(__dirname, '../../../src/types/hooks.ts');
+        // ParsedStatus is now in the core package
+        const hooksTypesPath = path.resolve(__dirname, '../../../../core/src/types/hooks.ts');
         const statusServicePath = path.resolve(__dirname, '../../../src/services/StatusService.ts');
         const statusWatcherPath = path.resolve(__dirname, '../../../src/services/StatusWatcher.ts');
 

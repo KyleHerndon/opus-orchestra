@@ -1,12 +1,13 @@
 /**
- * Service interfaces for dependency injection
+ * VSCode-specific service interfaces
+ *
+ * These interfaces use vscode.Terminal and other VSCode-specific types.
+ * Core service interfaces are in @opus-orchestra/core.
  */
 
 import * as vscode from 'vscode';
-import { DiffStats } from './agent';
-import { ContainerInfo } from './container';
+import { DiffStats, ContainerInfo, ParsedStatus } from '@opus-orchestra/core';
 import { TerminalOptions } from './terminal';
-import { ParsedStatus } from './hooks';
 
 /**
  * Git operations service interface
