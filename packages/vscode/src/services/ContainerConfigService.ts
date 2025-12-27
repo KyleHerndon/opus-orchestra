@@ -13,8 +13,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { agentPath, getHomeDir } from '../pathUtils';
 import { ContainerConfigRef } from '../types';
-import { getAdapter } from '../containers';
-import { ContainerDisplayInfo } from '../containers/ContainerAdapter';
+import { ContainerDisplayInfo } from '@opus-orchestra/core';
+import { getContainer, isContainerInitialized } from '../ServiceContainer';
 import { getLogger, isLoggerInitialized } from './Logger';
 
 /**
@@ -148,7 +148,11 @@ export class ContainerConfigService {
             return undefined;
         }
 
-        const adapter = getAdapter(configRef.type);
+        if (!isContainerInitialized()) {
+            return undefined;
+        }
+
+        const adapter = getContainer().containerRegistry.get(configRef.type);
         if (!adapter) {
             return undefined;
         }

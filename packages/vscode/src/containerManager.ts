@@ -20,8 +20,8 @@ import {
     getContainerConfigService,
 } from './services';
 
-// Import container adapters
-import { getAdapter, getAvailableTypes } from './containers';
+// Use containerRegistry from ServiceContainer
+import { getContainer, isContainerInitialized } from './ServiceContainer';
 
 // Re-export types
 export { ContainerState, ContainerInfo, PersistedContainerInfo, ContainerType };
@@ -58,13 +58,26 @@ export class ContainerManager {
         }
     }
 
+    /**
+     * Get a container adapter by type from ServiceContainer's registry.
+     */
+    private getAdapter(type: string) {
+        if (!isContainerInitialized()) {
+            return undefined;
+        }
+        return getContainer().containerRegistry.get(type);
+    }
+
     // ========== Adapter-Based Methods (New) ==========
 
     /**
      * Get available container types via adapters.
      */
     async getAvailableContainerTypes(): Promise<ContainerType[]> {
-        return getAvailableTypes();
+        if (!isContainerInitialized()) {
+            return [];
+        }
+        return getContainer().containerRegistry.getAvailableTypes();
     }
 
     /**
@@ -94,7 +107,7 @@ export class ContainerManager {
         }
 
         // Get the adapter for this container type
-        const adapter = getAdapter(configRef.type);
+        const adapter = this.getAdapter(configRef.type);
         this.debugLog(`createContainer: configRef.type='${configRef.type}', adapter=${adapter ? adapter.type : 'null'}`);
         if (!adapter) {
             throw new Error(`No adapter registered for container type '${configRef.type}'`);
@@ -147,7 +160,7 @@ export class ContainerManager {
 
         this.debugLog(`Removing container for agent ${agentId}`);
 
-        const adapter = getAdapter(container.type);
+        const adapter = this.getAdapter(container.type);
 
         if (adapter) {
             try {
@@ -173,7 +186,7 @@ export class ContainerManager {
             throw new Error(`No container found for agent ${agentId}`);
         }
 
-        const adapter = getAdapter(container.type);
+        const adapter = this.getAdapter(container.type);
 
         if (!adapter) {
             throw new Error(`No adapter for container type '${container.type}'`);
@@ -191,7 +204,7 @@ export class ContainerManager {
             return null;
         }
 
-        const adapter = getAdapter(container.type);
+        const adapter = this.getAdapter(container.type);
 
         if (!adapter || !adapter.getStats) {
             return null;
@@ -210,7 +223,7 @@ export class ContainerManager {
             return null;
         }
 
-        const adapter = getAdapter(container.type);
+        const adapter = this.getAdapter(container.type);
 
         if (!adapter || !adapter.getShellCommand) {
             return null;
@@ -346,7 +359,7 @@ export class ContainerManager {
         // Also ask each adapter to clean up (handles orphaned VMs not in our state)
         const types = await this.getAvailableContainerTypes();
         for (const type of types) {
-            const adapter = getAdapter(type);
+            const adapter = this.getAdapter(type);
             if (adapter?.cleanupByWorktree) {
                 try {
                     await adapter.cleanupByWorktree(worktreePath);

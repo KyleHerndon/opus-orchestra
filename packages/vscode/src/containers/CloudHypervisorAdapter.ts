@@ -19,7 +19,7 @@ import * as net from 'net';
 import { exec, execSync, spawn, ChildProcess } from 'child_process';
 import { promisify } from 'util';
 import { agentPath, getHomeDir } from '../pathUtils';
-import { ContainerAdapter, ContainerDisplayInfo } from './ContainerAdapter';
+import { ContainerAdapter, ContainerDisplayInfo } from '@opus-orchestra/core';
 import { getLogger, isLoggerInitialized, getConfigService } from '../services';
 import { ProxyManager } from './vsockProxy';
 

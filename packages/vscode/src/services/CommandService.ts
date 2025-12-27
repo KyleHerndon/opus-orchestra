@@ -8,13 +8,25 @@
 import { execSync, exec } from 'child_process';
 import * as os from 'os';
 import { agentPath } from '../pathUtils';
-import { ICommandService, TerminalType, GIT_BASH_PATH } from '../types';
+import { TerminalType, GIT_BASH_PATH } from '../types';
 import { getConfigService } from './ConfigService';
+
+/**
+ * Command configuration for execution
+ */
+interface CommandConfig {
+    /** Full command to execute (may wrap the original) */
+    command: string;
+    /** Working directory for native execution */
+    cwd?: string;
+    /** Shell to use for native execution */
+    shell?: string;
+}
 
 /**
  * Command execution service
  */
-export class CommandService implements ICommandService {
+export class CommandService {
     private terminalType: TerminalType;
 
     constructor(terminalType?: TerminalType) {
@@ -22,35 +34,46 @@ export class CommandService implements ICommandService {
     }
 
     /**
-     * Execute a command synchronously
+     * Build command configuration based on terminal type.
+     * Centralizes the terminal-type-specific command wrapping logic.
      */
-    exec(command: string, cwd: string): string {
+    private buildCommandConfig(command: string, cwd: string): CommandConfig {
         const terminalPath = agentPath(cwd).forTerminal();
 
-        // If running on Linux (e.g., WSL VS Code), execute directly - don't call `wsl` from within WSL
+        // On Linux (e.g., WSL VS Code), execute directly
         if (os.platform() !== 'win32') {
-            return execSync(command, { cwd: terminalPath, encoding: 'utf-8', shell: '/bin/bash' });
+            return { command, cwd: terminalPath, shell: '/bin/bash' };
         }
 
         // On Windows, use the configured terminal type
         switch (this.terminalType) {
             case 'wsl': {
                 const escapedCmd = command.replace(/'/g, "'\\''");
-                const wslCommand = `wsl bash -c "cd '${terminalPath}' && ${escapedCmd}"`;
-                return execSync(wslCommand, { encoding: 'utf-8' });
+                return { command: `wsl bash -c "cd '${terminalPath}' && ${escapedCmd}"` };
             }
             case 'gitbash': {
                 const escapedCmd = command.replace(/'/g, "'\\''");
-                const gitBashCmd = `"${GIT_BASH_PATH}" -c "cd '${terminalPath}' && ${escapedCmd}"`;
-                return execSync(gitBashCmd, { encoding: 'utf-8' });
+                return { command: `"${GIT_BASH_PATH}" -c "cd '${terminalPath}' && ${escapedCmd}"` };
             }
             case 'bash':
-                return execSync(command, { cwd: terminalPath, encoding: 'utf-8', shell: '/bin/bash' });
+                return { command, cwd: terminalPath, shell: '/bin/bash' };
             case 'powershell':
             case 'cmd':
             default:
-                return execSync(command, { cwd: terminalPath, encoding: 'utf-8' });
+                return { command, cwd: terminalPath };
         }
+    }
+
+    /**
+     * Execute a command synchronously
+     */
+    exec(command: string, cwd: string): string {
+        const config = this.buildCommandConfig(command, cwd);
+        return execSync(config.command, {
+            cwd: config.cwd,
+            encoding: 'utf-8',
+            shell: config.shell,
+        });
     }
 
     /**
@@ -58,45 +81,12 @@ export class CommandService implements ICommandService {
      */
     execAsync(command: string, cwd: string): Promise<string> {
         return new Promise((resolve, reject) => {
-            const terminalPath = agentPath(cwd).forTerminal();
-            const platform = os.platform();
-
-            let fullCommand: string;
-            const execOptions: { cwd?: string; encoding: 'utf-8'; shell?: string } = { encoding: 'utf-8' };
-
-            // If running on Linux (e.g., WSL VS Code), execute directly
-            if (platform !== 'win32') {
-                fullCommand = command;
-                execOptions.cwd = terminalPath;
-                execOptions.shell = '/bin/bash';
-            } else {
-                // On Windows, use the configured terminal type
-                switch (this.terminalType) {
-                    case 'wsl': {
-                        const escapedCmd = command.replace(/'/g, "'\\''");
-                        fullCommand = `wsl bash -c "cd '${terminalPath}' && ${escapedCmd}"`;
-                        break;
-                    }
-                    case 'gitbash': {
-                        const escapedCmd = command.replace(/'/g, "'\\''");
-                        fullCommand = `"${GIT_BASH_PATH}" -c "cd '${terminalPath}' && ${escapedCmd}"`;
-                        break;
-                    }
-                    case 'bash':
-                        fullCommand = command;
-                        execOptions.cwd = terminalPath;
-                        execOptions.shell = '/bin/bash';
-                        break;
-                    case 'powershell':
-                    case 'cmd':
-                    default:
-                        fullCommand = command;
-                        execOptions.cwd = terminalPath;
-                        break;
-                }
-            }
-
-            exec(fullCommand, execOptions, (error, stdout, _stderr) => {
+            const config = this.buildCommandConfig(command, cwd);
+            exec(config.command, {
+                cwd: config.cwd,
+                encoding: 'utf-8',
+                shell: config.shell,
+            }, (error, stdout, _stderr) => {
                 if (error) {
                     reject(error);
                 } else {
@@ -111,36 +101,12 @@ export class CommandService implements ICommandService {
      */
     execSilent(command: string, cwd: string): void {
         try {
-            const terminalPath = agentPath(cwd).forTerminal();
-            const platform = os.platform();
-
-            // If running on Linux (e.g., WSL VS Code), execute directly
-            if (platform !== 'win32') {
-                execSync(command, { cwd: terminalPath, stdio: 'ignore', shell: '/bin/bash' });
-                return;
-            }
-
-            // On Windows, use the configured terminal type
-            switch (this.terminalType) {
-                case 'wsl': {
-                    const escapedCmd = command.replace(/'/g, "'\\''");
-                    execSync(`wsl bash -c "cd '${terminalPath}' && ${escapedCmd}"`, { stdio: 'ignore' });
-                    break;
-                }
-                case 'gitbash': {
-                    const escapedCmd = command.replace(/'/g, "'\\''");
-                    execSync(`"${GIT_BASH_PATH}" -c "cd '${terminalPath}' && ${escapedCmd}"`, { stdio: 'ignore' });
-                    break;
-                }
-                case 'bash':
-                    execSync(command, { cwd: terminalPath, stdio: 'ignore', shell: '/bin/bash' });
-                    break;
-                case 'powershell':
-                case 'cmd':
-                default:
-                    execSync(command, { cwd: terminalPath, stdio: 'ignore' });
-                    break;
-            }
+            const config = this.buildCommandConfig(command, cwd);
+            execSync(config.command, {
+                cwd: config.cwd,
+                stdio: 'ignore',
+                shell: config.shell,
+            });
         } catch {
             // Silently ignore errors
         }

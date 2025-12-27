@@ -1,65 +1,26 @@
 /**
- * Container adapter registry and exports.
- * Provides access to registered container adapters.
+ * Container adapter exports.
+ *
+ * ContainerAdapter interface and core adapters (DockerAdapter, UnisolatedAdapter)
+ * are re-exported from @opus-orchestra/core.
+ *
+ * CloudHypervisorAdapter is vscode-specific (not in core yet).
  */
 
-export { ContainerAdapter, ContainerDisplayInfo } from './ContainerAdapter';
-export { DockerAdapter, DockerDefinition } from './DockerAdapter';
+// Re-export core container types and adapters
+export {
+    ContainerAdapter,
+    ContainerDisplayInfo,
+    ContainerStats,
+    ShellCommand,
+    ContainerRegistry,
+    DockerAdapter,
+    DockerDefinition,
+    UnisolatedAdapter,
+} from '@opus-orchestra/core';
+
+// VSCode-specific container adapter (not in core yet)
 export { CloudHypervisorAdapter, CloudHypervisorDefinition } from './CloudHypervisorAdapter';
-export { UnisolatedAdapter } from './UnisolatedAdapter';
 
-import { ContainerAdapter } from './ContainerAdapter';
-import { DockerAdapter } from './DockerAdapter';
-import { CloudHypervisorAdapter } from './CloudHypervisorAdapter';
-import { UnisolatedAdapter } from './UnisolatedAdapter';
-
-/**
- * Registry of container adapters by type.
- */
-const containerAdapters = new Map<string, ContainerAdapter>();
-
-/**
- * Register a container adapter.
- */
-export function registerAdapter(adapter: ContainerAdapter): void {
-    containerAdapters.set(adapter.type, adapter);
-}
-
-/**
- * Get a container adapter by type.
- */
-export function getAdapter(type: string): ContainerAdapter | undefined {
-    return containerAdapters.get(type);
-}
-
-/**
- * Get all registered adapter types.
- */
-export function getAdapterTypes(): string[] {
-    return Array.from(containerAdapters.keys());
-}
-
-/**
- * Get all available adapter types (those whose container systems are installed).
- */
-export async function getAvailableTypes(): Promise<string[]> {
-    const available: string[] = [];
-    for (const [type, adapter] of containerAdapters) {
-        if (await adapter.isAvailable()) {
-            available.push(type);
-        }
-    }
-    return available;
-}
-
-/**
- * Initialize the adapter registry with built-in adapters.
- */
-export function initializeAdapters(): void {
-    registerAdapter(new UnisolatedAdapter());
-    registerAdapter(new DockerAdapter());
-    registerAdapter(new CloudHypervisorAdapter());
-}
-
-// Initialize on module load
-initializeAdapters();
+// ProxyManager for CloudHypervisor vsock proxy
+export { ProxyManager } from './vsockProxy';

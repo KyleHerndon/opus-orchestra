@@ -8,8 +8,9 @@
 // Re-export all core types
 // ============================================================================
 
-// Agent types from core
+// Agent types from core (including Agent which uses TerminalHandle)
 export {
+    Agent,
     AgentStatus,
     DiffStats,
     PersistedAgent,
@@ -21,9 +22,6 @@ export {
     AgentOrderMap,
     AGENT_ORDER_STORAGE_KEY,
 } from '@opus-orchestra/core';
-
-// Agent is now re-exported from core (uses TerminalHandle)
-export { Agent } from './agent';
 
 // Container types from core
 export {
@@ -42,7 +40,7 @@ export {
     DEFAULT_PROXY_PORT,
 } from '@opus-orchestra/core';
 
-// Event types (now re-exported from core via ./events)
+// Event types from core
 export {
     EventType,
     EventPayloads,
@@ -53,7 +51,7 @@ export {
     CommandPayloads,
     OperationPayloads,
     DomainEventPayloads,
-} from './events';
+} from '@opus-orchestra/core';
 
 // Hook types from core
 export {
@@ -72,23 +70,26 @@ export {
     CreateTerminalOptions,
 } from '@opus-orchestra/core';
 
-// ============================================================================
-// VSCode-specific types (not in core)
-// ============================================================================
-
-// VSCode terminal constants
-export { GIT_BASH_PATH } from './terminal';
-
-// VSCode-specific config section constant
-export { CONFIG_SECTION } from './config';
-
-// VSCode service interfaces
+// Service interfaces from core
 export {
     IGitService,
     IStatusService,
-    ICommandService,
     ILogger,
-} from './services';
+} from '@opus-orchestra/core';
+
+// ============================================================================
+// VSCode-specific constants
+// ============================================================================
+
+/** VS Code configuration section name */
+export const CONFIG_SECTION = 'claudeAgents';
+
+/** Git Bash executable path on Windows */
+export const GIT_BASH_PATH = 'C:\\Program Files\\Git\\bin\\bash.exe';
+
+// ============================================================================
+// VSCode-specific types (not in core)
+// ============================================================================
 
 // Webview UI types
 export {

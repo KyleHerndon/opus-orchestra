@@ -51,6 +51,9 @@ import {
   VSCodeTerminalAdapter,
 } from './adapters';
 
+// CloudHypervisorAdapter is vscode-specific (not in core yet)
+import { CloudHypervisorAdapter } from './containers/CloudHypervisorAdapter';
+
 /**
  * Container for all application services.
  * Created once during extension activation.
@@ -123,6 +126,8 @@ export class ServiceContainer {
     this.containerRegistry = new ContainerRegistry();
     this.containerRegistry.register(new UnisolatedAdapter(this.system));
     this.containerRegistry.register(new DockerAdapter(this.system, this.logger));
+    // CloudHypervisorAdapter is vscode-specific (uses agentPath, getConfigService)
+    this.containerRegistry.register(new CloudHypervisorAdapter());
   }
 
   /**
