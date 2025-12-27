@@ -31,6 +31,8 @@ import {
   IAgentStatusTracker,
   AgentPersistence as CoreAgentPersistence,
   IAgentPersistence,
+  ContainerManager as CoreContainerManager,
+  IContainerManager,
 
   // Container adapters
   ContainerRegistry,
@@ -53,6 +55,9 @@ import {
 
 // CloudHypervisorAdapter is vscode-specific (not in core yet)
 import { CloudHypervisorAdapter } from './containers/CloudHypervisorAdapter';
+
+// ContainerConfigService implements IContainerConfigProvider
+import { ContainerConfigService } from './services/ContainerConfigService';
 
 /**
  * Container for all application services.
@@ -77,9 +82,13 @@ export class ServiceContainer {
   public readonly worktreeManager: IWorktreeManager;
   public readonly statusTracker: IAgentStatusTracker;
   public readonly persistence: IAgentPersistence;
+  public readonly containerManager: IContainerManager;
 
   // Container registry
   public readonly containerRegistry: ContainerRegistry;
+
+  // Config provider (for container configs)
+  public readonly containerConfigProvider: ContainerConfigService;
 
   // Extension context (needed for VS Code specific operations)
   private _context: vscode.ExtensionContext | null = null;
@@ -128,6 +137,16 @@ export class ServiceContainer {
     this.containerRegistry.register(new DockerAdapter(this.system, this.logger));
     // CloudHypervisorAdapter is vscode-specific (uses agentPath, getConfigService)
     this.containerRegistry.register(new CloudHypervisorAdapter());
+
+    // 5. Create container config provider and manager
+    this.containerConfigProvider = new ContainerConfigService();
+    this.containerManager = new CoreContainerManager(
+      this.containerRegistry,
+      this.containerConfigProvider,
+      this.eventBus,
+      this.storage,
+      this.logger
+    );
   }
 
   /**

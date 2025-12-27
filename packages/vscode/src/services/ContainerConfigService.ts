@@ -7,13 +7,14 @@
  *
  * The service doesn't parse container-specific settings - it delegates
  * to adapters for definition file interpretation.
+ *
+ * Implements IContainerConfigProvider from core for use with ContainerManager.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 import { agentPath, getHomeDir } from '../pathUtils';
-import { ContainerConfigRef } from '../types';
-import { ContainerDisplayInfo } from '@opus-orchestra/core';
+import { ContainerConfigRef, IContainerConfigProvider, ContainerDisplayInfo } from '@opus-orchestra/core';
 import { getContainer, isContainerInitialized } from '../ServiceContainer';
 import { getLogger, isLoggerInitialized } from './Logger';
 
@@ -49,7 +50,7 @@ export interface DiscoveredConfig {
 
 let containerConfigServiceInstance: ContainerConfigService | null = null;
 
-export class ContainerConfigService {
+export class ContainerConfigService implements IContainerConfigProvider {
     private readonly logger = isLoggerInitialized() ? getLogger().child('ContainerConfigService') : null;
 
     /**

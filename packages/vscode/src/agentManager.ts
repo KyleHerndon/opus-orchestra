@@ -2,13 +2,13 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { agentPath } from './pathUtils';
-import { ContainerManager } from './containerManager';
 // Use core managers and adapters via ServiceContainer
 import { getContainer } from './ServiceContainer';
 import {
     IWorktreeManager,
     IAgentStatusTracker,
     IAgentPersistence,
+    IContainerManager,
     TerminalAdapter,
     TerminalHandle,
     CreateTerminalOptions,
@@ -49,9 +49,6 @@ export class AgentManager {
     private agents: Map<number, Agent> = new Map();
     private extensionPath: string;
 
-    // Specialized managers - now from ServiceContainer (core implementations)
-    private containerManager: ContainerManager;
-
     // Getters for core managers and adapters from ServiceContainer
     private get worktreeManager(): IWorktreeManager {
         return getContainer().worktreeManager;
@@ -63,6 +60,10 @@ export class AgentManager {
 
     private get persistence(): IAgentPersistence {
         return getContainer().persistence;
+    }
+
+    private get containerManager(): IContainerManager {
+        return getContainer().containerManager;
     }
 
     private get terminalAdapter(): TerminalAdapter {
@@ -79,9 +80,6 @@ export class AgentManager {
 
     constructor(extensionPath: string) {
         this.extensionPath = extensionPath;
-
-        // Initialize container manager (still local for now)
-        this.containerManager = new ContainerManager(extensionPath);
     }
 
     /**
@@ -96,7 +94,7 @@ export class AgentManager {
     }
 
     setContext(context: vscode.ExtensionContext): void {
-        this.containerManager.setContext(context);
+        // Container manager is now initialized via ServiceContainer
         this.agents = this.restoreAgentsFromCore(this.getRepositoryPaths());
     }
 
@@ -156,7 +154,7 @@ export class AgentManager {
         return agents;
     }
 
-    getContainerManager(): ContainerManager {
+    getContainerManager(): IContainerManager {
         return this.containerManager;
     }
 

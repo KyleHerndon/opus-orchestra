@@ -22,3 +22,11 @@ export {
   IAgentPersistence,
   RepoAgentOrderMap,
 } from './AgentPersistence';
+
+// ContainerManager
+export {
+  ContainerManager,
+  IContainerManager,
+  IContainerConfigProvider,
+  ContainerConfigRef,
+} from './ContainerManager';

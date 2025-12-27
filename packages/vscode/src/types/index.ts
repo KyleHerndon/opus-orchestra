@@ -77,6 +77,12 @@ export {
     ILogger,
 } from '@opus-orchestra/core';
 
+// Manager interfaces from core
+export {
+    IContainerManager,
+    IContainerConfigProvider,
+} from '@opus-orchestra/core';
+
 // ============================================================================
 // VSCode-specific constants
 // ============================================================================
