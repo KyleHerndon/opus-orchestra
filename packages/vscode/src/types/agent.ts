@@ -1,30 +1,9 @@
 /**
- * VSCode-specific Agent type
+ * VSCode Agent type - re-exports from core
  *
- * This extends the core PersistedAgent with VSCode-specific runtime state.
- * The terminal field uses vscode.Terminal instead of TerminalHandle.
- *
- * TODO: Migrate to use TerminalHandle from core and VSCodeTerminalAdapter
+ * The vscode package now uses the core Agent type directly.
+ * This enables type compatibility with core managers without unsafe casts.
  */
 
-import * as vscode from 'vscode';
-import {
-    PersistedAgent,
-    AgentStatus,
-    DiffStats,
-    ContainerInfo,
-} from '@opus-orchestra/core';
-
-/**
- * Runtime agent data (includes volatile state)
- * VSCode-specific: uses vscode.Terminal instead of TerminalHandle
- */
-export interface Agent extends PersistedAgent {
-    terminal: vscode.Terminal | null;
-    status: AgentStatus;
-    statusIcon: string;
-    pendingApproval: string | null;
-    lastInteractionTime: Date;
-    diffStats: DiffStats;
-    containerInfo?: ContainerInfo;
-}
+// Re-export Agent directly from core - now using TerminalHandle
+export { Agent } from '@opus-orchestra/core';

@@ -9,7 +9,6 @@ export { getConfigService, resetConfigService } from './ConfigService';
 export { initLogger, getLogger, isLoggerInitialized } from './Logger';
 export { getCommandService, resetCommandService } from './CommandService';
 export { getGitService, resetGitService } from './GitService';
-export { getTerminalService, resetTerminalService, getTerminalIcon } from './TerminalService';
 export { getStatusService, resetStatusService } from './StatusService';
 export { getStatusWatcher, resetStatusWatcher } from './StatusWatcher';
 export { getEventBus, resetEventBus } from './EventBus';

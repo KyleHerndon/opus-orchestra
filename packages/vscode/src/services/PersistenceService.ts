@@ -91,61 +91,6 @@ export class PersistenceService {
     }
 
     /**
-     * Restore agents from persistent storage
-     *
-     * @param generateSessionId Function to generate new session IDs for agents without one
-     * @param getContainerInfo Function to get container info for an agent
-     * @returns Map of restored agents
-     */
-    restoreAgents(
-        generateSessionId: () => string,
-        getContainerInfo: (agentId: number) => ContainerInfo | undefined
-    ): Map<number, Agent> {
-        const agents = new Map<number, Agent>();
-
-        if (!this.context) {
-            return agents;
-        }
-
-        const persistedAgents = this.loadPersistedAgents();
-
-        // Log available terminals for debugging
-        const terminalNames = vscode.window.terminals.map(t => t.name);
-        this.log(`[restoreAgents] Available terminals: ${JSON.stringify(terminalNames)}`);
-
-        for (const persisted of persistedAgents) {
-            this.log(`[restoreAgents] Looking for terminal matching agent name: "${persisted.name}"`);
-
-            // Try to find existing terminal for this agent
-            const existingTerminal = vscode.window.terminals.find(
-                t => t.name === persisted.name
-            );
-
-            this.log(`[restoreAgents] Found terminal: ${existingTerminal ? existingTerminal.name : 'none'}`);
-
-            // Get container info if this agent is containerized
-            const containerInfo = getContainerInfo(persisted.id);
-
-            const agent: Agent = {
-                ...persisted,
-                // Generate sessionId for old agents that don't have one
-                sessionId: persisted.sessionId || generateSessionId(),
-                terminal: existingTerminal || null,
-                status: 'idle',
-                statusIcon: existingTerminal ? 'circle-filled' : 'circle-outline',
-                pendingApproval: null,
-                lastInteractionTime: new Date(),
-                diffStats: { insertions: 0, deletions: 0, filesChanged: 0 },
-                containerInfo,
-            };
-
-            agents.set(agent.id, agent);
-        }
-
-        return agents;
-    }
-
-    /**
      * Clear persisted agents
      */
     clearAgents(): void {

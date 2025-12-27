@@ -22,8 +22,7 @@ export {
     AGENT_ORDER_STORAGE_KEY,
 } from '@opus-orchestra/core';
 
-// NOTE: Agent interface is defined locally because it uses vscode.Terminal
-// instead of TerminalHandle. This will be migrated in a future refactor.
+// Agent is now re-exported from core (uses TerminalHandle)
 export { Agent } from './agent';
 
 // Container types from core
@@ -43,8 +42,7 @@ export {
     DEFAULT_PROXY_PORT,
 } from '@opus-orchestra/core';
 
-// Event types - uses local EventPayloads that references vscode Agent
-// TODO: When Agent is migrated to use TerminalHandle, import from core instead
+// Event types (now re-exported from core via ./events)
 export {
     EventType,
     EventPayloads,
@@ -78,23 +76,16 @@ export {
 // VSCode-specific types (not in core)
 // ============================================================================
 
-// VSCode terminal options (uses vscode.ThemeIcon)
-export {
-    TerminalOptions,
-    TERMINAL_DELAYS,
-    GIT_BASH_PATH,
-} from './terminal';
+// VSCode terminal constants
+export { GIT_BASH_PATH } from './terminal';
 
 // VSCode-specific config section constant
 export { CONFIG_SECTION } from './config';
 
-// VSCode service interfaces (use vscode.Terminal)
+// VSCode service interfaces
 export {
     IGitService,
-    ITerminalService,
     IStatusService,
-    IContainerService,
-    IFileService,
     ICommandService,
     ILogger,
 } from './services';

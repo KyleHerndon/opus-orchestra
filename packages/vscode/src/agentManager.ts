@@ -3,14 +3,17 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { agentPath } from './pathUtils';
 import { ContainerManager } from './containerManager';
-// Use core managers via ServiceContainer
+// Use core managers and adapters via ServiceContainer
 import { getContainer } from './ServiceContainer';
 import {
     IWorktreeManager,
     IAgentStatusTracker,
     IAgentPersistence,
-    Agent as CoreAgent,
+    TerminalAdapter,
+    TerminalHandle,
+    CreateTerminalOptions,
 } from '@opus-orchestra/core';
+import { VSCodeTerminalAdapter } from './adapters';
 
 import {
     Agent,
@@ -27,12 +30,10 @@ import {
     getConfigService,
     getCommandService,
     getGitService,
-    getTerminalService,
     getEventBus,
     getCommandHandler,
     getLogger,
     isLoggerInitialized,
-    getTerminalIcon,
     getPersistenceService,
     getTmuxService,
     getContainerConfigService,
@@ -40,22 +41,6 @@ import {
 
 // Re-export types for backward compatibility
 export { Agent, AgentStatus, PersistedAgent, DiffStats, PendingApproval, ContainerInfo, ContainerType };
-
-/**
- * Helper to convert vscode Agent to core Agent for manager calls.
- * The only difference is terminal type (vscode.Terminal vs TerminalHandle).
- * Managers don't use the terminal field, so this is safe.
- */
-function toCoreAgent(agent: Agent): CoreAgent {
-    return agent as unknown as CoreAgent;
-}
-
-/**
- * Helper to convert vscode Agent map to core Agent map for manager calls.
- */
-function toCoreAgentMap(agents: Map<number, Agent>): Map<number, CoreAgent> {
-    return agents as unknown as Map<number, CoreAgent>;
-}
 
 /**
  * Coordinates agent lifecycle and delegates to specialized managers.
@@ -67,7 +52,7 @@ export class AgentManager {
     // Specialized managers - now from ServiceContainer (core implementations)
     private containerManager: ContainerManager;
 
-    // Getters for core managers from ServiceContainer
+    // Getters for core managers and adapters from ServiceContainer
     private get worktreeManager(): IWorktreeManager {
         return getContainer().worktreeManager;
     }
@@ -78,6 +63,18 @@ export class AgentManager {
 
     private get persistence(): IAgentPersistence {
         return getContainer().persistence;
+    }
+
+    private get terminalAdapter(): TerminalAdapter {
+        return getContainer().terminal;
+    }
+
+    /**
+     * Get the VSCodeTerminalAdapter for VS Code-specific operations.
+     * Used when we need access to the underlying vscode.Terminal (e.g., for processId).
+     */
+    private get vsCodeTerminalAdapter(): VSCodeTerminalAdapter {
+        return getContainer().terminal as VSCodeTerminalAdapter;
     }
 
     constructor(extensionPath: string) {
@@ -105,7 +102,7 @@ export class AgentManager {
 
     /**
      * Restore agents using core persistence methods.
-     * This converts PersistedAgent data to runtime Agent objects with vscode-specific fields.
+     * This converts PersistedAgent data to runtime Agent objects.
      */
     private restoreAgentsFromCore(repoPaths: string[]): Map<number, Agent> {
         this.debugLog(`[restoreAgents] Starting agent restoration`);
@@ -127,15 +124,15 @@ export class AgentManager {
 
         this.debugLog(`[restoreAgents] Found ${allAgents.size} merged agents`);
 
-        // Log available terminals
-        const terminalNames = vscode.window.terminals.map(t => t.name);
+        // Log available terminals via adapter
+        const allTerminals = this.terminalAdapter.getAll();
+        const terminalNames = allTerminals.map(t => t.name);
         this.debugLog(`[restoreAgents] Available terminals: ${JSON.stringify(terminalNames)}`);
 
         // Create runtime Agent objects from persisted data
         for (const persisted of allAgents.values()) {
-            const existingTerminal = vscode.window.terminals.find(
-                t => t.name === persisted.name
-            );
+            // Find existing terminal by name via adapter
+            const existingTerminal = this.terminalAdapter.findByName(persisted.name);
 
             const containerInfo = this.containerManager.getContainer(persisted.id);
 
@@ -353,8 +350,8 @@ export class AgentManager {
                     existingIds.add(nextId);
                     createdCount++;
 
-                    this.worktreeManager.copyCoordinationFiles(toCoreAgent(agent), this.extensionPath);
-                    this.worktreeManager.saveAgentMetadata(toCoreAgent(agent));
+                    this.worktreeManager.copyCoordinationFiles(agent, this.extensionPath);
+                    this.worktreeManager.saveAgentMetadata(agent);
 
                     // Create container if not unisolated
                     if (configName !== 'unisolated') {
@@ -387,7 +384,7 @@ export class AgentManager {
             });
 
             // Persist agents to storage (both VS Code state and worktree metadata)
-            this.persistence.saveAgents(toCoreAgentMap(this.agents));
+            this.persistence.saveAgents(this.agents);
 
             const configInfo = configName !== 'unisolated' ? ` (${configName})` : '';
             const message = restoredCount > 0
@@ -425,7 +422,7 @@ export class AgentManager {
         }
 
         if (agent.terminal) {
-            agent.terminal.dispose();
+            this.terminalAdapter.dispose(agent.terminal);
         }
 
         // Clean up containers - both tracked and orphaned (via worktree reference files)
@@ -457,7 +454,7 @@ export class AgentManager {
         const repoPath = agent.repoPath;
 
         this.agents.delete(agentId);
-        this.persistence.saveAgents(toCoreAgentMap(this.agents));
+        this.persistence.saveAgents(this.agents);
 
         // Clean up agent from display order
         getPersistenceService().removeAgentFromOrder(agentId, repoPath);
@@ -498,7 +495,7 @@ export class AgentManager {
 
         try {
             if (agent.terminal) {
-                agent.terminal.dispose();
+                this.terminalAdapter.dispose(agent.terminal);
                 agent.terminal = null;
             }
 
@@ -514,8 +511,8 @@ export class AgentManager {
             agent.branch = newBranch;
             agent.worktreePath = newWorktreePath;
 
-            this.worktreeManager.copyCoordinationFiles(toCoreAgent(agent), this.extensionPath);
-            this.persistence.saveAgents(toCoreAgentMap(this.agents));
+            this.worktreeManager.copyCoordinationFiles(agent, this.extensionPath);
+            this.persistence.saveAgents(this.agents);
 
             getEventBus().emit('agent:renamed', { agent, previousName });
             vscode.window.showInformationMessage(`Agent renamed to "${sanitizedName}"`);
@@ -543,7 +540,7 @@ export class AgentManager {
             }
 
             if (agent.terminal) {
-                agent.terminal.dispose();
+                this.terminalAdapter.dispose(agent.terminal);
             }
             if (agent.containerInfo) {
                 await this.containerManager.removeContainer(agent.id);
@@ -562,7 +559,7 @@ export class AgentManager {
         });
 
         this.agents.clear();
-        this.persistence.saveAgents(toCoreAgentMap(this.agents));
+        this.persistence.saveAgents(this.agents);
         vscode.window.showInformationMessage('Agent worktrees cleaned up');
     }
 
@@ -595,10 +592,10 @@ export class AgentManager {
                 if (agent.terminal) {
                     progress.report({ message: 'Stopping Claude gracefully...' });
                     this.debugLog(`Sending /exit to gracefully stop Claude for agent ${agentId}`);
-                    agent.terminal.sendText('/exit');
+                    this.terminalAdapter.sendText(agent.terminal, '/exit');
                     // Wait for Claude to save session and exit
                     await new Promise(resolve => setTimeout(resolve, 2000));
-                    agent.terminal.dispose();
+                    this.terminalAdapter.dispose(agent.terminal);
                     agent.terminal = null;
                 }
 
@@ -640,7 +637,7 @@ export class AgentManager {
                 }
 
                 agent.containerConfigName = newConfigName;
-                this.persistence.saveAgents(toCoreAgentMap(this.agents));
+                this.persistence.saveAgents(this.agents);
 
                 return true;
             } catch (error) {
@@ -661,7 +658,6 @@ export class AgentManager {
 
     private createTerminalForAgent(agent: Agent): void {
         const config = getConfigService();
-        const terminalService = getTerminalService();
 
         // Check if agent uses a container
         const isContainerized = this.containerManager.isContainerized(agent.id);
@@ -684,18 +680,20 @@ export class AgentManager {
             const isNewSession = !tmuxService.sessionExists(sessionName);
 
             // Create VS Code terminal that creates/attaches to tmux session
-            agent.terminal = terminalService.createTerminal({
+            agent.terminal = this.terminalAdapter.createTerminal({
                 name: agent.name,
-                iconPath: getTerminalIcon(agent.containerConfigName),
+                iconId: this.getTerminalIconId(agent.containerConfigName),
                 shellPath: 'tmux',
                 shellArgs: ['new-session', '-A', '-s', sessionName, '-c', agent.worktreePath],
             });
 
-            // Set up oo alias in new sessions
-            if (isNewSession) {
-                agent.terminal.processId.then(() => {
+            // Set up oo alias in new sessions - need processId for timing
+            if (isNewSession && agent.terminal) {
+                this.waitForTerminalReady(agent.terminal).then(() => {
                     setTimeout(() => {
-                        agent.terminal?.sendText(ooAlias);
+                        if (agent.terminal) {
+                            this.terminalAdapter.sendText(agent.terminal, ooAlias);
+                        }
                     }, 200);
                 });
             }
@@ -704,29 +702,67 @@ export class AgentManager {
             // The oo alias is set up in the container's .bashrc
             this.debugLog(`createTerminalForAgent: creating container terminal with shellPath=${shellCommand.shellPath}`);
 
-            agent.terminal = terminalService.createTerminal({
+            agent.terminal = this.terminalAdapter.createTerminal({
                 name: agent.name,
-                iconPath: getTerminalIcon(agent.containerConfigName),
+                iconId: this.getTerminalIconId(agent.containerConfigName),
                 shellPath: shellCommand.shellPath,
                 shellArgs: shellCommand.shellArgs,
             });
         } else {
             // Non-tmux, non-container mode: create regular terminal
-            agent.terminal = terminalService.createTerminal({
+            agent.terminal = this.terminalAdapter.createTerminal({
                 name: agent.name,
                 cwd: agent.worktreePath,
-                iconPath: getTerminalIcon(agent.containerConfigName),
+                iconId: this.getTerminalIconId(agent.containerConfigName),
             });
 
             // Set up oo alias
             setTimeout(() => {
-                agent.terminal?.sendText(ooAlias);
+                if (agent.terminal) {
+                    this.terminalAdapter.sendText(agent.terminal, ooAlias);
+                }
             }, 500);
         }
 
         // Set status to idle (user needs to run 'oo' to start Claude)
         agent.status = 'idle';
-        this.statusTracker.updateAgentIcon(toCoreAgent(agent));
+        this.statusTracker.updateAgentIcon(agent);
+    }
+
+    /**
+     * Wait for a terminal to be ready (VS Code-specific via processId).
+     */
+    private async waitForTerminalReady(terminal: TerminalHandle): Promise<void> {
+        const vscodeTerminal = this.vsCodeTerminalAdapter.getVSCodeTerminal(terminal);
+        if (vscodeTerminal) {
+            await vscodeTerminal.processId;
+        }
+    }
+
+    /**
+     * Convert container config name to terminal icon ID.
+     */
+    private getTerminalIconId(containerConfigName?: string): string {
+        if (!containerConfigName || containerConfigName === 'unisolated') {
+            return 'hubot';
+        }
+
+        // Try to get the config type from the config service
+        const configService = getContainerConfigService();
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+        const configRef = configService.loadConfigRef(containerConfigName, workspaceRoot);
+
+        if (configRef) {
+            switch (configRef.type) {
+                case 'docker':
+                    return 'package';
+                case 'cloud-hypervisor':
+                    return 'vm';
+            }
+        }
+
+        // Default icon for unknown container types
+        return 'shield';
     }
 
     /**
@@ -734,23 +770,21 @@ export class AgentManager {
      * @returns true if a new terminal was created, false if existing terminal was found
      */
     private ensureTerminalExists(agent: Agent): boolean {
-        const terminalService = getTerminalService();
-
-        if (agent.terminal && terminalService.isTerminalAlive(agent.terminal)) {
+        if (agent.terminal && this.terminalAdapter.isAlive(agent.terminal)) {
             return false;
         }
         agent.terminal = null;
 
-        const existingTerminal = terminalService.findTerminalByName(agent.name);
+        const existingTerminal = this.terminalAdapter.findByName(agent.name);
         if (existingTerminal) {
             agent.terminal = existingTerminal;
             return false;
         }
 
-        agent.terminal = terminalService.createTerminal({
+        agent.terminal = this.terminalAdapter.createTerminal({
             name: agent.name,
             cwd: agent.worktreePath,
-            iconPath: getTerminalIcon(agent.containerConfigName),
+            iconId: this.getTerminalIconId(agent.containerConfigName),
         });
 
         getEventBus().emit('agent:terminalCreated', { agent, isNew: true });
@@ -770,16 +804,18 @@ export class AgentManager {
             ? `${claudeCmd} -r "${agent.sessionId}"`
             : `${claudeCmd} --session-id "${agent.sessionId}"`;
 
-        agent.terminal!.show();
-        agent.terminal!.sendText(cmd);
+        if (agent.terminal) {
+            this.terminalAdapter.show(agent.terminal);
+            this.terminalAdapter.sendText(agent.terminal, cmd);
+        }
 
         if (!agent.sessionStarted) {
             agent.sessionStarted = true;
-            this.persistence.saveAgents(toCoreAgentMap(this.agents));
+            this.persistence.saveAgents(this.agents);
         }
 
         agent.status = 'waiting-input';
-        this.statusTracker.updateAgentIcon(toCoreAgent(agent));
+        this.statusTracker.updateAgentIcon(agent);
     }
 
     /**
@@ -795,20 +831,19 @@ export class AgentManager {
         }
 
         const config = getConfigService();
-        const terminalService = getTerminalService();
 
         // Check if terminal already exists and is alive
-        if (agent.terminal && terminalService.isTerminalAlive(agent.terminal)) {
-            agent.terminal.show(true);
+        if (agent.terminal && this.terminalAdapter.isAlive(agent.terminal)) {
+            this.terminalAdapter.show(agent.terminal, true);
             this.debugLog(`focusAgent: showing existing terminal for ${agent.name}`);
             return;
         }
 
         // Try to find terminal by name (may have been reconnected after reload)
-        const existingTerminal = terminalService.findTerminalByName(agent.name);
+        const existingTerminal = this.terminalAdapter.findByName(agent.name);
         if (existingTerminal) {
             agent.terminal = existingTerminal;
-            agent.terminal.show(true);
+            this.terminalAdapter.show(agent.terminal, true);
             this.debugLog(`focusAgent: reconnected to terminal ${agent.name}`);
             return;
         }
@@ -841,18 +876,20 @@ export class AgentManager {
             this.debugLog(`focusAgent: creating tmux terminal, session=${sessionName}, isNewSession=${isNewSession}`);
 
             // Create VS Code terminal that creates/attaches to tmux session
-            agent.terminal = terminalService.createTerminal({
+            agent.terminal = this.terminalAdapter.createTerminal({
                 name: agent.name,
-                iconPath: getTerminalIcon(agent.containerConfigName),
+                iconId: this.getTerminalIconId(agent.containerConfigName),
                 shellPath: 'tmux',
                 shellArgs: ['new-session', '-A', '-s', sessionName, '-c', agent.worktreePath],
             });
 
             // Set up oo alias in new sessions
-            if (isNewSession) {
-                agent.terminal.processId.then(() => {
+            if (isNewSession && agent.terminal) {
+                this.waitForTerminalReady(agent.terminal).then(() => {
                     setTimeout(() => {
-                        agent.terminal?.sendText(ooAlias);
+                        if (agent.terminal) {
+                            this.terminalAdapter.sendText(agent.terminal, ooAlias);
+                        }
                     }, 200);
                 });
             }
@@ -861,31 +898,35 @@ export class AgentManager {
             // The oo alias is set up in the container's .bashrc
             this.debugLog(`focusAgent: creating container terminal with shellPath=${shellCommand.shellPath}`);
 
-            agent.terminal = terminalService.createTerminal({
+            agent.terminal = this.terminalAdapter.createTerminal({
                 name: agent.name,
-                iconPath: getTerminalIcon(agent.containerConfigName),
+                iconId: this.getTerminalIconId(agent.containerConfigName),
                 shellPath: shellCommand.shellPath,
                 shellArgs: shellCommand.shellArgs,
             });
         } else {
             // Non-tmux, non-container mode: create regular terminal
-            agent.terminal = terminalService.createTerminal({
+            agent.terminal = this.terminalAdapter.createTerminal({
                 name: agent.name,
                 cwd: agent.worktreePath,
-                iconPath: getTerminalIcon(agent.containerConfigName),
+                iconId: this.getTerminalIconId(agent.containerConfigName),
             });
 
             // Set up oo alias
             setTimeout(() => {
-                agent.terminal?.sendText(ooAlias);
+                if (agent.terminal) {
+                    this.terminalAdapter.sendText(agent.terminal, ooAlias);
+                }
             }, 500);
         }
 
         // Set status to idle (user needs to run 'oo' to start Claude)
         agent.status = 'idle';
-        this.statusTracker.updateAgentIcon(toCoreAgent(agent));
+        this.statusTracker.updateAgentIcon(agent);
 
-        agent.terminal.show(true);
+        if (agent.terminal) {
+            this.terminalAdapter.show(agent.terminal, true);
+        }
         getEventBus().emit('agent:terminalCreated', { agent, isNew: true });
     }
 
@@ -893,11 +934,11 @@ export class AgentManager {
         const agent = this.agents.get(agentId);
         if (agent?.terminal) {
             const hadPendingApproval = agent.pendingApproval !== null;
-            agent.terminal.sendText(text);
+            this.terminalAdapter.sendText(agent.terminal, text);
             agent.pendingApproval = null;
             agent.status = 'working';
             agent.lastInteractionTime = new Date();
-            this.statusTracker.updateAgentIcon(toCoreAgent(agent));
+            this.statusTracker.updateAgentIcon(agent);
 
             if (hadPendingApproval) {
                 getEventBus().emit('approval:resolved', { agentId });
@@ -905,12 +946,17 @@ export class AgentManager {
         }
     }
 
-    handleTerminalClosed(terminal: vscode.Terminal): void {
+    /**
+     * Handle terminal closed event.
+     * Accepts TerminalHandle from the adapter's onDidClose callback.
+     */
+    handleTerminalClosed(terminal: TerminalHandle): void {
         for (const agent of this.agents.values()) {
-            if (agent.terminal === terminal) {
+            // Compare by terminal ID
+            if (agent.terminal && agent.terminal.id === terminal.id) {
                 agent.terminal = null;
                 agent.status = 'idle';
-                this.statusTracker.updateAgentIcon(toCoreAgent(agent));
+                this.statusTracker.updateAgentIcon(agent);
                 getEventBus().emit('agent:terminalClosed', { agentId: agent.id });
                 break;
             }
@@ -922,27 +968,26 @@ export class AgentManager {
     // ========================================================================
 
     refreshStatus(): void {
-        this.statusTracker.refreshStatus(toCoreAgentMap(this.agents));
+        this.statusTracker.refreshStatus(this.agents);
     }
 
     async refreshDiffStats(): Promise<void> {
-        await this.statusTracker.refreshDiffStats(toCoreAgentMap(this.agents));
+        await this.statusTracker.refreshDiffStats(this.agents);
     }
 
     getPendingApprovals(): PendingApproval[] {
-        return this.statusTracker.getPendingApprovals(toCoreAgentMap(this.agents));
+        return this.statusTracker.getPendingApprovals(this.agents);
     }
 
     getWaitingCount(): number {
-        return this.statusTracker.getWaitingCount(toCoreAgentMap(this.agents));
+        return this.statusTracker.getWaitingCount(this.agents);
     }
 
     getAgents(): Agent[] {
         // Validate terminal state before returning agents
         // This cleans up stale terminal references after VS Code reload
-        const terminalService = getTerminalService();
         for (const agent of this.agents.values()) {
-            if (agent.terminal && !terminalService.isTerminalAlive(agent.terminal)) {
+            if (agent.terminal && !this.terminalAdapter.isAlive(agent.terminal)) {
                 agent.terminal = null;
             }
         }
@@ -1223,7 +1268,7 @@ export class AgentManager {
             };
 
             this.agents.set(agentId, agent);
-            this.persistence.saveAgents(toCoreAgentMap(this.agents));
+            this.persistence.saveAgents(this.agents);
             this.createTerminalForAgent(agent);
             getEventBus().emit('agent:created', { agent });
 

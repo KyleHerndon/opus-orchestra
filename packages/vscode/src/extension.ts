@@ -321,13 +321,14 @@ export function activate(context: vscode.ExtensionContext) {
         })
     );
 
-    // Listen for terminal close events
-    context.subscriptions.push(
-        vscode.window.onDidCloseTerminal((terminal) => {
-            agentManager.handleTerminalClosed(terminal);
-            // EventBus 'agent:terminalClosed' will trigger component updates
-        })
-    );
+    // Listen for terminal close events via the TerminalAdapter
+    // This ensures we receive TerminalHandle (not vscode.Terminal) for type compatibility
+    const terminalAdapter = container.terminal;
+    const unsubscribeTerminalClose = terminalAdapter.onDidClose((handle) => {
+        agentManager.handleTerminalClosed(handle);
+        // EventBus 'agent:terminalClosed' will trigger component updates
+    });
+    context.subscriptions.push({ dispose: unsubscribeTerminalClose });
 
     // Start the centralized status watcher
     // This polls status files and emits EventBus events

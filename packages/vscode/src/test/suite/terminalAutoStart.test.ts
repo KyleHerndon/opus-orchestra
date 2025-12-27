@@ -14,7 +14,8 @@ suite('Terminal Auto-Start Feature Test Suite', () => {
     const agentManagerPath = path.resolve(__dirname, '../../../src/agentManager.ts');
     // ExtensionConfig is now in the core package
     const configPath = path.resolve(__dirname, '../../../../core/src/adapters/ConfigAdapter.ts');
-    const eventsPath = path.resolve(__dirname, '../../../src/types/events.ts');
+    // Events are now defined in core, vscode re-exports from there
+    const eventsPath = path.resolve(__dirname, '../../../../core/src/types/events.ts');
     const configServicePath = path.resolve(__dirname, '../../../src/services/ConfigService.ts');
     const tmuxServicePath = path.resolve(__dirname, '../../../src/services/TmuxService.ts');
     const packageJsonPath = path.resolve(__dirname, '../../../package.json');
@@ -117,8 +118,8 @@ suite('Terminal Auto-Start Feature Test Suite', () => {
 
         test('focusAgent should check if terminal is alive before creating', () => {
             assert.ok(
-                agentManagerContent.includes('terminalService.isTerminalAlive(agent.terminal)'),
-                'focusAgent should check terminal liveness'
+                agentManagerContent.includes('this.terminalAdapter.isAlive(agent.terminal)'),
+                'focusAgent should check terminal liveness via adapter'
             );
         });
     });
@@ -145,12 +146,12 @@ suite('Terminal Auto-Start Feature Test Suite', () => {
             );
             assert.ok(focusAgentMethod, 'focusAgent method should exist');
             assert.ok(
-                focusAgentMethod[0].includes('terminalService.isTerminalAlive'),
-                'focusAgent should check if terminal is alive'
+                focusAgentMethod[0].includes('this.terminalAdapter.isAlive'),
+                'focusAgent should check if terminal is alive via adapter'
             );
             assert.ok(
-                focusAgentMethod[0].includes('terminalService.findTerminalByName'),
-                'focusAgent should try to find terminal by name'
+                focusAgentMethod[0].includes('this.terminalAdapter.findByName'),
+                'focusAgent should try to find terminal by name via adapter'
             );
         });
 

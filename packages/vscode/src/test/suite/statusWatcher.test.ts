@@ -232,10 +232,10 @@ suite('AgentManager getAgents Terminal Validation Test Suite', () => {
 
         const methodContent = methodMatch[0];
 
-        // Should check if terminal is alive
+        // Should check if terminal is alive via adapter
         assert.ok(
-            methodContent.includes('isTerminalAlive'),
-            'getAgents should check if terminal is alive'
+            methodContent.includes('this.terminalAdapter.isAlive'),
+            'getAgents should check if terminal is alive via adapter'
         );
 
         // Should clear stale terminal references
@@ -245,15 +245,15 @@ suite('AgentManager getAgents Terminal Validation Test Suite', () => {
         );
     });
 
-    test('getAgents should use terminalService for validation', () => {
+    test('getAgents should use terminalAdapter for validation', () => {
         const methodMatch = content.match(/getAgents\(\): Agent\[\] \{[\s\S]*?return Array\.from/);
         assert.ok(methodMatch, 'getAgents method should exist');
 
         const methodContent = methodMatch[0];
 
         assert.ok(
-            methodContent.includes('getTerminalService()'),
-            'getAgents should use getTerminalService()'
+            methodContent.includes('this.terminalAdapter.isAlive'),
+            'getAgents should use terminalAdapter for terminal validation'
         );
     });
 });

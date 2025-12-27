@@ -5,9 +5,7 @@
  * Core service interfaces are in @opus-orchestra/core.
  */
 
-import * as vscode from 'vscode';
-import { DiffStats, ContainerInfo, ParsedStatus } from '@opus-orchestra/core';
-import { TerminalOptions } from './terminal';
+import { DiffStats, ParsedStatus } from '@opus-orchestra/core';
 
 /**
  * Git operations service interface
@@ -24,55 +22,12 @@ export interface IGitService {
 }
 
 /**
- * Terminal management service interface
- */
-export interface ITerminalService {
-    createTerminal(options: TerminalOptions): vscode.Terminal;
-    sendText(terminal: vscode.Terminal, text: string): void;
-    dispose(terminal: vscode.Terminal): void;
-    findTerminalByName(name: string): vscode.Terminal | undefined;
-    isTerminalAlive(terminal: vscode.Terminal): boolean;
-}
-
-/**
  * Status/hook parsing service interface
  */
 export interface IStatusService {
     checkStatus(worktreePath: string): ParsedStatus | null;
     parseHookData(content: string): ParsedStatus | null;
     getStatusDirectory(worktreePath: string): string;
-}
-
-/**
- * Container management service interface
- */
-export interface IContainerService {
-    /** Get available container config names for a repo */
-    getAvailableConfigs(repoPath: string): string[];
-    /** Create a container using a config name */
-    createContainer(agentId: number, worktreePath: string, configName: string, repoPath: string): Promise<ContainerInfo>;
-    removeContainer(agentId: number): Promise<void>;
-    getContainer(agentId: number): ContainerInfo | undefined;
-    execInContainer(agentId: number, command: string): Promise<string>;
-    getContainerStats(agentId: number): Promise<{ memoryMB: number; cpuPercent: number } | null>;
-}
-
-/**
- * File system service interface
- */
-export interface IFileService {
-    exists(path: string): boolean;
-    readFile(path: string): string;
-    writeFile(path: string, content: string): void;
-    readDir(path: string): string[];
-    mkdir(path: string): void;
-    copyFile(src: string, dest: string): void;
-    copyDirRecursive(src: string, dest: string): void;
-    symlink(target: string, path: string): void;
-    stat(path: string): { mtimeMs: number };
-    chmod(path: string, mode: number): void;
-    unlink(path: string): void;
-    rmdir(path: string): void;
 }
 
 /**
