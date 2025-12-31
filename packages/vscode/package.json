@@ -11,7 +11,10 @@
     "Other"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onView:agentList",
+    "onView:backlogList",
+    "onView:approvalQueue"
   ],
   "main": "./out/extension.js",
   "contributes": {

@@ -1,0 +1,38 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "npm",
+      "script": "build:vscode",
+      "problemMatcher": "$tsc",
+      "group": "build",
+      "label": "npm: build:vscode"
+    },
+    {
+      "type": "npm",
+      "script": "watch",
+      "path": "packages/vscode",
+      "problemMatcher": "$tsc-watch",
+      "isBackground": true,
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "label": "npm: watch (vscode)"
+    },
+    {
+      "type": "npm",
+      "script": "build:core",
+      "problemMatcher": "$tsc",
+      "group": "build",
+      "label": "npm: build:core"
+    },
+    {
+      "type": "npm",
+      "script": "build",
+      "problemMatcher": "$tsc",
+      "group": "build",
+      "label": "npm: build (all)"
+    }
+  ]
+}
