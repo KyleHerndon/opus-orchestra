@@ -1,0 +1,35 @@
+import * as assert from 'assert';
+import * as vscode from 'vscode';
+
+suite('Extension Test Suite', () => {
+    vscode.window.showInformationMessage('Start all tests.');
+
+    test('Extension should be present', () => {
+        assert.ok(vscode.extensions.getExtension('kyleherndon.opus-orchestra'));
+    });
+
+    test('Extension should activate', async () => {
+        const ext = vscode.extensions.getExtension('kyleherndon.opus-orchestra');
+        assert.ok(ext);
+        await ext!.activate();
+        assert.ok(ext!.isActive);
+    });
+
+    test('Commands should be registered', async () => {
+        const commands = await vscode.commands.getCommands(true);
+
+        const expectedCommands = [
+            'claudeAgents.createAgents',
+            'claudeAgents.switchToAgent',
+            'claudeAgents.showApprovals',
+            'claudeAgents.refreshAgents',
+            'claudeAgents.startAgent',
+            'claudeAgents.openDashboard',
+            'claudeAgents.openSettings'
+        ];
+
+        for (const cmd of expectedCommands) {
+            assert.ok(commands.includes(cmd), `Command ${cmd} should be registered`);
+        }
+    });
+});

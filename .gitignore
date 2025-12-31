@@ -4,3 +4,23 @@
 # Coordination files created by setup script
 .claude-coordination/
 .opus-orchestra/
+
+# Build outputs
+packages/core/dist/
+packages/vscode/out/
+*.vsix
+
+# Test binaries and cache
+packages/vscode/.vscode-test/
+
+# Dependencies
+node_modules/
+
+# Debug logs
+debug.log
+
+# Planning documents
+PLAN.md
+
+# Legacy extension directory (migrated to packages/vscode)
+vscode-extension/

@@ -1,0 +1,61 @@
+# VS Code extension ignore file
+# Explicit excludes for monorepo structure (used with --no-dependencies)
+
+# Parent directories (monorepo symlinks)
+../**
+
+# Source files (not needed - esbuild bundles everything)
+src/**
+*.ts
+!*.d.ts
+tsconfig.json
+
+# Development files
+.vscode/**
+.vscode-test/**
+.eslintrc.json
+.gitignore
+.mocharc.json
+.vscode-test.json
+
+# Node modules (resolved from monorepo root)
+node_modules/**
+**/node_modules/**
+
+# Build artifacts and misc
+*.vsix
+*.map
+out/*.map
+out/**/*.map
+
+# Test files
+test-settings.json
+backlog/**
+out/test/**
+
+# Build config (not needed at runtime)
+esbuild.js
+compile_and_install.sh
+
+# Test scripts (not needed at runtime)
+scripts/test-*.sh
+scripts/dump-ci-logs.sh
+
+# Individual tsc output files (not needed - esbuild bundles into extension.js)
+# Keep only: out/extension.js, out/webview/agentPanel.js
+out/adapters/**
+out/agentManager.*
+out/agentPanel/**
+out/agentTreeView.*
+out/approvalQueue.*
+out/backlogTreeView.*
+out/containerManager.*
+out/containers/**
+out/managers/**
+out/pathUtils.*
+out/ServiceContainer.*
+out/services/**
+out/settingsPanel.*
+out/statusBar.*
+out/types/**
+out/extension.d.ts

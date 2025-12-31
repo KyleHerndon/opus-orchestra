@@ -1,0 +1,35 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}/packages/vscode"],
+      "outFiles": ["${workspaceFolder}/packages/vscode/out/**/*.js"],
+      "preLaunchTask": "npm: watch (vscode)",
+      "sourceMaps": true
+    },
+    {
+      "name": "Run Extension (No Watch)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}/packages/vscode"],
+      "outFiles": ["${workspaceFolder}/packages/vscode/out/**/*.js"],
+      "preLaunchTask": "npm: build:vscode",
+      "sourceMaps": true
+    },
+    {
+      "name": "Extension Tests",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/packages/vscode",
+        "--extensionTestsPath=${workspaceFolder}/packages/vscode/out/test/suite/index"
+      ],
+      "outFiles": ["${workspaceFolder}/packages/vscode/out/test/**/*.js"],
+      "preLaunchTask": "npm: build:vscode",
+      "sourceMaps": true
+    }
+  ]
+}
