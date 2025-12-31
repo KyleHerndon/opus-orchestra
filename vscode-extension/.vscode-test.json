@@ -1,8 +1,0 @@
-{
-  "version": "stable",
-  "launchArgs": [
-    "--disable-extensions",
-    "--disable-gpu"
-  ],
-  "reuseMachineInstall": true
-}
