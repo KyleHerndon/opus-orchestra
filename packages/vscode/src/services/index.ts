@@ -19,7 +19,8 @@ export {
     isPersistenceServiceInitialized,
     resetPersistenceService,
 } from './PersistenceService';
-export { TodoItem, TodoState, getTodoService, resetTodoService } from './TodoService';
+export type { TodoItem, TodoState } from './TodoService';
+export { getTodoService, resetTodoService } from './TodoService';
 export { getTmuxService, resetTmuxService } from './TmuxService';
 export {
     getContainerConfigService,

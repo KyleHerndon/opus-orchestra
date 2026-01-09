@@ -17,14 +17,19 @@ suite('Terminal Auto-Start Feature Test Suite', () => {
     // Events are now defined in core, vscode re-exports from there
     const eventsPath = path.resolve(__dirname, '../../../../core/src/types/events.ts');
     const configServicePath = path.resolve(__dirname, '../../../src/services/ConfigService.ts');
-    const tmuxServicePath = path.resolve(__dirname, '../../../src/services/TmuxService.ts');
+    // TmuxService implementation is now in core, vscode re-exports from there
+    const tmuxServicePath = path.resolve(__dirname, '../../../../core/src/services/TmuxService.ts');
+    const tmuxServiceWrapperPath = path.resolve(__dirname, '../../../src/services/TmuxService.ts');
     const packageJsonPath = path.resolve(__dirname, '../../../package.json');
 
     const agentManagerContent = fs.readFileSync(agentManagerPath, 'utf-8');
     const configContent = fs.readFileSync(configPath, 'utf-8');
     const eventsContent = fs.readFileSync(eventsPath, 'utf-8');
     const configServiceContent = fs.readFileSync(configServicePath, 'utf-8');
+    // Core TmuxService has the implementation
     const tmuxServiceContent = fs.readFileSync(tmuxServicePath, 'utf-8');
+    // VS Code wrapper re-exports from core
+    const tmuxServiceWrapperContent = fs.readFileSync(tmuxServiceWrapperPath, 'utf-8');
     const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
 
     suite('Configuration', () => {
@@ -225,24 +230,35 @@ suite('Terminal Auto-Start Feature Test Suite', () => {
     });
 
     suite('TmuxService', () => {
-        test('TmuxService should exist', () => {
+        test('Core TmuxService should exist', () => {
             assert.ok(
                 tmuxServiceContent.includes('export class TmuxService'),
-                'TmuxService class should exist'
+                'TmuxService class should exist in core'
+            );
+        });
+
+        test('VS Code wrapper should re-export from core', () => {
+            assert.ok(
+                tmuxServiceWrapperContent.includes("from '@opus-orchestra/core'"),
+                'VS Code TmuxService should re-export from core'
+            );
+            assert.ok(
+                tmuxServiceWrapperContent.includes('getTmuxService'),
+                'VS Code should export getTmuxService function'
             );
         });
 
         test('TmuxService should have getSessionName method', () => {
             assert.ok(
-                tmuxServiceContent.includes('getSessionName(agent: Agent)'),
+                tmuxServiceContent.includes('getSessionName(sessionId: string)'),
                 'TmuxService should have getSessionName method'
             );
         });
 
         test('getSessionName should use sessionId for stability across renames', () => {
             assert.ok(
-                tmuxServiceContent.includes('agent.sessionId'),
-                'getSessionName should use agent.sessionId'
+                tmuxServiceContent.includes('substring(0, 12)'),
+                'getSessionName should use sessionId substring'
             );
         });
 
@@ -267,10 +283,11 @@ suite('Terminal Auto-Start Feature Test Suite', () => {
             );
         });
 
-        test('TmuxService should use CommandService for execution', () => {
+        test('TmuxService should use SystemAdapter for execution', () => {
             assert.ok(
-                tmuxServiceContent.includes('getCommandService()'),
-                'TmuxService should use CommandService for proper terminal type handling'
+                tmuxServiceContent.includes('this.system.execSync') ||
+                tmuxServiceContent.includes('this.system.exec'),
+                'TmuxService should use SystemAdapter for command execution'
             );
         });
 

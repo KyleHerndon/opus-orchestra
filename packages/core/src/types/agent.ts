@@ -49,6 +49,15 @@ export interface PersistedAgent {
 }
 
 /**
+ * Todo item from Claude Code
+ */
+export interface AgentTodoItem {
+  status: 'pending' | 'in_progress' | 'completed';
+  content: string;
+  activeForm?: string;
+}
+
+/**
  * Runtime agent data (includes volatile state)
  */
 export interface Agent extends PersistedAgent {
@@ -59,6 +68,7 @@ export interface Agent extends PersistedAgent {
   lastInteractionTime: Date;
   diffStats: DiffStats;
   containerInfo?: ContainerInfo;
+  todos: AgentTodoItem[];
 }
 
 /**

@@ -143,6 +143,7 @@ export class AgentManager {
                 pendingApproval: null,
                 lastInteractionTime: new Date(),
                 diffStats: { insertions: 0, deletions: 0, filesChanged: 0 },
+                todos: [],
                 containerInfo,
             };
 
@@ -309,6 +310,7 @@ export class AgentManager {
                                 pendingApproval: null,
                                 lastInteractionTime: new Date(),
                                 diffStats: { insertions: 0, deletions: 0, filesChanged: 0 },
+                                todos: [],
                                 containerConfigName: existingMetadata.containerConfigName || configName,
                                 sessionStarted: existingMetadata.sessionStarted,
                             };
@@ -341,6 +343,7 @@ export class AgentManager {
                         pendingApproval: null,
                         lastInteractionTime: new Date(),
                         diffStats: { insertions: 0, deletions: 0, filesChanged: 0 },
+                        todos: [],
                         containerConfigName: configName
                     };
 
@@ -1262,7 +1265,8 @@ export class AgentManager {
                 statusIcon: 'circle-outline',
                 pendingApproval: null,
                 lastInteractionTime: new Date(),
-                diffStats: { insertions: 0, deletions: 0, filesChanged: 0 }
+                diffStats: { insertions: 0, deletions: 0, filesChanged: 0 },
+                todos: []
             };
 
             this.agents.set(agentId, agent);

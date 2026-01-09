@@ -9,7 +9,7 @@
  * All types are platform-agnostic with no VS Code dependencies.
  */
 
-import { Agent, AgentStatus, PendingApproval } from './agent';
+import { Agent, AgentStatus, AgentTodoItem, DiffStats, PendingApproval } from './agent';
 import { ContainerInfo, ContainerState } from './container';
 
 // ============================================================================
@@ -59,6 +59,8 @@ export type EventType =
   | 'agent:created'
   | 'agent:deleted'
   | 'agent:statusChanged'
+  | 'agent:todosChanged'
+  | 'agent:diffStatsChanged'
   | 'agent:renamed'
   | 'agent:terminalCreated'
   | 'agent:terminalClosed'
@@ -143,6 +145,8 @@ export interface DomainEventPayloads {
   'agent:created': { agent: Agent };
   'agent:deleted': { agentId: number };
   'agent:statusChanged': { agent: Agent; previousStatus: AgentStatus };
+  'agent:todosChanged': { agent: Agent; previousTodos: AgentTodoItem[] };
+  'agent:diffStatsChanged': { agent: Agent; previousDiffStats: DiffStats };
   'agent:renamed': { agent: Agent; previousName: string };
   'agent:terminalCreated': { agent: Agent; isNew: boolean };
   'agent:terminalClosed': { agentId: number };
