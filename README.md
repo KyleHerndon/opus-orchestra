@@ -15,11 +15,12 @@ A VS Code extension for running multiple Claude Code agents in parallel, each in
 ### From Source
 
 ```bash
-cd vscode-extension
+git clone https://github.com/KyleHerndon/opus-orchestra
+cd opus-orchestra
 npm install
-npm run compile
-npx vsce package --allow-missing-repository
-code --install-extension claude-agents-*.vsix
+npm run build
+npx vsce package --allow-missing-repository --no-dependencies
+code --install-extension opus-orchestra-*.vsix
 ```
 
 Or use the install script (WSL):
