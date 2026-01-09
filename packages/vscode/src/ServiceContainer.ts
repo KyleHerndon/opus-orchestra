@@ -22,6 +22,8 @@ import {
   IStatusService,
   TmuxService,
   ITmuxService,
+  TodoService,
+  ITodoService,
 
   // Managers
   WorktreeManager as CoreWorktreeManager,
@@ -58,6 +60,9 @@ import { CloudHypervisorAdapter } from './containers/CloudHypervisorAdapter';
 // ContainerConfigService implements IContainerConfigProvider
 import { ContainerConfigService } from './services/ContainerConfigService';
 
+// Path utilities for cross-platform support (WSL paths on Windows)
+import { getHomeDir } from './pathUtils';
+
 /**
  * Container for all application services.
  * Created once during extension activation.
@@ -76,6 +81,7 @@ export class ServiceContainer {
   public readonly gitService: IGitService;
   public readonly statusService: IStatusService;
   public readonly tmuxService: ITmuxService;
+  public readonly todoService: ITodoService;
 
   // Core managers
   public readonly worktreeManager: IWorktreeManager;
@@ -113,6 +119,10 @@ export class ServiceContainer {
       this.config.get('tmuxSessionPrefix'),
       this.logger
     );
+    // TodoService needs correct path for WSL support on Windows
+    // getHomeDir() returns the appropriate home directory based on terminal type
+    const todosDir = getHomeDir().join('.claude', 'todos').forNodeFs();
+    this.todoService = new TodoService(this.logger, todosDir);
 
     // 3. Create core managers
     this.worktreeManager = new CoreWorktreeManager(
@@ -123,6 +133,7 @@ export class ServiceContainer {
     this.statusTracker = new CoreAgentStatusTracker(
       this.statusService,
       this.gitService,
+      this.todoService,
       this.eventBus,
       this.config,
       this.logger

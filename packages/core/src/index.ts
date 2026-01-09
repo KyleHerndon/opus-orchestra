@@ -5,6 +5,8 @@
  * This package contains no VS Code or OS-specific dependencies.
  */
 
+import * as path from 'node:path';
+
 // Types
 export * from './types';
 
@@ -19,3 +21,12 @@ export * from './managers';
 
 // Containers
 export * from './containers';
+
+/**
+ * Get the path to the bundled coordination files.
+ * These include slash commands, hooks, and scripts for agent coordination.
+ */
+export function getCoordinationPath(): string {
+  // __dirname is the dist/ folder after build, coordination is at package root
+  return path.join(__dirname, '..', 'coordination');
+}

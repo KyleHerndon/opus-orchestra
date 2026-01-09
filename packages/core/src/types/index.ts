@@ -10,6 +10,7 @@ export {
   DiffStats,
   PersistedAgent,
   Agent,
+  AgentTodoItem,
   PendingApproval,
   AgentDisplayData,
   AGENT_NAMES,

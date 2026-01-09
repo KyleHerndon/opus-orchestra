@@ -14,6 +14,8 @@ export {
 export {
   AgentStatusTracker,
   IAgentStatusTracker,
+  PollingConfig,
+  DEFAULT_POLLING_CONFIG,
 } from './AgentStatusTracker';
 
 // AgentPersistence

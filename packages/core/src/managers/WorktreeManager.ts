@@ -9,6 +9,9 @@ import { SystemAdapter } from '../adapters/SystemAdapter';
 import { ConfigAdapter } from '../adapters/ConfigAdapter';
 import { PersistedAgent, Agent } from '../types/agent';
 import { ILogger } from '../services/Logger';
+// Import coordination path from index to avoid duplication
+// Note: This import is safe because getCoordinationPath has no dependencies on managers
+import { getCoordinationPath } from '../index';
 
 /**
  * Worktree manager interface
@@ -28,7 +31,7 @@ export interface IWorktreeManager {
   scanWorktreesForAgents(repoPath: string): PersistedAgent[];
   saveAgentMetadata(agent: Agent): void;
   loadAgentMetadata(worktreePath: string): PersistedAgent | null;
-  copyCoordinationFiles(agent: Agent, extensionPath: string): void;
+  copyCoordinationFiles(agent: Agent, extensionPath?: string): void;
 }
 
 /**
@@ -227,9 +230,12 @@ export class WorktreeManager implements IWorktreeManager {
   }
 
   /**
-   * Copy coordination files to a worktree
+   * Copy coordination files to a worktree.
+   * Uses bundled coordination files from @opus-orchestra/core by default.
+   * @param agent - The agent to copy files for
+   * @param extensionPath - Optional path to extension/package root (uses core's bundled files if not provided)
    */
-  copyCoordinationFiles(agent: Agent, extensionPath: string): void {
+  copyCoordinationFiles(agent: Agent, extensionPath?: string): void {
     const coordinationPath = this.config.get('coordinationScriptsPath');
 
     try {
@@ -242,14 +248,21 @@ export class WorktreeManager implements IWorktreeManager {
       this.system.mkdir(worktreeCommandsDir);
       this.system.mkdir(worktreeAgentsDir);
 
-      // Determine coordination source
-      const bundledCoordPath = this.system.joinPath(
-        this.system.convertPath(extensionPath, 'nodeFs'),
-        'coordination'
-      );
-      const effectiveCoordPath = coordinationPath
-        ? this.system.convertPath(coordinationPath, 'nodeFs')
-        : bundledCoordPath;
+      // Determine coordination source:
+      // 1. User-configured path (highest priority)
+      // 2. Extension-provided path (for VSCode extension backwards compat)
+      // 3. Core's bundled coordination files (default)
+      let effectiveCoordPath: string;
+      if (coordinationPath) {
+        effectiveCoordPath = this.system.convertPath(coordinationPath, 'nodeFs');
+      } else if (extensionPath) {
+        effectiveCoordPath = this.system.joinPath(
+          this.system.convertPath(extensionPath, 'nodeFs'),
+          'coordination'
+        );
+      } else {
+        effectiveCoordPath = getCoordinationPath();
+      }
 
       // Copy slash commands
       const commandsSrcDir = this.system.joinPath(effectiveCoordPath, 'commands');

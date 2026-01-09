@@ -9,6 +9,7 @@ import * as vscode from 'vscode';
 import { AgentManager } from '../agentManager';
 import {
     getTodoService,
+    TodoItem,
     getEventBus,
     getPersistenceService,
     getContainerConfigService,
@@ -187,7 +188,7 @@ export class AgentPanel {
         if (!items) {
             return [];
         }
-        return items.map(item => ({
+        return items.map((item: TodoItem) => ({
             status: item.status,
             content: item.content,
             activeForm: item.activeForm,
