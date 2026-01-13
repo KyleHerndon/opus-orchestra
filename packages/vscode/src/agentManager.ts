@@ -101,26 +101,20 @@ export class AgentManager {
     /**
      * Restore agents using core persistence methods.
      * This converts PersistedAgent data to runtime Agent objects.
+     *
+     * ARCHITECTURE: Worktree-only persistence - all agent data is stored
+     * in worktree metadata files (.opus-orchestra/agent.json).
+     * No central storage is used for agent data.
      */
     private restoreAgentsFromCore(repoPaths: string[]): Map<number, Agent> {
         this.debugLog(`[restoreAgents] Starting agent restoration`);
 
         const agents = new Map<number, Agent>();
 
-        // Use core persistence to scan and merge agent data
+        // ARCHITECTURE: Scan worktrees for agent metadata (source of truth)
         const worktreeAgents = this.persistence.scanWorktreesForAgents(repoPaths);
-        const storageAgents = this.persistence.loadPersistedAgents();
 
-        // Build map from worktree agents
-        const worktreeMap = new Map<string, PersistedAgent>();
-        for (const agent of worktreeAgents) {
-            worktreeMap.set(agent.worktreePath, agent);
-        }
-
-        // Merge sources (worktree takes priority)
-        const allAgents = this.persistence.mergeAgentSources(worktreeMap, storageAgents);
-
-        this.debugLog(`[restoreAgents] Found ${allAgents.size} merged agents`);
+        this.debugLog(`[restoreAgents] Found ${worktreeAgents.length} agents in worktrees`);
 
         // Log available terminals via adapter
         const allTerminals = this.terminalAdapter.getAll();
@@ -128,7 +122,7 @@ export class AgentManager {
         this.debugLog(`[restoreAgents] Available terminals: ${JSON.stringify(terminalNames)}`);
 
         // Create runtime Agent objects from persisted data
-        for (const persisted of allAgents.values()) {
+        for (const persisted of worktreeAgents) {
             // Find existing terminal by name via adapter
             const existingTerminal = this.terminalAdapter.findByName(persisted.name);
 
@@ -175,7 +169,7 @@ export class AgentManager {
 
     private debugLog(message: string): void {
         if (isLoggerInitialized()) {
-            getLogger().child('AgentManager').debug(message);
+            getLogger().child({ component: 'AgentManager' }).debug(message);
         }
     }
 

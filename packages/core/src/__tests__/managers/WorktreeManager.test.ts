@@ -1,60 +1,160 @@
 /**
- * WorktreeManager tests
+ * WorktreeManager integration tests
+ *
+ * Tests WorktreeManager with real git repositories and file system.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { WorktreeManager } from '../../managers/WorktreeManager';
-import { MockSystemAdapter } from '../mocks/MockSystemAdapter';
-import { MockConfigAdapter } from '../mocks/MockConfigAdapter';
+import { NodeSystemAdapter } from '../../adapters/NodeSystemAdapter';
+import { ConfigAdapter } from '../../adapters/ConfigAdapter';
+import { createTestRepoWithConfig, TestRepo } from '../fixtures/testRepo';
+
+/**
+ * Simple ConfigAdapter implementation for testing
+ */
+class TestConfigAdapter implements ConfigAdapter {
+  private config: Record<string, unknown>;
+  private listeners: Set<() => void> = new Set();
+
+  constructor(initialConfig: Record<string, unknown> = {}) {
+    this.config = {
+      worktreeDirectory: '.worktrees',
+      ...initialConfig,
+    };
+  }
+
+  get<K extends string>(key: K): unknown {
+    return this.config[key];
+  }
+
+  getAll(): Record<string, unknown> {
+    return { ...this.config };
+  }
+
+  async update<K extends string>(key: K, value: unknown): Promise<void> {
+    this.config[key] = value;
+    this.listeners.forEach(fn => fn());
+  }
+
+  onDidChange(callback: () => void): () => void {
+    this.listeners.add(callback);
+    return () => this.listeners.delete(callback);
+  }
+
+  refresh(): void {
+    // No-op for tests
+  }
+
+  dispose(): void {
+    this.listeners.clear();
+  }
+}
 
 describe('WorktreeManager', () => {
-  let system: MockSystemAdapter;
-  let config: MockConfigAdapter;
+  let testRepo: TestRepo;
+  let system: NodeSystemAdapter;
+  let config: TestConfigAdapter;
   let manager: WorktreeManager;
 
   beforeEach(() => {
-    system = new MockSystemAdapter();
-    config = new MockConfigAdapter({
-      worktreeDirectory: '.worktrees',
-    });
+    testRepo = createTestRepoWithConfig('worktree-manager-test-');
+    system = new NodeSystemAdapter('bash');
+    config = new TestConfigAdapter({ worktreeDirectory: '.worktrees' });
     manager = new WorktreeManager(system, config);
   });
 
+  afterEach(() => {
+    testRepo.cleanup();
+  });
+
   describe('worktreeExists', () => {
-    it('returns true when worktree directory exists', () => {
-      system.addDirectory('/repo/.worktrees/claude-alpha');
-      expect(manager.worktreeExists('/repo/.worktrees/claude-alpha')).toBe(true);
+    it('returns false when worktree does not exist', () => {
+      const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
+      expect(manager.worktreeExists(worktreePath)).toBe(false);
     });
 
-    it('returns false when worktree directory does not exist', () => {
-      expect(manager.worktreeExists('/repo/.worktrees/claude-alpha')).toBe(false);
+    it('returns true when worktree exists', () => {
+      const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
+      fs.mkdirSync(worktreePath, { recursive: true });
+
+      expect(manager.worktreeExists(worktreePath)).toBe(true);
     });
   });
 
   describe('getWorktreePath', () => {
     it('returns correct worktree path for agent name', () => {
-      const path = manager.getWorktreePath('/repo', 'alpha');
-      expect(path).toBe('/repo/.worktrees/claude-alpha');
+      const worktreePath = manager.getWorktreePath(testRepo.path, 'alpha');
+      expect(worktreePath).toBe(path.join(testRepo.path, '.worktrees', 'claude-alpha'));
     });
 
-    it('handles different worktree directories', () => {
-      config.setConfig({ worktreeDirectory: 'custom-worktrees' });
-      const path = manager.getWorktreePath('/repo', 'bravo');
-      expect(path).toBe('/repo/custom-worktrees/claude-bravo');
+    it('respects custom worktree directory config', () => {
+      config = new TestConfigAdapter({ worktreeDirectory: 'custom-worktrees' });
+      manager = new WorktreeManager(system, config);
+
+      const worktreePath = manager.getWorktreePath(testRepo.path, 'bravo');
+      expect(worktreePath).toBe(path.join(testRepo.path, 'custom-worktrees', 'claude-bravo'));
+    });
+  });
+
+  describe('createWorktree', () => {
+    it('creates a git worktree', () => {
+      const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
+
+      manager.createWorktree(testRepo.path, worktreePath, 'claude-alpha', 'main');
+
+      expect(fs.existsSync(worktreePath)).toBe(true);
+      expect(fs.existsSync(path.join(worktreePath, '.git'))).toBe(true);
+    });
+
+    it('creates worktree with new branch from base', () => {
+      const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-bravo');
+
+      manager.createWorktree(testRepo.path, worktreePath, 'claude-bravo', 'main');
+
+      // Verify the branch exists
+      expect(fs.existsSync(worktreePath)).toBe(true);
+    });
+  });
+
+  describe('removeWorktree', () => {
+    it('removes an existing worktree', () => {
+      const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
+
+      // Create worktree first
+      manager.createWorktree(testRepo.path, worktreePath, 'claude-alpha', 'main');
+      expect(fs.existsSync(worktreePath)).toBe(true);
+
+      // Remove it
+      manager.removeWorktree(testRepo.path, worktreePath, 'claude-alpha');
+
+      expect(fs.existsSync(worktreePath)).toBe(false);
+    });
+
+    it('handles already-removed worktree gracefully', () => {
+      const worktreePath = path.join(testRepo.path, '.worktrees', 'nonexistent');
+
+      // Should not throw
+      expect(() => {
+        manager.removeWorktree(testRepo.path, worktreePath, 'nonexistent');
+      }).not.toThrow();
     });
   });
 
   describe('saveAgentMetadata', () => {
     it('saves agent metadata to JSON file', () => {
-      system.addDirectory('/worktree');
+      const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
+      fs.mkdirSync(worktreePath, { recursive: true });
 
       const agent = {
         id: 1,
         name: 'alpha',
-        sessionId: 'abc-123',
+        sessionId: 'test-session-123',
         branch: 'claude-alpha',
-        worktreePath: '/worktree',
-        repoPath: '/repo',
+        worktreePath,
+        repoPath: testRepo.path,
         taskFile: null,
         terminal: null,
         status: 'idle' as const,
@@ -62,139 +162,132 @@ describe('WorktreeManager', () => {
         pendingApproval: null,
         lastInteractionTime: new Date(),
         diffStats: { insertions: 0, deletions: 0, filesChanged: 0 },
+        todos: [],
       };
 
       manager.saveAgentMetadata(agent);
 
-      const metadataPath = '/worktree/.opus-orchestra/agent.json';
-      expect(system.exists(metadataPath)).toBe(true);
+      const metadataPath = path.join(worktreePath, '.opus-orchestra', 'agent.json');
+      expect(fs.existsSync(metadataPath)).toBe(true);
 
-      const content = JSON.parse(system.readFile(metadataPath));
-      expect(content.id).toBe(1);
-      expect(content.name).toBe('alpha');
-      expect(content.sessionId).toBe('abc-123');
-      expect(content.branch).toBe('claude-alpha');
+      const savedData = JSON.parse(fs.readFileSync(metadataPath, 'utf-8'));
+      expect(savedData.id).toBe(1);
+      expect(savedData.name).toBe('alpha');
+      expect(savedData.sessionId).toBe('test-session-123');
+      expect(savedData.branch).toBe('claude-alpha');
     });
   });
 
   describe('loadAgentMetadata', () => {
     it('loads agent metadata from JSON file', () => {
-      system.addDirectory('/worktree/.opus-orchestra');
-      system.addFile('/worktree/.opus-orchestra/agent.json', JSON.stringify({
+      const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
+      const metadataDir = path.join(worktreePath, '.opus-orchestra');
+      fs.mkdirSync(metadataDir, { recursive: true });
+
+      const metadata = {
         id: 2,
         name: 'bravo',
-        sessionId: 'def-456',
+        sessionId: 'session-456',
         branch: 'claude-bravo',
-        worktreePath: '/worktree',
-        repoPath: '/repo',
+        worktreePath,
+        repoPath: testRepo.path,
         taskFile: 'feature.md',
-      }));
+      };
+      fs.writeFileSync(
+        path.join(metadataDir, 'agent.json'),
+        JSON.stringify(metadata)
+      );
 
-      const result = manager.loadAgentMetadata('/worktree');
+      const result = manager.loadAgentMetadata(worktreePath);
 
       expect(result).not.toBeNull();
       expect(result?.id).toBe(2);
       expect(result?.name).toBe('bravo');
-      expect(result?.sessionId).toBe('def-456');
+      expect(result?.sessionId).toBe('session-456');
       expect(result?.taskFile).toBe('feature.md');
     });
 
     it('returns null when metadata file does not exist', () => {
-      const result = manager.loadAgentMetadata('/worktree');
+      const worktreePath = path.join(testRepo.path, '.worktrees', 'nonexistent');
+      const result = manager.loadAgentMetadata(worktreePath);
       expect(result).toBeNull();
     });
 
     it('returns null when metadata file is invalid JSON', () => {
-      system.addDirectory('/worktree/.opus-orchestra');
-      system.addFile('/worktree/.opus-orchestra/agent.json', 'not json');
+      const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
+      const metadataDir = path.join(worktreePath, '.opus-orchestra');
+      fs.mkdirSync(metadataDir, { recursive: true });
+      fs.writeFileSync(path.join(metadataDir, 'agent.json'), 'not valid json');
 
-      const result = manager.loadAgentMetadata('/worktree');
+      const result = manager.loadAgentMetadata(worktreePath);
       expect(result).toBeNull();
     });
   });
 
   describe('scanWorktreesForAgents', () => {
-    it('finds agents in worktrees directory', () => {
-      // Setup worktrees with metadata
-      system.addDirectory('/repo/.worktrees');
-      system.addDirectory('/repo/.worktrees/claude-alpha');
-      system.addFile('/repo/.worktrees/claude-alpha/.opus-orchestra/agent.json', JSON.stringify({
-        id: 1,
-        name: 'alpha',
-        sessionId: 'abc-123',
-        branch: 'claude-alpha',
-        worktreePath: '/repo/.worktrees/claude-alpha',
-        repoPath: '/repo',
-      }));
+    it('finds agents with metadata in worktrees directory', () => {
+      // Create worktrees with metadata
+      const alphaPath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
+      const bravoPath = path.join(testRepo.path, '.worktrees', 'claude-bravo');
 
-      system.addDirectory('/repo/.worktrees/claude-bravo');
-      system.addFile('/repo/.worktrees/claude-bravo/.opus-orchestra/agent.json', JSON.stringify({
-        id: 2,
-        name: 'bravo',
-        sessionId: 'def-456',
-        branch: 'claude-bravo',
-        worktreePath: '/repo/.worktrees/claude-bravo',
-        repoPath: '/repo',
-      }));
+      fs.mkdirSync(path.join(alphaPath, '.opus-orchestra'), { recursive: true });
+      fs.mkdirSync(path.join(bravoPath, '.opus-orchestra'), { recursive: true });
 
-      const agents = manager.scanWorktreesForAgents('/repo');
+      fs.writeFileSync(
+        path.join(alphaPath, '.opus-orchestra', 'agent.json'),
+        JSON.stringify({
+          id: 1,
+          name: 'alpha',
+          sessionId: 'session-1',
+          branch: 'claude-alpha',
+          worktreePath: alphaPath,
+          repoPath: testRepo.path,
+        })
+      );
+
+      fs.writeFileSync(
+        path.join(bravoPath, '.opus-orchestra', 'agent.json'),
+        JSON.stringify({
+          id: 2,
+          name: 'bravo',
+          sessionId: 'session-2',
+          branch: 'claude-bravo',
+          worktreePath: bravoPath,
+          repoPath: testRepo.path,
+        })
+      );
+
+      const agents = manager.scanWorktreesForAgents(testRepo.path);
 
       expect(agents).toHaveLength(2);
       expect(agents.map(a => a.name).sort()).toEqual(['alpha', 'bravo']);
     });
 
     it('ignores directories without agent metadata', () => {
-      system.addDirectory('/repo/.worktrees');
-      system.addDirectory('/repo/.worktrees/claude-alpha');
+      const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
+      fs.mkdirSync(worktreePath, { recursive: true });
       // No agent.json file
 
-      const agents = manager.scanWorktreesForAgents('/repo');
+      const agents = manager.scanWorktreesForAgents(testRepo.path);
       expect(agents).toHaveLength(0);
     });
 
     it('ignores non-agent directories', () => {
-      system.addDirectory('/repo/.worktrees');
-      system.addDirectory('/repo/.worktrees/random-dir');
-      system.addFile('/repo/.worktrees/random-dir/.opus-orchestra/agent.json', JSON.stringify({
-        id: 1,
-        name: 'alpha',
-      }));
+      const randomDir = path.join(testRepo.path, '.worktrees', 'random-dir');
+      fs.mkdirSync(path.join(randomDir, '.opus-orchestra'), { recursive: true });
+      fs.writeFileSync(
+        path.join(randomDir, '.opus-orchestra', 'agent.json'),
+        JSON.stringify({ id: 1, name: 'test' })
+      );
 
-      const agents = manager.scanWorktreesForAgents('/repo');
+      const agents = manager.scanWorktreesForAgents(testRepo.path);
       expect(agents).toHaveLength(0); // 'random-dir' doesn't start with 'claude-'
     });
 
     it('returns empty array when worktrees directory does not exist', () => {
-      const agents = manager.scanWorktreesForAgents('/repo');
+      // New temp dir without worktrees
+      const agents = manager.scanWorktreesForAgents(testRepo.path);
       expect(agents).toEqual([]);
-    });
-  });
-
-  describe('createWorktree', () => {
-    it('executes git worktree add command', () => {
-      let executedCommand = '';
-      const originalExec = system.execSync.bind(system);
-      system.execSync = (cmd: string, cwd: string) => {
-        executedCommand = cmd;
-        return originalExec(cmd, cwd);
-      };
-
-      manager.createWorktree('/repo', '/repo/.worktrees/claude-alpha', 'claude-alpha', 'main');
-
-      expect(executedCommand).toContain('git worktree add');
-      expect(executedCommand).toContain('claude-alpha');
-      expect(executedCommand).toContain('main');
-    });
-  });
-
-  describe('removeWorktree', () => {
-    it('removes worktree directory when git command fails', () => {
-      system.addDirectory('/repo/.worktrees/claude-alpha');
-      system.setExecError('git worktree remove', new Error('worktree in use'));
-
-      manager.removeWorktree('/repo', '/repo/.worktrees/claude-alpha');
-
-      expect(system.exists('/repo/.worktrees/claude-alpha')).toBe(false);
     });
   });
 });

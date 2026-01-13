@@ -56,3 +56,47 @@ export {
   HookData,
   ParsedStatus,
 } from './hooks';
+
+// Result types (explicit error handling)
+export {
+  Result,
+  Success,
+  Failure,
+  ok,
+  err,
+  isOk,
+  isErr,
+  unwrap,
+  unwrapOr,
+  map,
+  GitErrorCode,
+  FileErrorCode,
+} from './result';
+
+// Zod schemas for runtime validation
+export {
+  PersistedAgentSchema,
+  ValidatedPersistedAgent,
+  DiffStatsSchema,
+  ValidatedDiffStats,
+  AgentTodoItemSchema,
+  ValidatedAgentTodoItem,
+  HookEventTypeSchema,
+  HookDataSchema,
+  ValidatedHookData,
+  // Config schemas
+  TerminalTypeSchema,
+  LogLevelSchema,
+  ExtensionConfigSchema,
+  ValidatedExtensionConfig,
+  PartialExtensionConfigSchema,
+  ValidatedPartialConfig,
+  ConfigSchema, // Legacy alias
+  // Container schemas
+  ContainerConfigSchema,
+  ValidatedContainerConfig,
+  // Validation helpers
+  safeParse,
+  parse,
+  formatZodError,
+} from './schemas';

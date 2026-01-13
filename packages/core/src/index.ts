@@ -9,6 +9,7 @@ import * as path from 'node:path';
 
 // Types
 export * from './types';
+export * from './types/stateMachines';
 
 // Adapters (interfaces only)
 export * from './adapters';
@@ -21,6 +22,14 @@ export * from './managers';
 
 // Containers
 export * from './containers';
+
+// Utilities
+export * from './utils/StateMachine';
+export * from './utils/agentNames';
+export * from './utils';
+
+// Errors
+export * from './errors';
 
 /**
  * Get the path to the bundled coordination files.

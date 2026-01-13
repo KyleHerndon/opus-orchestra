@@ -14,6 +14,7 @@ export {
 export {
   AgentStatusTracker,
   IAgentStatusTracker,
+  AgentUpdateCallback,
   PollingConfig,
   DEFAULT_POLLING_CONFIG,
 } from './AgentStatusTracker';
@@ -22,7 +23,6 @@ export {
 export {
   AgentPersistence,
   IAgentPersistence,
-  RepoAgentOrderMap,
 } from './AgentPersistence';
 
 // ContainerManager

@@ -42,6 +42,14 @@ export interface CreateTerminalOptions {
 
   /** Icon identifier (implementation-specific) */
   iconId?: string;
+
+  /**
+   * Session ID for stable session naming across renames.
+   * When provided, implementations should use this for session identification
+   * rather than the display name. This ensures sessions can be reliably
+   * reconnected even if the agent is renamed.
+   */
+  sessionId?: string;
 }
 
 /**

@@ -9,42 +9,26 @@ import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { App } from './components/App.js';
 import { initializeContainer, disposeContainer, isContainerInitialized, getContainer, } from './services/ServiceContainer.js';
+import { getAvailableNames } from '@opus-orchestra/core';
 const program = new Command();
 program
     .name('opus-orchestra')
     .description('Terminal UI for Opus Orchestra - manage Claude Code agents')
-    .version('0.2.0');
+    .version('0.2.0')
+    .exitOverride() // Throw instead of process.exit() - enables testing
+    .configureOutput({
+    writeOut: (str) => process.stdout.write(str),
+    writeErr: (str) => process.stderr.write(str),
+});
 /**
  * Initialize the ServiceContainer for the current working directory.
  */
 function ensureContainer() {
     if (!isContainerInitialized()) {
-        initializeContainer(process.cwd());
+        initializeContainer(getEffectiveCwd());
     }
 }
-/**
- * Format time ago string
- */
-function timeAgo(date) {
-    const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
-    if (seconds < 60)
-        return `${seconds}s ago`;
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60)
-        return `${minutes}m ago`;
-    const hours = Math.floor(minutes / 60);
-    return `${hours}h ago`;
-}
-/**
- * Get the tmux session name for an agent.
- * Uses sessionId-based naming (via TmuxService) when available for stability across renames.
- * Falls back to sanitized agent name for backward compatibility with older agents.
- */
-function getAgentSessionName(agent, tmuxService) {
-    return agent.sessionId
-        ? tmuxService.getSessionName(agent.sessionId)
-        : agent.name.replace(/[^a-zA-Z0-9-]/g, '-');
-}
+// Session naming is handled by TmuxService.getAgentSessionName() - single source of truth
 // Default command: interactive dashboard
 program
     .command('dashboard', { isDefault: true })
@@ -68,32 +52,27 @@ function attachToAgentSession(agentName) {
         console.error(chalk.red(`Agent "${agentName}" not found in storage.`));
         return;
     }
-    // Use sessionId-based naming for stability across renames (matches VS Code extension)
-    const sessionName = getAgentSessionName(agent, container.tmuxService);
-    // Check if this is a new session (for oo alias setup)
-    const isNewSession = !container.tmuxService.sessionExists(sessionName);
+    // Use sessionId-based naming for stability across renames
+    const sessionName = container.tmuxService.getAgentSessionName(agent);
     // Clear screen and show hint
     console.clear();
     console.log(chalk.blue(`Attaching to ${agentName}...`));
     console.log(chalk.dim('(Press Ctrl+B, D to detach and return to dashboard)\n'));
-    if (isNewSession) {
-        // Create detached session first
-        container.tmuxService.createDetachedSession(sessionName, agent.worktreePath);
-        // Set up oo alias (use sessionId if available, otherwise agent name)
+    // Use atomic create-or-attach: createDetachedSession uses -A -d flags
+    // which creates the session if it doesn't exist, or does nothing if it does.
+    // This eliminates the race condition between checking and creating.
+    const sessionExistedBefore = container.tmuxService.sessionExists(sessionName);
+    container.tmuxService.createDetachedSession(sessionName, agent.worktreePath);
+    // Set up oo alias only for newly created sessions
+    if (!sessionExistedBefore) {
         const claudeCommand = container.config.get('claudeCommand') || 'claude';
         const sessionIdForAlias = agent.sessionId || agent.name;
         container.tmuxService.setupOoAlias(sessionName, claudeCommand, sessionIdForAlias);
-        // Now attach to the session
-        spawnSync('tmux', ['attach-session', '-t', sessionName], {
-            stdio: 'inherit',
-        });
     }
-    else {
-        // Session already exists - just attach
-        spawnSync('tmux', ['attach-session', '-t', sessionName], {
-            stdio: 'inherit',
-        });
-    }
+    // Attach to the session
+    spawnSync('tmux', ['attach-session', '-t', sessionName], {
+        stdio: 'inherit',
+    });
     // Clear screen before returning to dashboard
     console.clear();
 }
@@ -103,6 +82,7 @@ function attachToAgentSession(agentName) {
 async function runDashboardLoop() {
     // State to track focus request from dashboard
     const state = { focusAgent: null };
+    // eslint-disable-next-line no-constant-condition -- intentional infinite loop with break
     while (true) {
         // Reset focus state
         state.focusAgent = null;
@@ -147,7 +127,7 @@ program
         // Count sessions
         let activeSessions = 0;
         for (const agent of agents) {
-            const sessionName = getAgentSessionName(agent, container.tmuxService);
+            const sessionName = container.tmuxService.getAgentSessionName(agent);
             if (container.tmuxService.sessionExists(sessionName)) {
                 activeSessions++;
             }
@@ -156,7 +136,7 @@ program
         console.log(chalk.dim('─'.repeat(40)));
         // List agents briefly
         for (const agent of agents) {
-            const sessionName = getAgentSessionName(agent, container.tmuxService);
+            const sessionName = container.tmuxService.getAgentSessionName(agent);
             const hasSession = container.tmuxService.sessionExists(sessionName);
             const status = hasSession ? chalk.green('●') : chalk.dim('○');
             console.log(`  ${status} ${chalk.bold(agent.name)} (${agent.branch})`);
@@ -186,7 +166,7 @@ agents
         console.log(chalk.bold.blue('Agents'));
         console.log();
         for (const agent of agentList) {
-            const sessionName = getAgentSessionName(agent, container.tmuxService);
+            const sessionName = container.tmuxService.getAgentSessionName(agent);
             const hasSession = container.tmuxService.sessionExists(sessionName);
             const status = hasSession ? chalk.green('active') : chalk.dim('inactive');
             console.log(`${chalk.bold(agent.name)} ${chalk.dim(`(${status})`)}`);
@@ -215,32 +195,29 @@ agents
     ensureContainer();
     const container = getContainer();
     try {
-        const count = parseInt(countStr, 10);
-        if (isNaN(count) || count < 1 || count > 10) {
-            console.error(chalk.red('Count must be between 1 and 10.'));
+        // Use Number() instead of parseInt() because parseInt('5abc', 10) returns 5
+        // while Number('5abc') returns NaN - we want strict validation
+        const count = Number(countStr);
+        if (!Number.isInteger(count) || count < 1 || count > 100) {
+            console.error(chalk.red('Count must be a whole number between 1 and 100.'));
             process.exit(1);
         }
-        const repoPath = process.cwd();
+        const repoPath = getEffectiveCwd();
         const baseBranch = await container.gitService.getBaseBranch(repoPath);
-        // Get existing agent names from persistence
+        // Get existing agent names from persistence and worktree directories
         const existing = container.persistence.loadPersistedAgents();
         const usedNames = new Set(existing.map((a) => a.name));
-        // Also check for existing worktree directories
-        const allNames = [
-            'alpha', 'bravo', 'charlie', 'delta', 'echo',
-            'foxtrot', 'golf', 'hotel', 'india', 'juliet',
-        ];
-        const availableNames = allNames.filter((n) => {
-            if (usedNames.has(n))
-                return false;
-            // Check if worktree directory already exists
-            const worktreePath = container.worktreeManager.getWorktreePath(repoPath, n);
-            if (container.worktreeManager.worktreeExists(worktreePath))
-                return false;
-            return true;
-        });
+        // Also check for existing worktree directories (orphaned worktrees)
+        for (const name of usedNames) {
+            const worktreePath = container.worktreeManager.getWorktreePath(repoPath, name);
+            if (container.worktreeManager.worktreeExists(worktreePath)) {
+                usedNames.add(name);
+            }
+        }
+        // Use name generator that supports unlimited names (alpha, bravo, ..., alpha-alpha, etc.)
+        const availableNames = getAvailableNames(usedNames, count);
         if (availableNames.length < count) {
-            console.error(chalk.red(`Only ${availableNames.length} agent names available.`));
+            console.error(chalk.red(`Could only generate ${availableNames.length} agent names.`));
             process.exit(1);
         }
         console.log(chalk.blue(`Creating ${count} agent(s)...`));
@@ -289,9 +266,8 @@ agents
             container.worktreeManager.saveAgentMetadata(agentForSetup);
             console.log(chalk.green(`  ✓ ${name} created (${branch})`));
         }
-        // Persist newly created agents along with existing ones
-        const allAgents = [...existing, ...createdAgents];
-        await container.storage.set('opus.agents', allAgents);
+        // Agent metadata is already saved to worktree via saveAgentMetadata()
+        // No central storage is used - worktree metadata is the source of truth
         console.log();
         console.log(chalk.green(`Created ${count} agent(s).`));
         console.log(chalk.dim('Run `opus-orchestra` to manage agents interactively.'));
@@ -322,25 +298,46 @@ agents
             }
             process.exit(1);
         }
-        const sessionName = getAgentSessionName(agent, container.tmuxService);
-        if (!container.tmuxService.sessionExists(sessionName)) {
+        const sessionName = container.tmuxService.getAgentSessionName(agent);
+        // Use atomic create-or-attach to avoid race conditions
+        const sessionExistedBefore = container.tmuxService.sessionExists(sessionName);
+        if (!sessionExistedBefore) {
             console.log(chalk.yellow(`No active tmux session for "${name}".`));
             console.log(chalk.dim('Starting a new session...'));
-            // Create detached session and set up oo alias
-            container.tmuxService.createDetachedSession(sessionName, agent.worktreePath);
-            // Set up oo alias (use sessionId if available, otherwise agent name)
+        }
+        // Create session if needed (atomic operation with -A -d flags)
+        container.tmuxService.createDetachedSession(sessionName, agent.worktreePath);
+        // Set up oo alias only for newly created sessions
+        if (!sessionExistedBefore) {
             const claudeCommand = container.config.get('claudeCommand') || 'claude';
             const sessionIdForAlias = agent.sessionId || agent.name;
             container.tmuxService.setupOoAlias(sessionName, claudeCommand, sessionIdForAlias);
         }
         console.log(chalk.blue(`Attaching to ${name}...`));
         console.log(chalk.dim('(Press Ctrl+B, D to detach and return)'));
+        // In test mode, skip actual tmux attach
+        if (testCwd !== null) {
+            disposeContainer();
+            return;
+        }
         // Attach to session - this replaces current process
         const { spawn } = await import('node:child_process');
         const child = spawn('tmux', ['attach-session', '-t', sessionName], {
             stdio: 'inherit',
         });
-        child.on('exit', (code) => {
+        child.on('error', (err) => {
+            // Spawn itself failed (e.g., tmux not found)
+            console.error(chalk.red(`Failed to spawn tmux: ${err.message}`));
+            console.error(chalk.dim('Make sure tmux is installed and available in PATH.'));
+            disposeContainer();
+            process.exit(1);
+        });
+        child.on('exit', (code, signal) => {
+            if (signal) {
+                // Process was killed by signal
+                disposeContainer();
+                process.exit(128 + (signal === 'SIGTERM' ? 15 : signal === 'SIGKILL' ? 9 : 1));
+            }
             disposeContainer();
             process.exit(code ?? 0);
         });
@@ -386,13 +383,11 @@ agents
         }
         console.log(chalk.blue(`Deleting ${name}...`));
         // Kill tmux session if exists (use consistent session naming)
-        const sessionName = getAgentSessionName(agent, container.tmuxService);
+        const sessionName = container.tmuxService.getAgentSessionName(agent);
         container.tmuxService.killSession(sessionName);
-        // Remove worktree
+        // Remove worktree (agent metadata is stored there, so this removes all state)
         container.worktreeManager.removeWorktree(agent.repoPath, agent.worktreePath, agent.branch);
-        // Remove from storage
-        const remainingAgents = agentList.filter((a) => a.name !== name);
-        await container.storage.set('opus.agents', remainingAgents);
+        // No central storage to update - worktree deletion removes all agent state
         console.log(chalk.green(`✓ Agent "${name}" deleted.`));
     }
     catch (err) {
@@ -476,4 +471,71 @@ config
 export function run() {
     program.parse();
 }
+// Store test cwd for in-process testing
+let testCwd = null;
+/**
+ * Get the effective working directory.
+ * Uses testCwd if set (for testing), otherwise process.cwd().
+ */
+export function getEffectiveCwd() {
+    return testCwd || process.cwd();
+}
+/**
+ * Run CLI command programmatically (for testing).
+ * Captures output and returns result instead of writing to console.
+ */
+export async function runCommand(args, cwd) {
+    const originalArgv = process.argv;
+    const stdout = [];
+    const stderr = [];
+    // Capture console output
+    const originalLog = console.log;
+    const originalError = console.error;
+    console.log = (...logArgs) => stdout.push(logArgs.map(String).join(' '));
+    console.error = (...logArgs) => stderr.push(logArgs.map(String).join(' '));
+    // Capture Commander's configured output (for --help, --version)
+    program.configureOutput({
+        writeOut: (str) => stdout.push(str.trimEnd()),
+        writeErr: (str) => stderr.push(str.trimEnd()),
+    });
+    let exitCode = 0;
+    try {
+        // Set test cwd instead of chdir (works in worker threads)
+        testCwd = cwd || null;
+        if (isContainerInitialized()) {
+            disposeContainer();
+        }
+        process.argv = ['node', 'opus', ...args];
+        await program.parseAsync(process.argv);
+    }
+    catch (err) {
+        // Commander throws on exitOverride - extract exit code
+        if (err && typeof err === 'object' && 'exitCode' in err) {
+            exitCode = err.exitCode;
+        }
+        else {
+            exitCode = 1;
+            stderr.push(String(err));
+        }
+    }
+    finally {
+        console.log = originalLog;
+        console.error = originalError;
+        process.argv = originalArgv;
+        testCwd = null;
+        disposeContainer();
+        // Restore original output configuration
+        program.configureOutput({
+            writeOut: (str) => process.stdout.write(str),
+            writeErr: (str) => process.stderr.write(str),
+        });
+    }
+    return {
+        stdout: stdout.join('\n'),
+        stderr: stderr.join('\n'),
+        exitCode,
+    };
+}
+// Export program for advanced testing scenarios
+export { program };
 //# sourceMappingURL=cli.js.map

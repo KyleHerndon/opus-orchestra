@@ -1,4 +1,4 @@
-import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
 /**
  * DiffView - Scrollable git diff viewer
  *
@@ -6,6 +6,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
  */
 import { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
+import { isOk } from '@opus-orchestra/core';
 // Mock diff content for development
 const MOCK_DIFF = `diff --git a/src/auth.ts b/src/auth.ts
 index 1234567..abcdefg 100644
@@ -80,7 +81,7 @@ export function DiffView({ agent, onBack }) {
     const visibleLines = MOCK_DIFF.slice(scrollOffset, scrollOffset + terminalHeight);
     const hasMore = scrollOffset + terminalHeight < MOCK_DIFF.length;
     const hasLess = scrollOffset > 0;
-    return (_jsxs(Box, { flexDirection: "column", children: [_jsxs(Box, { borderStyle: "single", borderColor: "blue", paddingX: 1, children: [_jsxs(Text, { bold: true, color: "blue", children: ["Diff: ", agent.name] }), _jsx(Text, { children: " " }), _jsxs(Text, { dimColor: true, children: ["(", agent.branch, ")"] }), _jsx(Text, { children: " " }), _jsx(Text, { dimColor: true, children: "|" }), _jsx(Text, { children: " " }), _jsxs(Text, { color: "green", children: ["+", agent.diffStats.insertions] }), _jsx(Text, { children: "/" }), _jsxs(Text, { color: "red", children: ["-", agent.diffStats.deletions] }), _jsx(Text, { children: " " }), _jsxs(Text, { dimColor: true, children: ["(", agent.diffStats.filesChanged, " files)"] })] }), hasLess && (_jsx(Box, { justifyContent: "center", children: _jsx(Text, { dimColor: true, children: "\u2191 more above \u2191" }) })), _jsx(Box, { flexDirection: "column", paddingX: 1, children: visibleLines.map((line, index) => (_jsx(DiffLine, { line: line }, scrollOffset + index))) }), hasMore && (_jsx(Box, { justifyContent: "center", children: _jsx(Text, { dimColor: true, children: "\u2193 more below \u2193" }) })), _jsxs(Box, { borderStyle: "single", borderColor: "gray", paddingX: 1, children: [_jsx(Text, { color: "cyan", children: "[\u2191\u2193]" }), _jsx(Text, { dimColor: true, children: " Scroll " }), _jsx(Text, { color: "cyan", children: "[PgUp/PgDn]" }), _jsx(Text, { dimColor: true, children: " Page " }), _jsx(Text, { color: "cyan", children: "[1/Esc]" }), _jsx(Text, { dimColor: true, children: " Back" })] })] }));
+    return (_jsxs(Box, { flexDirection: "column", children: [_jsxs(Box, { borderStyle: "single", borderColor: "blue", paddingX: 1, children: [_jsxs(Text, { bold: true, color: "blue", children: ["Diff: ", agent.name] }), _jsx(Text, { children: " " }), _jsxs(Text, { dimColor: true, children: ["(", agent.branch, ")"] }), _jsx(Text, { children: " " }), _jsx(Text, { dimColor: true, children: "|" }), _jsx(Text, { children: " " }), isOk(agent.diffStats) ? (_jsxs(_Fragment, { children: [_jsxs(Text, { color: "green", children: ["+", agent.diffStats.data.insertions] }), _jsx(Text, { children: "/" }), _jsxs(Text, { color: "red", children: ["-", agent.diffStats.data.deletions] }), _jsx(Text, { children: " " }), _jsxs(Text, { dimColor: true, children: ["(", agent.diffStats.data.filesChanged, " files)"] })] })) : (_jsxs(Text, { color: "yellow", children: ["[error: ", agent.diffStats.error, "]"] }))] }), hasLess && (_jsx(Box, { justifyContent: "center", children: _jsx(Text, { dimColor: true, children: "\u2191 more above \u2191" }) })), _jsx(Box, { flexDirection: "column", paddingX: 1, children: visibleLines.map((line, index) => (_jsx(DiffLine, { line: line }, scrollOffset + index))) }), hasMore && (_jsx(Box, { justifyContent: "center", children: _jsx(Text, { dimColor: true, children: "\u2193 more below \u2193" }) })), _jsxs(Box, { borderStyle: "single", borderColor: "gray", paddingX: 1, children: [_jsx(Text, { color: "cyan", children: "[\u2191\u2193]" }), _jsx(Text, { dimColor: true, children: " Scroll " }), _jsx(Text, { color: "cyan", children: "[PgUp/PgDn]" }), _jsx(Text, { dimColor: true, children: " Page " }), _jsx(Text, { color: "cyan", children: "[1/Esc]" }), _jsx(Text, { dimColor: true, children: " Back" })] })] }));
 }
 function DiffLine({ line }) {
     // Determine line type and color

@@ -70,7 +70,10 @@ export type EventType =
   | 'approval:pending'
   | 'approval:resolved'
   | 'status:refreshed'
-  | 'diffStats:refreshed';
+  | 'diffStats:refreshed'
+  // Error events (for error reporting)
+  | 'error:recoverable'
+  | 'error:fatal';
 
 // ============================================================================
 // Command Payloads
@@ -157,6 +160,31 @@ export interface DomainEventPayloads {
   'approval:resolved': { agentId: number };
   'status:refreshed': Record<string, never>;
   'diffStats:refreshed': Record<string, never>;
+  // Error events
+  'error:recoverable': {
+    /** Component/service that raised the error */
+    source: string;
+    /** Error code for programmatic handling */
+    code: string;
+    /** Human-readable error message */
+    message: string;
+    /** What was done to recover (if anything) */
+    recoveryAction?: string;
+    /** Additional context for debugging */
+    context?: Record<string, unknown>;
+  };
+  'error:fatal': {
+    /** Component/service that raised the error */
+    source: string;
+    /** Error code for programmatic handling */
+    code: string;
+    /** Human-readable error message */
+    message: string;
+    /** Message safe to show to the user */
+    userMessage: string;
+    /** Additional context for debugging */
+    context?: Record<string, unknown>;
+  };
 }
 
 // ============================================================================

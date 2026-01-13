@@ -50,6 +50,13 @@ export interface LoadingState {
     total?: number;
 }
 
+export interface VersionInfo {
+    version: string;
+    branch: string;
+    timestamp: string;
+    dirty: boolean;
+}
+
 // ============================================================================
 // Stores
 // ============================================================================
@@ -79,6 +86,9 @@ export const loading = writable<LoadingState>({ active: false, message: '' });
 
 /** UI scale factor */
 export const uiScale = writable<number>(1.0);
+
+/** Version info */
+export const versionInfo = writable<VersionInfo>({ version: 'dev', branch: 'unknown', timestamp: '', dirty: true });
 
 /** Dashboard stats (derived from agents) */
 export const stats = derived(agents, ($agents) => {

@@ -3,6 +3,9 @@
  *
  * Tests the COMPLETE user flow through the dashboard, not isolated pieces.
  * These tests exercise the real code paths that users hit.
+ *
+ * ARCHITECTURE: Uses worktree-only persistence - all agent state is in
+ * worktree metadata files, not central storage.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -71,28 +74,39 @@ describe('Dashboard Flow Integration', () => {
     // Verify worktree was created
     expect(fs.existsSync(worktreePath)).toBe(true);
 
-    // Persist to storage (same as useAgents.createAgents now does after fix)
-    const existing = container.persistence.loadPersistedAgents();
-    const newAgent = {
+    // ARCHITECTURE: Save agent metadata to worktree (worktree-only persistence)
+    const sessionId = container.persistence.generateSessionId();
+    const agentForSetup = {
+      id: 1,
       name: agentName,
+      sessionId,
       branch,
       worktreePath,
       repoPath,
+      taskFile: null,
       containerConfigName: 'unisolated',
+      terminal: null,
+      status: 'idle' as const,
+      statusIcon: 'circle-outline' as const,
+      pendingApproval: null,
+      lastInteractionTime: new Date(),
+      diffStats: { insertions: 0, deletions: 0, filesChanged: 0 },
+      todos: [],
     };
-    await container.storage.set('opus.agents', [...existing, newAgent]);
+    container.worktreeManager.saveAgentMetadata(agentForSetup);
 
-    // === STEP 2: Verify agent is in storage ===
-    const agentsInStorage = container.persistence.loadPersistedAgents();
-    const agentInStorage = agentsInStorage.find(a => a.name === agentName);
+    // === STEP 2: Verify agent is in worktree metadata ===
+    const agentsFromWorktree = container.persistence.loadPersistedAgents();
+    const agentInStorage = agentsFromWorktree.find(a => a.name === agentName);
 
     expect(agentInStorage).toBeDefined();
     expect(agentInStorage?.worktreePath).toBe(worktreePath);
+    expect(agentInStorage?.sessionId).toBe(sessionId);
 
     // === STEP 3: Focus agent (same as attachToAgentSession does) ===
     const sessionName = agentName.replace(/[^a-zA-Z0-9-]/g, '-');
 
-    // This is what attachToAgentSession does - load from storage
+    // This is what attachToAgentSession does - load from persistence
     const agents = container.persistence.loadPersistedAgents();
     const agent = agents.find(a => a.name === agentName);
 
@@ -133,7 +147,7 @@ describe('Dashboard Flow Integration', () => {
     expect(hasSession2.status).toBe(0);
   });
 
-  it('should persist agents created via dashboard to storage', async () => {
+  it('should persist agents to worktree metadata when created via dashboard', async () => {
     // Initialize container
     initializeContainer(testRepo.path);
     const container = getContainer();
@@ -147,30 +161,43 @@ describe('Dashboard Flow Integration', () => {
     // Create worktree
     container.worktreeManager.createWorktree(repoPath, worktreePath, branch, baseBranch);
 
-    // The dashboard's useAgents.createAgents should persist the agent
-    // Let's do what it SHOULD do (and verify it's missing)
+    // Check agents before
     const beforeAgents = container.persistence.loadPersistedAgents();
     const beforeCount = beforeAgents.length;
 
-    // Currently useAgents.createAgents does NOT do this:
-    // This is what SHOULD happen after creating an agent
-    const newAgent = {
+    // ARCHITECTURE: Save to worktree metadata (worktree-only persistence)
+    const sessionId = container.persistence.generateSessionId();
+    const agentForSetup = {
+      id: beforeCount + 1,
       name: agentName,
+      sessionId,
       branch,
       worktreePath,
       repoPath,
+      taskFile: null,
       containerConfigName: 'unisolated',
+      terminal: null,
+      status: 'idle' as const,
+      statusIcon: 'circle-outline' as const,
+      pendingApproval: null,
+      lastInteractionTime: new Date(),
+      diffStats: { insertions: 0, deletions: 0, filesChanged: 0 },
+      todos: [],
     };
-    const allAgents = [...beforeAgents, newAgent];
-    await container.storage.set('opus.agents', allAgents);
+    container.worktreeManager.saveAgentMetadata(agentForSetup);
 
-    // Now verify it's in storage
+    // Verify agent metadata file exists
+    const metadataPath = path.join(worktreePath, '.opus-orchestra', 'agent.json');
+    expect(fs.existsSync(metadataPath)).toBe(true);
+
+    // Now verify it's in persistence
     const afterAgents = container.persistence.loadPersistedAgents();
     expect(afterAgents.length).toBe(beforeCount + 1);
 
     const found = afterAgents.find(a => a.name === agentName);
     expect(found).toBeDefined();
     expect(found?.worktreePath).toBe(worktreePath);
+    expect(found?.sessionId).toBe(sessionId);
   });
 
   it('complete flow: create via dashboard, persist, restart, focus, kill, focus again', async () => {
@@ -194,18 +221,28 @@ describe('Dashboard Flow Integration', () => {
     // 1. Create worktree
     container.worktreeManager.createWorktree(repoPath, worktreePath, branch, baseBranch);
 
-    // 2. Persist to storage
-    const existing = container.persistence.loadPersistedAgents();
-    const newAgent = {
+    // 2. ARCHITECTURE: Save to worktree metadata (worktree-only persistence)
+    const sessionId = container.persistence.generateSessionId();
+    const agentForSetup = {
+      id: 1,
       name: agentName,
+      sessionId,
       branch,
       worktreePath,
       repoPath,
+      taskFile: null,
       containerConfigName: 'unisolated',
+      terminal: null,
+      status: 'idle' as const,
+      statusIcon: 'circle-outline' as const,
+      pendingApproval: null,
+      lastInteractionTime: new Date(),
+      diffStats: { insertions: 0, deletions: 0, filesChanged: 0 },
+      todos: [],
     };
-    await container.storage.set('opus.agents', [...existing, newAgent]);
+    container.worktreeManager.saveAgentMetadata(agentForSetup);
 
-    // 3. Verify agent is in storage (without restart - same as test 1)
+    // 3. Verify agent is in persistence
     const agents = container.persistence.loadPersistedAgents();
     const agent = agents.find(a => a.name === agentName);
 
@@ -213,7 +250,7 @@ describe('Dashboard Flow Integration', () => {
     expect(agent?.name).toBe(agentName);
     expect(agent?.worktreePath).toBe(worktreePath);
 
-    // 4. Focus (create tmux session) - same approach as test 1
+    // 4. Focus (create tmux session)
     const sessionName = agentName;
     expect(fs.existsSync(agent!.worktreePath)).toBe(true);
 
@@ -235,10 +272,11 @@ describe('Dashboard Flow Integration', () => {
     initializeContainer(testRepo.path);
     const container2 = getContainer();
 
-    // 7. Load agent from storage after restart
+    // 7. Load agent from worktree metadata after restart
     const agentsAfterRestart = container2.persistence.loadPersistedAgents();
     const agentAfterRestart = agentsAfterRestart.find(a => a.name === agentName);
     expect(agentAfterRestart).toBeDefined();
+    expect(agentAfterRestart?.sessionId).toBe(sessionId);
 
     // 8. Focus again - should work
     const focus2 = spawnSync(

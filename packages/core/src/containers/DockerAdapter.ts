@@ -67,7 +67,7 @@ export class DockerAdapter implements ContainerAdapter {
 
   constructor(system: SystemAdapter, logger?: ILogger) {
     this.system = system;
-    this.logger = logger?.child('DockerAdapter');
+    this.logger = logger?.child({ component: 'DockerAdapter' });
   }
 
   async isAvailable(): Promise<boolean> {

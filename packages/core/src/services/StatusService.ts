@@ -3,11 +3,14 @@
  *
  * Parses Claude hook output to determine agent status.
  * Uses SystemAdapter for file operations - no OS-specific code.
+ * Uses defensive file operations to handle race conditions.
  */
 
 import { SystemAdapter } from '../adapters/SystemAdapter';
 import { ParsedStatus, HookData } from '../types/hooks';
+import { HookDataSchema, safeParse } from '../types/schemas';
 import { ILogger } from './Logger';
+import { safeReadDir, safeReadFile, safeGetMtime } from '../utils/safeFs';
 
 /**
  * Status service interface
@@ -28,7 +31,7 @@ export class StatusService implements IStatusService {
 
   constructor(system: SystemAdapter, logger?: ILogger) {
     this.system = system;
-    this.logger = logger?.child('StatusService');
+    this.logger = logger?.child({ component: 'StatusService' });
   }
 
   /**
@@ -40,17 +43,15 @@ export class StatusService implements IStatusService {
 
   /**
    * Check status from hook-generated files
+   * Uses defensive file operations to handle race conditions
+   * (e.g., file deleted between listing and reading)
    */
   checkStatus(worktreePath: string): ParsedStatus | null {
     try {
       const statusDir = this.getStatusDirectory(worktreePath);
 
-      if (!this.system.exists(statusDir)) {
-        return null;
-      }
-
-      // Find the most recently modified status file
-      const files = this.system.readDir(statusDir);
+      // Use safe read - returns empty array if dir doesn't exist
+      const files = safeReadDir(this.system, statusDir);
       if (files.length === 0) {
         return null;
       }
@@ -60,29 +61,45 @@ export class StatusService implements IStatusService {
         return null;
       }
 
-      const content = this.system.readFile(fileInfo.path).trim();
-      const parsed = this.parseHookData(content);
+      // Use safe read - returns null if file was deleted between listing and reading
+      const content = safeReadFile(this.system, fileInfo.path);
+      if (content === null) {
+        return null;
+      }
+
+      const parsed = this.parseHookData(content.trim());
       if (parsed) {
         parsed.fileTimestamp = fileInfo.mtime;
       }
       return parsed;
     } catch (error) {
-      this.logger?.debug('Failed to check status', error);
+      this.logger?.debug({ err: error }, 'Failed to check status');
       return null;
     }
   }
 
   /**
-   * Parse hook data content
+   * Parse hook data content using Zod validation
    */
   parseHookData(content: string): ParsedStatus | null {
     // Try to parse as JSON (raw hook output)
     if (content.startsWith('{')) {
       try {
-        const data = JSON.parse(content) as HookData;
-        return this.parseJsonHookData(data);
+        const rawData = JSON.parse(content);
+        // Validate with Zod schema
+        const data = safeParse(
+          HookDataSchema,
+          rawData,
+          (error) => {
+            this.logger?.debug(`Invalid hook data format: ${error.issues.map((e: { message: string }) => e.message).join(', ')}`);
+          }
+        );
+
+        if (data) {
+          return this.parseJsonHookData(data as HookData);
+        }
       } catch (error) {
-        this.logger?.debug('Failed to parse JSON hook data', error);
+        this.logger?.debug({ err: error }, 'Failed to parse JSON hook data');
       }
     }
 
@@ -156,6 +173,7 @@ export class StatusService implements IStatusService {
 
   /**
    * Find the most recently modified file in a directory
+   * Uses safe operations to handle files being deleted during iteration
    */
   private findLatestFile(directory: string, files: string[]): { path: string; mtime: number } | null {
     let latestFile = '';
@@ -163,14 +181,11 @@ export class StatusService implements IStatusService {
 
     for (const file of files) {
       const filePath = this.system.joinPath(directory, file);
-      try {
-        const mtime = this.system.getMtime(filePath);
-        if (mtime > latestTime) {
-          latestTime = mtime;
-          latestFile = filePath;
-        }
-      } catch {
-        // Skip files we can't stat
+      // Use safe getMtime - returns null if file was deleted
+      const mtime = safeGetMtime(this.system, filePath);
+      if (mtime !== null && mtime > latestTime) {
+        latestTime = mtime;
+        latestFile = filePath;
       }
     }
 
@@ -181,16 +196,15 @@ export class StatusService implements IStatusService {
    * Clear status files for a worktree
    */
   clearStatus(worktreePath: string): void {
-    try {
-      const statusDir = this.getStatusDirectory(worktreePath);
-      if (this.system.exists(statusDir)) {
-        const files = this.system.readDir(statusDir);
-        for (const file of files) {
-          this.system.unlink(this.system.joinPath(statusDir, file));
-        }
+    const statusDir = this.getStatusDirectory(worktreePath);
+    // Use safe read - returns empty array if dir doesn't exist
+    const files = safeReadDir(this.system, statusDir);
+    for (const file of files) {
+      try {
+        this.system.unlink(this.system.joinPath(statusDir, file));
+      } catch {
+        // Ignore individual file deletion errors
       }
-    } catch {
-      // Ignore errors
     }
   }
 }

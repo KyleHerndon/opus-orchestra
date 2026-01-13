@@ -1,10 +1,13 @@
 /**
  * AgentPersistence tests
+ *
+ * ARCHITECTURE: Tests worktree-only persistence.
+ * All agent state is stored in worktree metadata files only.
+ * No central storage is used for agent data.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { AgentPersistence } from '../../managers/AgentPersistence';
-import { MockStorageAdapter } from '../mocks/MockStorageAdapter';
 import { IWorktreeManager } from '../../managers/WorktreeManager';
 import { Agent, PersistedAgent } from '../../types/agent';
 
@@ -43,13 +46,12 @@ function createTestAgent(overrides: Partial<Agent> = {}): Agent {
 
 describe('AgentPersistence', () => {
   let persistence: AgentPersistence;
-  let storage: MockStorageAdapter;
   let worktreeManager: IWorktreeManager;
 
   beforeEach(() => {
-    storage = new MockStorageAdapter();
     worktreeManager = createMockWorktreeManager();
-    persistence = new AgentPersistence(worktreeManager, storage);
+    // ARCHITECTURE: AgentPersistence takes repoPath, not storage
+    persistence = new AgentPersistence(worktreeManager, '/repo');
   });
 
   describe('generateSessionId', () => {
@@ -71,79 +73,55 @@ describe('AgentPersistence', () => {
   });
 
   describe('saveAgents', () => {
-    it('saves agents to storage', async () => {
+    it('saves agent metadata to worktrees only', () => {
       const agents = new Map<number, Agent>();
-      agents.set(1, createTestAgent({ id: 1, name: 'alpha' }));
-      agents.set(2, createTestAgent({ id: 2, name: 'beta' }));
+      const agent1 = createTestAgent({ id: 1, name: 'alpha' });
+      const agent2 = createTestAgent({ id: 2, name: 'beta' });
+      agents.set(1, agent1);
+      agents.set(2, agent2);
 
       persistence.saveAgents(agents);
 
-      const saved = storage.get<PersistedAgent[]>('opus.agents', []);
-      expect(saved.length).toBe(2);
-      expect(saved.map(a => a.name)).toContain('alpha');
-      expect(saved.map(a => a.name)).toContain('beta');
+      // ARCHITECTURE: Only worktree metadata is saved, no central storage
+      expect(worktreeManager.saveAgentMetadata).toHaveBeenCalledTimes(2);
+      expect(worktreeManager.saveAgentMetadata).toHaveBeenCalledWith(agent1);
+      expect(worktreeManager.saveAgentMetadata).toHaveBeenCalledWith(agent2);
     });
 
-    it('saves agent metadata to worktrees', () => {
-      const agent = createTestAgent();
+    it('handles empty agent map', () => {
       const agents = new Map<number, Agent>();
-      agents.set(1, agent);
 
       persistence.saveAgents(agents);
 
-      expect(worktreeManager.saveAgentMetadata).toHaveBeenCalledWith(agent);
-    });
-
-    it('persists correct fields', async () => {
-      const agent = createTestAgent({
-        id: 42,
-        name: 'test-agent',
-        sessionId: 'session-abc',
-        branch: 'feature-branch',
-        worktreePath: '/repo/.worktrees/test',
-        repoPath: '/repo',
-        taskFile: 'task.md',
-        containerConfigName: 'docker',
-        sessionStarted: true,
-      });
-      const agents = new Map<number, Agent>();
-      agents.set(42, agent);
-
-      persistence.saveAgents(agents);
-
-      const saved = storage.get<PersistedAgent[]>('opus.agents', []);
-      expect(saved[0]).toEqual({
-        id: 42,
-        name: 'test-agent',
-        sessionId: 'session-abc',
-        branch: 'feature-branch',
-        worktreePath: '/repo/.worktrees/test',
-        repoPath: '/repo',
-        taskFile: 'task.md',
-        containerConfigName: 'docker',
-        sessionStarted: true,
-      });
+      expect(worktreeManager.saveAgentMetadata).not.toHaveBeenCalled();
     });
   });
 
   describe('loadPersistedAgents', () => {
-    it('returns empty array when no agents saved', () => {
-      const agents = persistence.loadPersistedAgents();
-      expect(agents).toEqual([]);
-    });
-
-    it('returns saved agents', async () => {
-      const savedAgents: PersistedAgent[] = [
+    it('returns agents from worktree scan', () => {
+      const scannedAgents: PersistedAgent[] = [
         { id: 1, name: 'alpha', sessionId: 'sess1', branch: 'alpha', worktreePath: '/repo/.worktrees/alpha', repoPath: '/repo' },
         { id: 2, name: 'beta', sessionId: 'sess2', branch: 'beta', worktreePath: '/repo/.worktrees/beta', repoPath: '/repo' },
       ];
-      await storage.set('opus.agents', savedAgents);
+      (worktreeManager.scanWorktreesForAgents as ReturnType<typeof vi.fn>)
+        .mockReturnValue(scannedAgents);
 
       const agents = persistence.loadPersistedAgents();
 
+      // ARCHITECTURE: Agents are loaded from worktree scan, not central storage
+      expect(worktreeManager.scanWorktreesForAgents).toHaveBeenCalledWith('/repo');
       expect(agents.length).toBe(2);
       expect(agents[0].name).toBe('alpha');
       expect(agents[1].name).toBe('beta');
+    });
+
+    it('returns empty array when no worktrees found', () => {
+      (worktreeManager.scanWorktreesForAgents as ReturnType<typeof vi.fn>)
+        .mockReturnValue([]);
+
+      const agents = persistence.loadPersistedAgents();
+
+      expect(agents).toEqual([]);
     });
   });
 
@@ -180,144 +158,6 @@ describe('AgentPersistence', () => {
     it('returns empty array when no repos provided', () => {
       const agents = persistence.scanWorktreesForAgents([]);
       expect(agents).toEqual([]);
-    });
-  });
-
-  describe('mergeAgentSources', () => {
-    it('worktree agents override storage agents', () => {
-      const worktreeAgents = new Map<string, PersistedAgent>();
-      worktreeAgents.set('/repo/.worktrees/alpha', {
-        id: 1,
-        name: 'alpha-worktree',
-        sessionId: 'worktree-session',
-        branch: 'alpha',
-        worktreePath: '/repo/.worktrees/alpha',
-        repoPath: '/repo',
-      });
-
-      const storageAgents: PersistedAgent[] = [
-        {
-          id: 1,
-          name: 'alpha-storage',
-          sessionId: 'storage-session',
-          branch: 'alpha',
-          worktreePath: '/repo/.worktrees/alpha',
-          repoPath: '/repo',
-        },
-      ];
-
-      const merged = persistence.mergeAgentSources(worktreeAgents, storageAgents);
-
-      const agent = merged.get('/repo/.worktrees/alpha');
-      expect(agent?.name).toBe('alpha-worktree');
-      expect(agent?.sessionId).toBe('worktree-session');
-    });
-
-    it('includes storage-only agents', () => {
-      const worktreeAgents = new Map<string, PersistedAgent>();
-      const storageAgents: PersistedAgent[] = [
-        {
-          id: 1,
-          name: 'storage-only',
-          sessionId: 'sess1',
-          branch: 'alpha',
-          worktreePath: '/repo/.worktrees/alpha',
-          repoPath: '/repo',
-        },
-      ];
-
-      const merged = persistence.mergeAgentSources(worktreeAgents, storageAgents);
-
-      expect(merged.has('/repo/.worktrees/alpha')).toBe(true);
-      expect(merged.get('/repo/.worktrees/alpha')?.name).toBe('storage-only');
-    });
-
-    it('includes worktree-only agents', () => {
-      const worktreeAgents = new Map<string, PersistedAgent>();
-      worktreeAgents.set('/repo/.worktrees/alpha', {
-        id: 1,
-        name: 'worktree-only',
-        sessionId: 'sess1',
-        branch: 'alpha',
-        worktreePath: '/repo/.worktrees/alpha',
-        repoPath: '/repo',
-      });
-
-      const merged = persistence.mergeAgentSources(worktreeAgents, []);
-
-      expect(merged.has('/repo/.worktrees/alpha')).toBe(true);
-      expect(merged.get('/repo/.worktrees/alpha')?.name).toBe('worktree-only');
-    });
-  });
-
-  describe('agent order management', () => {
-    describe('getAgentOrder', () => {
-      it('returns empty array for repo with no order', () => {
-        const order = persistence.getAgentOrder('/repo');
-        expect(order).toEqual([]);
-      });
-
-      it('returns saved order', async () => {
-        await storage.set('opus.agentOrder', { '/repo': [3, 1, 2] });
-
-        const order = persistence.getAgentOrder('/repo');
-        expect(order).toEqual([3, 1, 2]);
-      });
-    });
-
-    describe('setAgentOrder', () => {
-      it('saves order for repo', async () => {
-        persistence.setAgentOrder('/repo', [2, 1, 3]);
-
-        const orderMap = storage.get<Record<string, number[]>>('opus.agentOrder', {});
-        expect(orderMap['/repo']).toEqual([2, 1, 3]);
-      });
-
-      it('preserves order for other repos', async () => {
-        await storage.set('opus.agentOrder', { '/repo1': [1, 2] });
-
-        persistence.setAgentOrder('/repo2', [3, 4]);
-
-        const orderMap = storage.get<Record<string, number[]>>('opus.agentOrder', {});
-        expect(orderMap['/repo1']).toEqual([1, 2]);
-        expect(orderMap['/repo2']).toEqual([3, 4]);
-      });
-    });
-
-    describe('removeAgentFromOrder', () => {
-      it('removes agent from order', async () => {
-        await storage.set('opus.agentOrder', { '/repo': [1, 2, 3] });
-
-        persistence.removeAgentFromOrder(2, '/repo');
-
-        const order = persistence.getAgentOrder('/repo');
-        expect(order).toEqual([1, 3]);
-      });
-
-      it('removes repo key when order becomes empty', async () => {
-        await storage.set('opus.agentOrder', { '/repo': [1] });
-
-        persistence.removeAgentFromOrder(1, '/repo');
-
-        const orderMap = storage.get<Record<string, number[]>>('opus.agentOrder', {});
-        expect(orderMap['/repo']).toBeUndefined();
-      });
-
-      it('handles non-existent repo', () => {
-        // Should not throw
-        expect(() => {
-          persistence.removeAgentFromOrder(1, '/nonexistent');
-        }).not.toThrow();
-      });
-
-      it('handles non-existent agent in order', async () => {
-        await storage.set('opus.agentOrder', { '/repo': [1, 2] });
-
-        persistence.removeAgentFromOrder(99, '/repo');
-
-        const order = persistence.getAgentOrder('/repo');
-        expect(order).toEqual([1, 2]);
-      });
     });
   });
 });

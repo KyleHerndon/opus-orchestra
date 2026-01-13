@@ -41,27 +41,38 @@ export function App({ onFocusAgent }: AppProps): React.ReactElement {
   // View state
   const [view, setView] = useState<ViewType>('agents');
 
-  // Selection state
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  // Selection state - use ID instead of index to handle deletions correctly
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
   // Dialog state
   const [dialog, setDialog] = useState<DialogType>('none');
 
-  // Get selected agent
-  const selectedAgent = agents[selectedIndex];
+  // Derive selected agent and index from ID
+  const selectedAgent = agents.find((a) => a.id === selectedId) ?? null;
+  const selectedIndex = selectedAgent ? agents.findIndex((a) => a.id === selectedAgent.id) : 0;
 
-  // Navigation helpers
+  // Navigation helpers - update ID, not index
   const selectNext = useCallback(() => {
-    setSelectedIndex((i) => Math.min(i + 1, agents.length - 1));
-  }, [agents.length]);
+    const currentIdx = agents.findIndex((a) => a.id === selectedId);
+    if (currentIdx === -1) return; // Selected agent not found, do nothing
+    const nextIdx = Math.min(currentIdx + 1, agents.length - 1);
+    if (agents[nextIdx]) {
+      setSelectedId(agents[nextIdx].id);
+    }
+  }, [agents, selectedId]);
 
   const selectPrev = useCallback(() => {
-    setSelectedIndex((i) => Math.max(i - 1, 0));
-  }, []);
+    const currentIdx = agents.findIndex((a) => a.id === selectedId);
+    if (currentIdx === -1) return; // Selected agent not found, do nothing
+    const prevIdx = Math.max(currentIdx - 1, 0);
+    if (agents[prevIdx]) {
+      setSelectedId(agents[prevIdx].id);
+    }
+  }, [agents, selectedId]);
 
   const toggleExpand = useCallback(() => {
-    if (!selectedAgent) return;
+    if (!selectedAgent) {return;}
 
     setExpandedIds((ids) => {
       const newIds = new Set(ids);
@@ -187,12 +198,18 @@ export function App({ onFocusAgent }: AppProps): React.ReactElement {
     }
   });
 
-  // Keep selection in bounds
+  // Handle selection when agents change
   useEffect(() => {
-    if (selectedIndex >= agents.length && agents.length > 0) {
-      setSelectedIndex(agents.length - 1);
+    if (agents.length === 0) {
+      setSelectedId(null);
+      return;
     }
-  }, [agents.length, selectedIndex]);
+
+    // If no selection or selected agent was deleted, select first agent
+    if (selectedId === null || !agents.find((a) => a.id === selectedId)) {
+      setSelectedId(agents[0].id);
+    }
+  }, [agents, selectedId]);
 
   // Show error if any
   if (error) {
@@ -239,7 +256,7 @@ export function App({ onFocusAgent }: AppProps): React.ReactElement {
             )}
             {view === 'diff' && (
               <DiffView
-                agent={selectedAgent}
+                agent={selectedAgent ?? undefined}
                 onBack={() => setView('agents')}
               />
             )}

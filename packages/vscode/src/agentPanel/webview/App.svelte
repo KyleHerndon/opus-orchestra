@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { agents, loading, uiScale } from './stores';
+    import { agents, loading, uiScale, versionInfo } from './stores';
     import Dashboard from './components/Dashboard.svelte';
     import EmptyState from './components/EmptyState.svelte';
     import LoadingIndicator from './components/LoadingIndicator.svelte';
@@ -21,6 +21,15 @@
     {:else}
         <EmptyState />
     {/if}
+
+    <footer class="version-footer">
+        <span class="version-label">Build:</span>
+        <span class="version-hash">{$versionInfo.version}</span>
+        <span class="version-branch">({$versionInfo.branch})</span>
+        {#if $versionInfo.timestamp}
+            <span class="version-timestamp">| {new Date($versionInfo.timestamp).toLocaleString()}</span>
+        {/if}
+    </footer>
 </div>
 
 <style>
@@ -124,5 +133,38 @@
 
     :global(.diff-del) {
         color: var(--vscode-gitDecoration-deletedResourceForeground, #f14c4c);
+    }
+
+    /* Version footer */
+    .version-footer {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        padding: calc(6px * var(--ui-scale, 1)) calc(12px * var(--ui-scale, 1));
+        background: var(--vscode-editor-background, #1e1e1e);
+        border-top: 1px solid var(--vscode-panel-border, #454545);
+        font-size: calc(11px * var(--ui-scale, 1));
+        color: var(--vscode-descriptionForeground, #888);
+        display: flex;
+        gap: calc(6px * var(--ui-scale, 1));
+        align-items: center;
+    }
+
+    .version-label {
+        color: var(--vscode-descriptionForeground, #888);
+    }
+
+    .version-hash {
+        color: var(--vscode-textLink-foreground, #3794ff);
+        font-family: var(--vscode-editor-font-family, monospace);
+    }
+
+    .version-branch {
+        color: var(--vscode-descriptionForeground, #888);
+    }
+
+    .version-timestamp {
+        color: var(--vscode-descriptionForeground, #666);
     }
 </style>

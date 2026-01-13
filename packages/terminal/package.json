@@ -9,6 +9,7 @@
     "opus-orchestra": "./dist/bin/opus.js"
   },
   "scripts": {
+    "prebuild": "node ../../scripts/generate-version.js src/generated/version.ts",
     "build": "tsc",
     "build:watch": "tsc --watch",
     "start": "node dist/bin/opus.js",

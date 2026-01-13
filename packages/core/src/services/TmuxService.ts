@@ -22,7 +22,10 @@ const TMUX_DEFAULT_CWD = '/tmp';
  * Tmux service interface
  */
 export interface ITmuxService {
+  isTmuxAvailable(): boolean;
   getSessionName(sessionId: string): string;
+  /** Get session name for an agent, handling missing sessionId with fallback to sanitized name */
+  getAgentSessionName(agent: { sessionId?: string; name: string }): string;
   sessionExists(sessionName: string): boolean;
   containerSessionExists(containerId: string, sessionName: string): boolean;
   killSession(sessionName: string): void;
@@ -46,11 +49,33 @@ export class TmuxService implements ITmuxService {
   private system: SystemAdapter;
   private logger?: ILogger;
   private sessionPrefix: string;
+  private tmuxAvailable: boolean | null = null; // Cached availability check
 
   constructor(system: SystemAdapter, sessionPrefix: string, logger?: ILogger) {
     this.system = system;
     this.sessionPrefix = sessionPrefix;
-    this.logger = logger?.child('TmuxService');
+    this.logger = logger?.child({ component: 'TmuxService' });
+  }
+
+  /**
+   * Check if tmux is installed and available.
+   * Result is cached after first check.
+   */
+  isTmuxAvailable(): boolean {
+    if (this.tmuxAvailable !== null) {
+      return this.tmuxAvailable;
+    }
+
+    try {
+      this.system.execSync('tmux -V', TMUX_DEFAULT_CWD);
+      this.tmuxAvailable = true;
+      this.logger?.debug('tmux is available');
+    } catch {
+      this.tmuxAvailable = false;
+      this.logger?.warn('tmux is not installed or not available in PATH');
+    }
+
+    return this.tmuxAvailable;
   }
 
   /**
@@ -64,19 +89,42 @@ export class TmuxService implements ITmuxService {
   }
 
   /**
-   * Check if a tmux session exists (on host)
+   * Get the tmux session name for an agent, with fallback for missing sessionId.
+   * This is the SINGLE SOURCE OF TRUTH for agent session naming.
+   *
+   * Uses sessionId-based naming when available (stable across renames).
+   * Falls back to sanitized agent name for legacy agents without sessionId.
+   */
+  getAgentSessionName(agent: { sessionId?: string; name: string }): string {
+    if (agent.sessionId) {
+      return this.getSessionName(agent.sessionId);
+    }
+    // Fallback for legacy agents: sanitize name to valid tmux session name
+    return `${this.sessionPrefix}-${agent.name.replace(/[^a-zA-Z0-9-]/g, '-')}`;
+  }
+
+  /**
+   * Check if a tmux session exists (on host).
+   * Returns false if tmux is not available or if the session doesn't exist.
    */
   sessionExists(sessionName: string): boolean {
+    if (!this.isTmuxAvailable()) {
+      this.logger?.debug(`sessionExists: tmux not available, returning false for ${sessionName}`);
+      return false;
+    }
+
     try {
       this.system.execSync(`tmux has-session -t "${sessionName}" 2>/dev/null`, TMUX_DEFAULT_CWD);
       return true;
     } catch {
+      // Session doesn't exist (exit code 1 from has-session)
       return false;
     }
   }
 
   /**
-   * Check if a tmux session exists inside a container
+   * Check if a tmux session exists inside a container.
+   * Returns false if the container is not running or the session doesn't exist.
    */
   containerSessionExists(containerId: string, sessionName: string): boolean {
     try {
@@ -86,24 +134,34 @@ export class TmuxService implements ITmuxService {
       );
       return true;
     } catch {
+      // Could be: container not running, tmux not in container, or session doesn't exist
+      // All cases mean "session not available", so returning false is correct
       return false;
     }
   }
 
   /**
-   * Kill a tmux session (cleanup)
+   * Kill a tmux session (cleanup).
+   * Logs info when session is killed, debug when session doesn't exist.
    */
   killSession(sessionName: string): void {
+    if (!this.isTmuxAvailable()) {
+      this.logger?.debug(`killSession: tmux not available, skipping ${sessionName}`);
+      return;
+    }
+
     try {
       this.system.execSilent(`tmux kill-session -t "${sessionName}" 2>/dev/null`, TMUX_DEFAULT_CWD);
-      this.logger?.debug(`Killed tmux session: ${sessionName}`);
+      this.logger?.info(`Killed tmux session: ${sessionName}`);
     } catch {
-      // Session may not exist, that's fine
+      // Session may not exist - this is expected during cleanup
+      this.logger?.debug(`killSession: session ${sessionName} did not exist or already killed`);
     }
   }
 
   /**
-   * Kill a tmux session inside a container
+   * Kill a tmux session inside a container.
+   * Logs info when session is killed, handles container/session not existing gracefully.
    */
   killContainerSession(containerId: string, sessionName: string): void {
     try {
@@ -112,16 +170,23 @@ export class TmuxService implements ITmuxService {
         `timeout 2 docker exec ${containerId} tmux kill-session -t "${sessionName}" 2>/dev/null || true`,
         TMUX_DEFAULT_CWD
       );
-      this.logger?.debug(`Killed container tmux session: ${sessionName} in ${containerId}`);
+      this.logger?.info(`Killed container tmux session: ${sessionName} in ${containerId}`);
     } catch {
-      // Session may not exist, that's fine
+      // Container might not exist or tmux not available in container
+      this.logger?.debug(`killContainerSession: could not kill session ${sessionName} in container ${containerId}`);
     }
   }
 
   /**
-   * List all opus tmux sessions
+   * List all opus tmux sessions.
+   * Returns empty array if tmux is not available.
    */
   listSessions(): string[] {
+    if (!this.isTmuxAvailable()) {
+      this.logger?.debug('listSessions: tmux not available, returning empty list');
+      return [];
+    }
+
     try {
       const output = this.system.execSync(
         'tmux list-sessions -F "#{session_name}" 2>/dev/null',
@@ -132,6 +197,8 @@ export class TmuxService implements ITmuxService {
         .filter(s => s.startsWith(this.sessionPrefix + '-'))
         .map(s => s.trim());
     } catch {
+      // No tmux server running or other error
+      this.logger?.debug('listSessions: no tmux sessions found or server not running');
       return [];
     }
   }
@@ -162,29 +229,35 @@ export class TmuxService implements ITmuxService {
       );
       this.logger?.debug(`Created/attached to tmux session: ${sessionName}`);
     } catch (error) {
-      this.logger?.error(`Failed to create/attach tmux session: ${sessionName}`, error instanceof Error ? error : undefined);
+      this.logger?.error({ err: error instanceof Error ? error : undefined }, `Failed to create/attach tmux session: ${sessionName}`);
       throw error;
     }
   }
 
   /**
    * Create a detached tmux session (runs in background).
-   * Uses -A -d flags: creates if not exists, always detached.
+   * Checks if session exists first, creates only if needed.
    * Safe to call multiple times - won't error if session exists.
    */
   createDetachedSession(sessionName: string, cwd: string): void {
     try {
-      // -A: attach to session if exists, create if not
+      // First check if session already exists
+      if (this.sessionExists(sessionName)) {
+        this.logger?.debug(`Tmux session already exists: ${sessionName}`);
+        return;
+      }
+
+      // Create new detached session (no -A flag to avoid terminal issues)
       // -d: detached (don't attach, run in background)
       // -s: session name
       // -c: starting directory
       this.system.execSync(
-        `tmux new-session -A -d -s "${sessionName}" -c "${cwd}"`,
+        `tmux new-session -d -s "${sessionName}" -c "${cwd}"`,
         cwd
       );
       this.logger?.debug(`Created detached tmux session: ${sessionName}`);
     } catch (error) {
-      this.logger?.error(`Failed to create detached tmux session: ${sessionName}`, error instanceof Error ? error : undefined);
+      this.logger?.error({ err: error instanceof Error ? error : undefined }, `Failed to create detached tmux session: ${sessionName}`);
       throw error;
     }
   }
@@ -206,7 +279,7 @@ export class TmuxService implements ITmuxService {
       );
       this.logger?.debug(`Sent text to tmux session: ${sessionName}`);
     } catch (error) {
-      this.logger?.error(`Failed to send text to tmux session: ${sessionName}`, error instanceof Error ? error : undefined);
+      this.logger?.error({ err: error instanceof Error ? error : undefined }, `Failed to send text to tmux session: ${sessionName}`);
       throw error;
     }
   }

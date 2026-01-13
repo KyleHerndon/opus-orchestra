@@ -6,13 +6,15 @@
  * - `show` attaches to the tmux session (exits the TUI)
  * - Agent terminals are persistent tmux sessions
  */
-import type { TerminalAdapter, TerminalHandle, CreateTerminalOptions, TerminalCloseCallback, SystemAdapter } from '@opus-orchestra/core';
+import type { TerminalAdapter, TerminalHandle, CreateTerminalOptions, TerminalCloseCallback, SystemAdapter, ITmuxService, ILogger } from '@opus-orchestra/core';
 export declare class TmuxTerminalAdapter implements TerminalAdapter {
     private system;
+    private tmuxService?;
     private terminals;
     private closeCallbacks;
     private nextId;
-    constructor(system: SystemAdapter);
+    private logger;
+    constructor(system: SystemAdapter, tmuxService?: ITmuxService | undefined, logger?: ILogger);
     createTerminal(options: CreateTerminalOptions): TerminalHandle;
     sendText(terminal: TerminalHandle, text: string, addNewline?: boolean): void;
     dispose(terminal: TerminalHandle): void;

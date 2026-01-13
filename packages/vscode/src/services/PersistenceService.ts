@@ -229,7 +229,7 @@ export class PersistenceService {
      */
     private log(message: string): void {
         if (isLoggerInitialized()) {
-            getLogger().child('PersistenceService').debug(message);
+            getLogger().child({ component: 'PersistenceService' }).debug(message);
         }
     }
 }

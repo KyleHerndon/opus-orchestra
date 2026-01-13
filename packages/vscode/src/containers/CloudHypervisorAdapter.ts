@@ -122,13 +122,13 @@ export class CloudHypervisorAdapter implements ContainerAdapter {
 
     private debugLog(message: string): void {
         if (isLoggerInitialized()) {
-            getLogger().child('CloudHypervisorAdapter').debug(message);
+            getLogger().child({ component: 'CloudHypervisorAdapter' }).debug(message);
         }
     }
 
     private errorLog(message: string): void {
         if (isLoggerInitialized()) {
-            getLogger().child('CloudHypervisorAdapter').error(message);
+            getLogger().child({ component: 'CloudHypervisorAdapter' }).error(message);
         }
     }
 

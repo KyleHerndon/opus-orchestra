@@ -6,11 +6,10 @@
 
 // Logger
 export {
-  Logger,
   ILogger,
   LogLevel,
   createLogger,
-  NullLogger,
+  createNullLogger,
 } from './Logger';
 
 // EventBus
@@ -36,6 +35,14 @@ export {
   ITmuxService,
 } from './TmuxService';
 
+// TmuxControlWatcher
+export {
+  TmuxControlWatcher,
+  TmuxControlWatcherManager,
+  ITmuxControlWatcher,
+  TmuxOutputEvent,
+} from './TmuxControlWatcher';
+
 // TodoService
 export {
   TodoService,
@@ -43,3 +50,15 @@ export {
   TodoItem,
   TodoState,
 } from './TodoService';
+
+// ServiceContainer
+export {
+  ServiceContainer,
+  ServiceContainerOptions,
+  PlatformAdapters,
+  PlatformServices,
+  initializeGlobalContainer,
+  getGlobalContainer,
+  isGlobalContainerInitialized,
+  disposeGlobalContainer,
+} from './ServiceContainer';

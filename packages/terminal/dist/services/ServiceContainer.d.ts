@@ -1,31 +1,43 @@
 /**
  * ServiceContainer - Composition root for terminal package
  *
- * Creates and wires all adapters, services, and managers for the terminal UI.
- * Uses file-based storage and config instead of VS Code APIs.
+ * Thin wrapper around core ServiceContainer that provides
+ * terminal-specific adapters (file-based storage, tmux terminal).
  */
-import { SystemAdapter, ILogger, IEventBus, IGitService, IStatusService, ITmuxService, ITodoService, IWorktreeManager, IAgentStatusTracker, IAgentPersistence, IContainerManager, ContainerRegistry, ConfigAdapter, StorageAdapter, UIAdapter, TerminalAdapter } from '@opus-orchestra/core';
+import { ConfigAdapter, StorageAdapter, UIAdapter, TerminalAdapter, ILogger, IEventBus, IGitService, IStatusService, ITmuxService, ITodoService, IWorktreeManager, IAgentStatusTracker, IAgentPersistence, IContainerManager, ContainerRegistry } from '@opus-orchestra/core';
 /**
- * Container for all terminal application services.
+ * Terminal-specific ServiceContainer.
+ *
+ * Wraps the core ServiceContainer with terminal-specific adapters:
+ * - FileConfigAdapter: Reads config from filesystem
+ * - FileStorageAdapter: Persists data to filesystem
+ * - TerminalUIAdapter: Terminal-based UI interactions
+ * - TmuxTerminalAdapter: Tmux session management
  */
 export declare class ServiceContainer {
-    readonly system: SystemAdapter;
-    readonly storage: StorageAdapter;
-    readonly config: ConfigAdapter;
-    readonly ui: UIAdapter;
-    readonly terminal: TerminalAdapter;
-    readonly logger: ILogger;
-    readonly eventBus: IEventBus;
-    readonly gitService: IGitService;
-    readonly statusService: IStatusService;
-    readonly tmuxService: ITmuxService;
-    readonly todoService: ITodoService;
-    readonly worktreeManager: IWorktreeManager;
-    readonly statusTracker: IAgentStatusTracker;
-    readonly persistence: IAgentPersistence;
-    readonly containerManager: IContainerManager;
-    readonly containerRegistry: ContainerRegistry;
+    private _core;
+    private _fileConfig;
+    get system(): import("@opus-orchestra/core").SystemAdapter;
+    get storage(): StorageAdapter;
+    get config(): ConfigAdapter;
+    get ui(): UIAdapter;
+    get terminal(): TerminalAdapter;
+    get logger(): ILogger;
+    get eventBus(): IEventBus;
+    get gitService(): IGitService;
+    get statusService(): IStatusService;
+    get tmuxService(): ITmuxService;
+    get todoService(): ITodoService;
+    get worktreeManager(): IWorktreeManager;
+    get statusTracker(): IAgentStatusTracker;
+    get persistence(): IAgentPersistence;
+    get containerManager(): IContainerManager;
+    get containerRegistry(): ContainerRegistry;
     constructor(workingDirectory: string);
+    /**
+     * Check if the container has been disposed
+     */
+    get isDisposed(): boolean;
     /**
      * Dispose all resources.
      */

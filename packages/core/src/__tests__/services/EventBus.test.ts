@@ -4,7 +4,8 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { EventBus } from '../../services/EventBus';
-import { EventType, EventPayloads } from '../../types/events';
+import { EventPayloads } from '../../types/events';
+import { ILogger } from '../../services/Logger';
 
 describe('EventBus', () => {
   let eventBus: EventBus;
@@ -186,7 +187,7 @@ describe('EventBus', () => {
           error: vi.fn(),
         }),
       };
-      const busWithLogger = new EventBus(mockLogger as any);
+      const busWithLogger = new EventBus(mockLogger as unknown as ILogger);
 
       busWithLogger.on('agent:created', () => {
         throw new Error('Test error');
@@ -194,7 +195,7 @@ describe('EventBus', () => {
 
       busWithLogger.emit('agent:created', { agent: { id: 1 } } as EventPayloads['agent:created']);
 
-      expect(mockLogger.child).toHaveBeenCalledWith('EventBus');
+      expect(mockLogger.child).toHaveBeenCalledWith({ component: 'EventBus' });
       expect(mockLogger.child().error).toHaveBeenCalled();
     });
   });

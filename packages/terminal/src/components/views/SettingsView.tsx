@@ -6,6 +6,7 @@
 
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
+import { getVersionString, VERSION_INFO } from '../../version.js';
 
 interface SettingItem {
   key: string;
@@ -123,6 +124,14 @@ export function SettingsView({ onBack }: SettingsViewProps): React.ReactElement 
           <Text dimColor>ℹ {selectedSetting.description}</Text>
         </Box>
       )}
+
+      {/* Version info */}
+      <Box paddingX={1} marginTop={1}>
+        <Text dimColor>Build: </Text>
+        <Text color="yellow">{VERSION_INFO.version}</Text>
+        <Text dimColor> ({VERSION_INFO.branch}) </Text>
+        <Text dimColor>| {new Date(VERSION_INFO.timestamp).toLocaleString()}</Text>
+      </Box>
 
       {/* Footer */}
       <Box borderStyle="single" borderColor="gray" paddingX={1}>

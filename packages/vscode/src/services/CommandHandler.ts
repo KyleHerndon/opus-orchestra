@@ -28,7 +28,7 @@ export class CommandHandler {
 
     private debugLog(message: string): void {
         if (isLoggerInitialized()) {
-            getLogger().child('CommandHandler').debug(message);
+            getLogger().child({ component: 'CommandHandler' }).debug(message);
         }
     }
 

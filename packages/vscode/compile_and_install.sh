@@ -22,6 +22,16 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 nvm use 20
 
+# Check for tmux (required for persistent terminal sessions)
+if ! command -v tmux &> /dev/null; then
+    echo ""
+    echo "⚠️  WARNING: tmux is not installed"
+    echo "   The extension uses tmux for persistent terminal sessions."
+    echo "   Install with: sudo apt install tmux"
+    echo "   (You can still use the extension with useTmux: false in settings)"
+    echo ""
+fi
+
 # Check if esbuild has correct platform binaries (WSL/Linux vs Windows mismatch)
 # This happens when node_modules is shared between Windows and WSL
 if [ -d "$MONOREPO_ROOT/node_modules/esbuild" ]; then

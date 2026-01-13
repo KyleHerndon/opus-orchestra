@@ -1,50 +1,39 @@
 /**
- * ServiceContainer - Composition root for dependency injection
+ * ServiceContainer - Composition root for VS Code extension
  *
- * Creates and wires all adapters, services, and managers.
- * Provides access to dependencies for gradual migration from singletons.
+ * Thin wrapper around core ServiceContainer that provides
+ * VS Code-specific adapters and features:
+ * - VS Code workspace storage
+ * - VS Code configuration API
+ * - VS Code terminal integration
+ * - CloudHypervisorAdapter for advanced container support
  */
 
 import * as vscode from 'vscode';
 import {
+  // Core ServiceContainer
+  ServiceContainer as CoreServiceContainer,
+
   // Adapters
   NodeSystemAdapter,
   SystemAdapter,
-
-  // Services
-  Logger,
-  ILogger,
-  EventBus,
-  IEventBus,
-  GitService,
-  IGitService,
-  StatusService,
-  IStatusService,
-  TmuxService,
-  ITmuxService,
-  TodoService,
-  ITodoService,
-
-  // Managers
-  WorktreeManager as CoreWorktreeManager,
-  IWorktreeManager,
-  AgentStatusTracker as CoreAgentStatusTracker,
-  IAgentStatusTracker,
-  AgentPersistence as CoreAgentPersistence,
-  IAgentPersistence,
-  ContainerManager as CoreContainerManager,
-  IContainerManager,
-
-  // Container adapters
-  ContainerRegistry,
-  UnisolatedAdapter,
-  DockerAdapter,
-
-  // Config
   ConfigAdapter,
   StorageAdapter,
   UIAdapter,
   TerminalAdapter,
+
+  // Service interfaces
+  ILogger,
+  IEventBus,
+  IGitService,
+  IStatusService,
+  ITmuxService,
+  ITodoService,
+  IWorktreeManager,
+  IAgentStatusTracker,
+  IAgentPersistence,
+  IContainerManager,
+  ContainerRegistry,
 } from '@opus-orchestra/core';
 
 import {
@@ -54,7 +43,7 @@ import {
   VSCodeTerminalAdapter,
 } from './adapters';
 
-// CloudHypervisorAdapter is vscode-specific (not in core yet)
+// CloudHypervisorAdapter is vscode-specific (not in core)
 import { CloudHypervisorAdapter } from './containers/CloudHypervisorAdapter';
 
 // ContainerConfigService implements IContainerConfigProvider
@@ -64,102 +53,91 @@ import { ContainerConfigService } from './services/ContainerConfigService';
 import { getHomeDir } from './pathUtils';
 
 /**
- * Container for all application services.
- * Created once during extension activation.
+ * VS Code-specific ServiceContainer.
+ *
+ * Wraps the core ServiceContainer with VS Code-specific adapters:
+ * - VSCodeConfigAdapter: Reads config from VS Code workspace settings
+ * - VSCodeStorageAdapter: Persists data to VS Code workspace state
+ * - VSCodeUIAdapter: VS Code-based UI interactions (dialogs, quick picks)
+ * - VSCodeTerminalAdapter: VS Code integrated terminal management
+ * - CloudHypervisorAdapter: Advanced container support (vscode-specific)
  */
 export class ServiceContainer {
-  // Adapters
-  public readonly system: SystemAdapter;
-  public readonly storage: VSCodeStorageAdapter;
-  public readonly config: ConfigAdapter;
-  public readonly ui: UIAdapter;
-  public readonly terminal: TerminalAdapter;
+  // The core container does all the heavy lifting
+  private _core: CoreServiceContainer;
 
-  // Core services
-  public readonly logger: ILogger;
-  public readonly eventBus: IEventBus;
-  public readonly gitService: IGitService;
-  public readonly statusService: IStatusService;
-  public readonly tmuxService: ITmuxService;
-  public readonly todoService: ITodoService;
+  // VS Code-specific adapters (for dispose and direct access)
+  private _vsCodeConfig: VSCodeConfigAdapter;
+  private _vsCodeStorage: VSCodeStorageAdapter;
+  private _vsCodeTerminal: VSCodeTerminalAdapter;
 
-  // Core managers
-  public readonly worktreeManager: IWorktreeManager;
-  public readonly statusTracker: IAgentStatusTracker;
-  public readonly persistence: IAgentPersistence;
-  public readonly containerManager: IContainerManager;
-
-  // Container registry
-  public readonly containerRegistry: ContainerRegistry;
-
-  // Config provider (for container configs)
+  // VS Code-specific config provider
   public readonly containerConfigProvider: ContainerConfigService;
 
   // Extension context (needed for VS Code specific operations)
   private _context: vscode.ExtensionContext | null = null;
 
+  // Expose all core services via getters for compatibility
+  get system(): SystemAdapter { return this._core.system; }
+  get storage(): StorageAdapter { return this._core.storage; }
+  get config(): ConfigAdapter { return this._core.config; }
+  get ui(): UIAdapter { return this._core.ui; }
+  get terminal(): TerminalAdapter { return this._core.terminal; }
+
+  get logger(): ILogger { return this._core.logger; }
+  get eventBus(): IEventBus { return this._core.eventBus; }
+  get gitService(): IGitService { return this._core.gitService; }
+  get statusService(): IStatusService { return this._core.statusService; }
+  get tmuxService(): ITmuxService { return this._core.tmuxService; }
+  get todoService(): ITodoService { return this._core.todoService; }
+
+  get worktreeManager(): IWorktreeManager { return this._core.worktreeManager; }
+  get statusTracker(): IAgentStatusTracker { return this._core.statusTracker; }
+  get persistence(): IAgentPersistence { return this._core.persistence; }
+  get containerManager(): IContainerManager { return this._core.containerManager; }
+  get containerRegistry(): ContainerRegistry { return this._core.containerRegistry; }
+
   constructor(extensionPath: string) {
-    // 1. Create config adapter first (needed to read settings)
-    this.config = new VSCodeConfigAdapter();
+    // 1. Create VS Code-specific adapters
+    this._vsCodeConfig = new VSCodeConfigAdapter();
+    const terminalType = this._vsCodeConfig.get('terminalType');
 
-    // 2. Create other adapters using config values
-    const terminalType = this.config.get('terminalType');
-    this.system = new NodeSystemAdapter(terminalType);
-    this.storage = new VSCodeStorageAdapter();
-    this.ui = new VSCodeUIAdapter();
-    this.terminal = new VSCodeTerminalAdapter(this.system);
+    const system = new NodeSystemAdapter(terminalType);
+    this._vsCodeStorage = new VSCodeStorageAdapter();
+    const ui = new VSCodeUIAdapter();
+    this._vsCodeTerminal = new VSCodeTerminalAdapter(system);
 
-    // 2. Create core services
-    this.logger = new Logger(extensionPath, this.config.get('logLevel'));
-    this.eventBus = new EventBus(this.logger);
-    this.gitService = new GitService(this.system, this.logger);
-    this.statusService = new StatusService(this.system, this.logger);
-    this.tmuxService = new TmuxService(
-      this.system,
-      this.config.get('tmuxSessionPrefix'),
-      this.logger
-    );
+    // 2. Create VS Code-specific container config provider
+    this.containerConfigProvider = new ContainerConfigService();
+
+    // 3. Create CloudHypervisorAdapter wrapper for registration
+    const cloudHypervisorAdapter = {
+      register(registry: ContainerRegistry) {
+        registry.register(new CloudHypervisorAdapter());
+      }
+    };
+
+    // 4. Create core container with VS Code adapters
     // TodoService needs correct path for WSL support on Windows
     // getHomeDir() returns the appropriate home directory based on terminal type
     const todosDir = getHomeDir().join('.claude', 'todos').forNodeFs();
-    this.todoService = new TodoService(this.logger, todosDir);
 
-    // 3. Create core managers
-    this.worktreeManager = new CoreWorktreeManager(
-      this.system,
-      this.config,
-      this.logger
-    );
-    this.statusTracker = new CoreAgentStatusTracker(
-      this.statusService,
-      this.gitService,
-      this.todoService,
-      this.eventBus,
-      this.config,
-      this.logger
-    );
-    this.persistence = new CoreAgentPersistence(
-      this.worktreeManager,
-      this.storage,
-      this.logger
-    );
-
-    // 4. Create container registry with adapters
-    this.containerRegistry = new ContainerRegistry();
-    this.containerRegistry.register(new UnisolatedAdapter(this.system));
-    this.containerRegistry.register(new DockerAdapter(this.system, this.logger));
-    // CloudHypervisorAdapter is vscode-specific (uses agentPath, getConfigService)
-    this.containerRegistry.register(new CloudHypervisorAdapter());
-
-    // 5. Create container config provider and manager
-    this.containerConfigProvider = new ContainerConfigService();
-    this.containerManager = new CoreContainerManager(
-      this.containerRegistry,
-      this.containerConfigProvider,
-      this.eventBus,
-      this.storage,
-      this.logger
-    );
+    this._core = new CoreServiceContainer({
+      workingDirectory: extensionPath,
+      adapters: {
+        system,
+        config: this._vsCodeConfig,
+        storage: this._vsCodeStorage,
+        ui,
+        terminal: this._vsCodeTerminal,
+      },
+      services: {
+        repoPath: '',  // Multi-repo: use scanWorktreesForAgents() with specific paths
+        todosDirectory: todosDir,
+        containerConfigProvider: this.containerConfigProvider,
+        additionalContainerAdapters: [cloudHypervisorAdapter],
+      },
+    });
   }
 
   /**
@@ -168,7 +146,7 @@ export class ServiceContainer {
    */
   initialize(context: vscode.ExtensionContext): void {
     this._context = context;
-    this.storage.initialize(context);
+    this._vsCodeStorage.initialize(context);
   }
 
   /**
@@ -182,15 +160,22 @@ export class ServiceContainer {
   }
 
   /**
+   * Check if the container has been disposed
+   */
+  get isDisposed(): boolean {
+    return this._core.isDisposed;
+  }
+
+  /**
    * Dispose all resources.
    */
   dispose(): void {
-    if (this.config instanceof VSCodeConfigAdapter) {
-      (this.config as VSCodeConfigAdapter).dispose();
-    }
-    if (this.terminal instanceof VSCodeTerminalAdapter) {
-      (this.terminal as VSCodeTerminalAdapter).disposeAll();
-    }
+    // Dispose VS Code-specific resources
+    this._vsCodeConfig.dispose();
+    this._vsCodeTerminal.disposeAll();
+
+    // Dispose core container (stops polling, cleans up)
+    this._core.dispose();
   }
 }
 
@@ -233,7 +218,7 @@ export function getContainer(): ServiceContainer {
  * Check if the container has been initialized.
  */
 export function isContainerInitialized(): boolean {
-  return containerInstance !== null;
+  return containerInstance !== null && !containerInstance.isDisposed;
 }
 
 /**

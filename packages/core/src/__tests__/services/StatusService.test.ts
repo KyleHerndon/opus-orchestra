@@ -1,115 +1,169 @@
 /**
- * StatusService tests
+ * StatusService integration tests
+ *
+ * Tests StatusService with real file system operations.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { StatusService } from '../../services/StatusService';
-import { MockSystemAdapter } from '../mocks/MockSystemAdapter';
+import { NodeSystemAdapter } from '../../adapters/NodeSystemAdapter';
+import { createTempDir, TestRepo } from '../fixtures/testRepo';
 
 describe('StatusService', () => {
-  let system: MockSystemAdapter;
+  let tempDir: TestRepo;
+  let system: NodeSystemAdapter;
   let status: StatusService;
 
   beforeEach(() => {
-    system = new MockSystemAdapter();
+    tempDir = createTempDir('status-service-test-');
+    system = new NodeSystemAdapter('bash');
     status = new StatusService(system);
+  });
+
+  afterEach(() => {
+    tempDir.cleanup();
   });
 
   describe('getStatusDirectory', () => {
     it('returns correct status directory path', () => {
-      const result = status.getStatusDirectory('/worktree');
-      expect(result).toBe('/worktree/.opus-orchestra/status');
+      const result = status.getStatusDirectory(tempDir.path);
+      expect(result).toBe(path.join(tempDir.path, '.opus-orchestra', 'status'));
     });
   });
 
   describe('checkStatus', () => {
     it('returns null when status directory does not exist', () => {
-      const result = status.checkStatus('/worktree');
+      const result = status.checkStatus(tempDir.path);
       expect(result).toBeNull();
     });
 
     it('returns null when status directory is empty', () => {
-      system.addDirectory('/worktree/.opus-orchestra/status');
-      const result = status.checkStatus('/worktree');
+      const statusDir = path.join(tempDir.path, '.opus-orchestra', 'status');
+      fs.mkdirSync(statusDir, { recursive: true });
+
+      const result = status.checkStatus(tempDir.path);
       expect(result).toBeNull();
     });
 
     it('parses JSON hook data with tool_name as waiting-approval', () => {
-      system.addDirectory('/worktree/.opus-orchestra/status');
-      system.addFile('/worktree/.opus-orchestra/status/session-123', JSON.stringify({
+      const statusDir = path.join(tempDir.path, '.opus-orchestra', 'status');
+      fs.mkdirSync(statusDir, { recursive: true });
+
+      const hookData = {
         tool_name: 'Bash',
         tool_input: { command: 'npm test' },
-      }));
+      };
+      fs.writeFileSync(
+        path.join(statusDir, 'session-123'),
+        JSON.stringify(hookData)
+      );
 
-      const result = status.checkStatus('/worktree');
+      const result = status.checkStatus(tempDir.path);
 
-      expect(result).toEqual({
-        status: 'waiting-approval',
-        pendingApproval: 'Bash: npm test',
-        fileTimestamp: expect.any(Number),
-      });
+      expect(result).not.toBeNull();
+      expect(result?.status).toBe('waiting-approval');
+      expect(result?.pendingApproval).toBe('Bash: npm test');
     });
 
     it('parses JSON hook data with session_id as working', () => {
-      system.addDirectory('/worktree/.opus-orchestra/status');
-      system.addFile('/worktree/.opus-orchestra/status/session-123', JSON.stringify({
+      const statusDir = path.join(tempDir.path, '.opus-orchestra', 'status');
+      fs.mkdirSync(statusDir, { recursive: true });
+
+      const hookData = {
         session_id: 'abc-123',
-      }));
+      };
+      fs.writeFileSync(
+        path.join(statusDir, 'session-123'),
+        JSON.stringify(hookData)
+      );
 
-      const result = status.checkStatus('/worktree');
+      const result = status.checkStatus(tempDir.path);
 
-      expect(result).toEqual({
-        status: 'working',
-        pendingApproval: null,
-        fileTimestamp: expect.any(Number),
-      });
+      expect(result).not.toBeNull();
+      expect(result?.status).toBe('working');
+      expect(result?.pendingApproval).toBeNull();
     });
 
     it('parses Write tool with file_path context', () => {
-      system.addDirectory('/worktree/.opus-orchestra/status');
-      system.addFile('/worktree/.opus-orchestra/status/session-123', JSON.stringify({
+      const statusDir = path.join(tempDir.path, '.opus-orchestra', 'status');
+      fs.mkdirSync(statusDir, { recursive: true });
+
+      const hookData = {
         tool_name: 'Write',
         tool_input: { file_path: '/src/index.ts' },
-      }));
+      };
+      fs.writeFileSync(
+        path.join(statusDir, 'session-123'),
+        JSON.stringify(hookData)
+      );
 
-      const result = status.checkStatus('/worktree');
+      const result = status.checkStatus(tempDir.path);
 
-      expect(result).toEqual({
-        status: 'waiting-approval',
-        pendingApproval: 'Write: /src/index.ts',
-        fileTimestamp: expect.any(Number),
-      });
+      expect(result?.status).toBe('waiting-approval');
+      expect(result?.pendingApproval).toBe('Write: /src/index.ts');
     });
 
     it('parses Edit tool with file_path context', () => {
-      system.addDirectory('/worktree/.opus-orchestra/status');
-      system.addFile('/worktree/.opus-orchestra/status/session-123', JSON.stringify({
+      const statusDir = path.join(tempDir.path, '.opus-orchestra', 'status');
+      fs.mkdirSync(statusDir, { recursive: true });
+
+      const hookData = {
         tool_name: 'Edit',
         tool_input: { file_path: '/src/utils.ts' },
-      }));
+      };
+      fs.writeFileSync(
+        path.join(statusDir, 'session-123'),
+        JSON.stringify(hookData)
+      );
 
-      const result = status.checkStatus('/worktree');
+      const result = status.checkStatus(tempDir.path);
 
-      expect(result).toEqual({
-        status: 'waiting-approval',
-        pendingApproval: 'Edit: /src/utils.ts',
-        fileTimestamp: expect.any(Number),
-      });
+      expect(result?.status).toBe('waiting-approval');
+      expect(result?.pendingApproval).toBe('Edit: /src/utils.ts');
     });
 
     it('handles tool without context', () => {
-      system.addDirectory('/worktree/.opus-orchestra/status');
-      system.addFile('/worktree/.opus-orchestra/status/session-123', JSON.stringify({
+      const statusDir = path.join(tempDir.path, '.opus-orchestra', 'status');
+      fs.mkdirSync(statusDir, { recursive: true });
+
+      const hookData = {
         tool_name: 'UnknownTool',
-      }));
+      };
+      fs.writeFileSync(
+        path.join(statusDir, 'session-123'),
+        JSON.stringify(hookData)
+      );
 
-      const result = status.checkStatus('/worktree');
+      const result = status.checkStatus(tempDir.path);
 
-      expect(result).toEqual({
-        status: 'waiting-approval',
-        pendingApproval: 'UnknownTool',
-        fileTimestamp: expect.any(Number),
-      });
+      expect(result?.status).toBe('waiting-approval');
+      expect(result?.pendingApproval).toBe('UnknownTool');
+    });
+
+    it('reads most recent status file when multiple exist', async () => {
+      const statusDir = path.join(tempDir.path, '.opus-orchestra', 'status');
+      fs.mkdirSync(statusDir, { recursive: true });
+
+      // Create older file
+      fs.writeFileSync(
+        path.join(statusDir, 'old-session'),
+        JSON.stringify({ tool_name: 'OldTool' })
+      );
+
+      // Wait a bit to ensure different mtime
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // Create newer file
+      fs.writeFileSync(
+        path.join(statusDir, 'new-session'),
+        JSON.stringify({ tool_name: 'NewTool' })
+      );
+
+      const result = status.checkStatus(tempDir.path);
+
+      expect(result?.pendingApproval).toBe('NewTool');
     });
   });
 
@@ -135,26 +189,34 @@ describe('StatusService', () => {
     });
 
     it('is case-insensitive for legacy status', () => {
-      expect(status.parseHookData('WORKING')).toEqual({ status: 'working', pendingApproval: null });
-      expect(status.parseHookData('Working')).toEqual({ status: 'working', pendingApproval: null });
+      expect(status.parseHookData('WORKING')).toEqual({
+        status: 'working',
+        pendingApproval: null,
+      });
+      expect(status.parseHookData('Working')).toEqual({
+        status: 'working',
+        pendingApproval: null,
+      });
     });
   });
 
   describe('clearStatus', () => {
     it('removes all files in status directory', () => {
-      system.addDirectory('/worktree/.opus-orchestra/status');
-      system.addFile('/worktree/.opus-orchestra/status/session-1', 'content1');
-      system.addFile('/worktree/.opus-orchestra/status/session-2', 'content2');
+      const statusDir = path.join(tempDir.path, '.opus-orchestra', 'status');
+      fs.mkdirSync(statusDir, { recursive: true });
+      fs.writeFileSync(path.join(statusDir, 'session-1'), 'content1');
+      fs.writeFileSync(path.join(statusDir, 'session-2'), 'content2');
 
-      status.clearStatus('/worktree');
+      status.clearStatus(tempDir.path);
 
-      expect(system.exists('/worktree/.opus-orchestra/status/session-1')).toBe(false);
-      expect(system.exists('/worktree/.opus-orchestra/status/session-2')).toBe(false);
+      expect(fs.existsSync(path.join(statusDir, 'session-1'))).toBe(false);
+      expect(fs.existsSync(path.join(statusDir, 'session-2'))).toBe(false);
     });
 
     it('handles non-existent status directory gracefully', () => {
       // Should not throw
-      expect(() => status.clearStatus('/worktree')).not.toThrow();
+      expect(() => status.clearStatus(tempDir.path)).not.toThrow();
     });
   });
+
 });

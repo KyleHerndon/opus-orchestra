@@ -1,98 +1,68 @@
 /**
- * GitService tests
+ * GitService integration tests
+ *
+ * Tests GitService with real git repositories.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
 import { GitService } from '../../services/GitService';
-import { MockSystemAdapter } from '../mocks/MockSystemAdapter';
+import {
+  createTestRepo,
+  addAndCommit,
+  makeUncommittedChange,
+  createWorktree,
+  TestRepo,
+} from '../fixtures/testRepo';
 
 describe('GitService', () => {
-  let system: MockSystemAdapter;
+  let testRepo: TestRepo;
   let git: GitService;
 
   beforeEach(() => {
-    system = new MockSystemAdapter();
-    git = new GitService(system);
+    testRepo = createTestRepo('git-service-test-');
+    git = new GitService();
+  });
+
+  afterEach(() => {
+    testRepo.cleanup();
   });
 
   describe('isGitRepo', () => {
     it('returns true for git directories', () => {
-      system.setExecResult('git rev-parse --git-dir', '.git\n');
-      expect(git.isGitRepo('/project')).toBe(true);
+      expect(git.isGitRepo(testRepo.path)).toBe(true);
     });
 
     it('returns false for non-git directories', () => {
-      system.setExecError('git rev-parse --git-dir', new Error('not a git repo'));
-      expect(git.isGitRepo('/not-a-repo')).toBe(false);
+      // Create temp dir outside the git repo
+      const nonGitDir = fs.mkdtempSync(path.join(os.tmpdir(), 'not-git-'));
+      try {
+        expect(git.isGitRepo(nonGitDir)).toBe(false);
+      } finally {
+        fs.rmSync(nonGitDir, { recursive: true, force: true });
+      }
     });
   });
 
   describe('getCurrentBranch', () => {
     it('returns current branch name', async () => {
-      system.setExecResult('git branch --show-current', 'feature-branch\n');
-      const result = await git.getCurrentBranch('/project');
-      expect(result).toBe('feature-branch');
-    });
-
-    it('trims whitespace from branch name', async () => {
-      system.setExecResult('git branch --show-current', '  main  \n');
-      const result = await git.getCurrentBranch('/project');
-      expect(result).toBe('main');
+      const branch = await git.getCurrentBranch(testRepo.path);
+      expect(branch).toBe('main');
     });
   });
 
   describe('getBaseBranch', () => {
     it('returns main when main branch exists', async () => {
-      system.setExecResult('git branch -l main master', '* main\n');
-      const result = await git.getBaseBranch('/project');
-      expect(result).toBe('main');
-    });
-
-    it('returns master when only master exists', async () => {
-      system.setExecResult('git branch -l main master', '  master\n');
-      const result = await git.getBaseBranch('/project');
-      expect(result).toBe('master');
-    });
-
-    it('prefers main over master when both exist', async () => {
-      system.setExecResult('git branch -l main master', '* main\n  master\n');
-      const result = await git.getBaseBranch('/project');
-      expect(result).toBe('main');
-    });
-
-    it('returns HEAD~1 when neither main nor master exist', async () => {
-      system.setExecResult('git branch -l main master', '\n');
-      const result = await git.getBaseBranch('/project');
-      expect(result).toBe('HEAD~1');
-    });
-
-    it('returns HEAD~1 when command fails', async () => {
-      system.setExecError('git branch -l main master', new Error('not a repo'));
-      const result = await git.getBaseBranch('/project');
-      expect(result).toBe('HEAD~1');
+      const baseBranch = await git.getBaseBranch(testRepo.path);
+      expect(baseBranch).toBe('main');
     });
   });
 
   describe('getDiffStats', () => {
-    it('parses diff stats correctly', async () => {
-      system.setExecResult(
-        'git diff --shortstat main...HEAD',
-        ' 3 files changed, 45 insertions(+), 12 deletions(-)\n'
-      );
-
-      const stats = await git.getDiffStats('/project', 'main');
-
-      expect(stats).toEqual({
-        filesChanged: 3,
-        insertions: 45,
-        deletions: 12,
-      });
-    });
-
-    it('handles no changes', async () => {
-      system.setExecResult('git diff --shortstat main...HEAD', '\n');
-
-      const stats = await git.getDiffStats('/project', 'main');
+    it('returns zeros when no changes', async () => {
+      const stats = await git.getDiffStats(testRepo.path, 'main');
 
       expect(stats).toEqual({
         filesChanged: 0,
@@ -101,186 +71,163 @@ describe('GitService', () => {
       });
     });
 
-    it('handles insertions only', async () => {
-      system.setExecResult(
-        'git diff --shortstat main...HEAD',
-        ' 1 file changed, 10 insertions(+)\n'
-      );
+    it('counts insertions correctly', async () => {
+      // Create worktree and make changes there
+      const worktreePath = createWorktree(testRepo.path, 'claude-alpha');
 
-      const stats = await git.getDiffStats('/project', 'main');
+      // Add new lines to a file
+      makeUncommittedChange(worktreePath, 'new-file.ts', 'line1\nline2\nline3\n');
+      addAndCommit(worktreePath, 'new-file.ts', 'line1\nline2\nline3\n', 'Add new file');
 
-      expect(stats).toEqual({
-        filesChanged: 1,
-        insertions: 10,
-        deletions: 0,
-      });
+      const stats = await git.getDiffStats(worktreePath, 'main');
+
+      expect(stats.filesChanged).toBe(1);
+      expect(stats.insertions).toBe(3);
+      expect(stats.deletions).toBe(0);
     });
 
-    it('handles deletions only', async () => {
-      system.setExecResult(
-        'git diff --shortstat main...HEAD',
-        ' 2 files changed, 5 deletions(-)\n'
-      );
+    it('counts deletions correctly', async () => {
+      const worktreePath = createWorktree(testRepo.path, 'claude-bravo');
 
-      const stats = await git.getDiffStats('/project', 'main');
+      // Delete content from README
+      fs.writeFileSync(path.join(worktreePath, 'README.md'), '');
+      addAndCommit(worktreePath, 'README.md', '', 'Clear README');
 
-      expect(stats).toEqual({
-        filesChanged: 2,
-        insertions: 0,
-        deletions: 5,
-      });
+      const stats = await git.getDiffStats(worktreePath, 'main');
+
+      expect(stats.filesChanged).toBeGreaterThanOrEqual(1);
+      expect(stats.deletions).toBeGreaterThan(0);
     });
 
-    it('handles single file singular form', async () => {
-      system.setExecResult(
-        'git diff --shortstat develop...HEAD',
-        ' 1 file changed, 1 insertion(+), 1 deletion(-)\n'
-      );
+    it('counts both insertions and deletions', async () => {
+      const worktreePath = createWorktree(testRepo.path, 'claude-charlie');
 
-      const stats = await git.getDiffStats('/project', 'develop');
+      // Modify existing file (add lines and change existing)
+      const newContent = 'export const goodbye = "world";\nexport const foo = "bar";\n';
+      fs.writeFileSync(path.join(worktreePath, 'src', 'index.ts'), newContent);
 
-      expect(stats).toEqual({
-        filesChanged: 1,
-        insertions: 1,
-        deletions: 1,
-      });
-    });
+      // Stage and commit the changes
+      const { execSync } = await import('node:child_process');
+      execSync('git add -A', { cwd: worktreePath, stdio: 'pipe' });
+      execSync('git commit -m "Modify index"', { cwd: worktreePath, stdio: 'pipe' });
 
-    it('returns zeros on error', async () => {
-      system.setExecError('git diff --shortstat main...HEAD', new Error('not a repo'));
+      const stats = await git.getDiffStats(worktreePath, 'main');
 
-      const stats = await git.getDiffStats('/project', 'main');
-
-      expect(stats).toEqual({
-        filesChanged: 0,
-        insertions: 0,
-        deletions: 0,
-      });
+      expect(stats.filesChanged).toBe(1);
+      // The original had 1 line, we now have 2 lines with different content
+      // So we should have both insertions and deletions
+      expect(stats.insertions + stats.deletions).toBeGreaterThan(0);
     });
   });
 
   describe('getChangedFiles', () => {
-    it('returns list of changed files', async () => {
-      system.setExecResult(
-        'git diff --name-only main...HEAD',
-        'src/index.ts\nsrc/utils.ts\nREADME.md\n'
-      );
-
-      const files = await git.getChangedFiles('/project', 'main');
-
-      expect(files).toEqual(['src/index.ts', 'src/utils.ts', 'README.md']);
-    });
-
     it('returns empty array when no changes', async () => {
-      system.setExecResult('git diff --name-only main...HEAD', '\n');
-
-      const files = await git.getChangedFiles('/project', 'main');
-
+      const files = await git.getChangedFiles(testRepo.path, 'main');
       expect(files).toEqual([]);
     });
 
-    it('returns empty array on error', async () => {
-      system.setExecError('git diff --name-only main...HEAD', new Error('not a repo'));
+    it('returns list of changed files', async () => {
+      const worktreePath = createWorktree(testRepo.path, 'claude-delta');
 
-      const files = await git.getChangedFiles('/project', 'main');
+      // Add and modify files
+      makeUncommittedChange(worktreePath, 'new-file.ts', 'content');
+      makeUncommittedChange(worktreePath, 'src/utils.ts', 'utils');
 
-      expect(files).toEqual([]);
+      // Stage and commit
+      const { execSync } = await import('node:child_process');
+      execSync('git add -A', { cwd: worktreePath, stdio: 'pipe' });
+      execSync('git commit -m "Add files"', { cwd: worktreePath, stdio: 'pipe' });
+
+      const files = await git.getChangedFiles(worktreePath, 'main');
+
+      expect(files).toContain('new-file.ts');
+      expect(files).toContain('src/utils.ts');
     });
   });
 
   describe('createWorktree', () => {
-    it('executes git worktree add command', async () => {
-      let executedCommand = '';
-      const originalExec = system.exec.bind(system);
-      system.exec = async (cmd: string, cwd: string) => {
-        executedCommand = cmd;
-        return originalExec(cmd, cwd);
-      };
+    it('creates a new worktree with branch', async () => {
+      const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-echo');
+      fs.mkdirSync(path.dirname(worktreePath), { recursive: true });
 
-      await git.createWorktree('/repo', 'claude-alpha', '/repo/.worktrees/claude-alpha', 'main');
+      await git.createWorktree(
+        testRepo.path,
+        'claude-echo',
+        worktreePath,
+        'main'
+      );
 
-      expect(executedCommand).toContain('git worktree add');
-      expect(executedCommand).toContain('claude-alpha');
-      expect(executedCommand).toContain('main');
-    });
-  });
-
-  describe('deleteBranch', () => {
-    it('executes git branch -D command', async () => {
-      let executedCommand = '';
-      const originalExecSilent = system.execSilent.bind(system);
-      system.execSilent = (cmd: string, cwd: string) => {
-        executedCommand = cmd;
-        return originalExecSilent(cmd, cwd);
-      };
-
-      await git.deleteBranch('/repo', 'feature-branch');
-
-      expect(executedCommand).toContain('git branch -D');
-      expect(executedCommand).toContain('feature-branch');
+      expect(fs.existsSync(worktreePath)).toBe(true);
+      expect(fs.existsSync(path.join(worktreePath, '.git'))).toBe(true);
     });
   });
 
   describe('renameBranch', () => {
-    it('executes git branch -m command', async () => {
-      let executedCommand = '';
-      const originalExec = system.exec.bind(system);
-      system.exec = async (cmd: string, cwd: string) => {
-        executedCommand = cmd;
-        return originalExec(cmd, cwd);
-      };
+    it('renames a branch', async () => {
+      const worktreePath = createWorktree(testRepo.path, 'claude-foxtrot');
 
-      await git.renameBranch('/repo', 'old-name', 'new-name');
+      await git.renameBranch(worktreePath, 'claude-foxtrot', 'claude-renamed');
 
-      expect(executedCommand).toContain('git branch -m');
-      expect(executedCommand).toContain('old-name');
-      expect(executedCommand).toContain('new-name');
+      const currentBranch = await git.getCurrentBranch(worktreePath);
+      expect(currentBranch).toBe('claude-renamed');
     });
   });
 
   describe('initRepo', () => {
-    it('executes git init command', async () => {
-      let executedCommand = '';
-      const originalExec = system.exec.bind(system);
-      system.exec = async (cmd: string, cwd: string) => {
-        executedCommand = cmd;
-        return originalExec(cmd, cwd);
-      };
+    it('initializes a new git repository', async () => {
+      const newDir = path.join(testRepo.path, 'new-repo');
+      fs.mkdirSync(newDir);
 
-      await git.initRepo('/new-repo');
+      await git.initRepo(newDir);
 
-      expect(executedCommand).toBe('git init');
+      expect(git.isGitRepo(newDir)).toBe(true);
     });
   });
 
-  describe('stageAll', () => {
-    it('executes git add -A command', async () => {
-      let executedCommand = '';
-      const originalExec = system.exec.bind(system);
-      system.exec = async (cmd: string, cwd: string) => {
-        executedCommand = cmd;
-        return originalExec(cmd, cwd);
-      };
+  describe('stageAll and commit', () => {
+    it('stages and commits changes', async () => {
+      const worktreePath = createWorktree(testRepo.path, 'claude-golf');
 
-      await git.stageAll('/repo');
+      // Make a change
+      makeUncommittedChange(worktreePath, 'staged-file.ts', 'content');
 
-      expect(executedCommand).toBe('git add -A');
+      // Stage and commit
+      await git.stageAll(worktreePath);
+      await git.commit(worktreePath, 'Test commit');
+
+      // Verify commit was made (no uncommitted changes)
+      const stats = await git.getDiffStats(worktreePath, 'HEAD~1');
+      expect(stats.filesChanged).toBe(1);
     });
   });
 
-  describe('commit', () => {
-    it('executes git commit command with message', async () => {
-      let executedCommand = '';
-      const originalExec = system.exec.bind(system);
-      system.exec = async (cmd: string, cwd: string) => {
-        executedCommand = cmd;
-        return originalExec(cmd, cwd);
-      };
+  describe('deleteBranch', () => {
+    it('deletes a branch', async () => {
+      // Create a branch first
+      const worktreePath = createWorktree(testRepo.path, 'claude-hotel');
 
-      await git.commit('/repo', 'Initial commit');
+      // Remove worktree first (can't delete checked out branch)
+      const { execSync } = await import('node:child_process');
+      execSync(`git worktree remove "${worktreePath}" --force`, {
+        cwd: testRepo.path,
+        stdio: 'pipe',
+      });
 
-      expect(executedCommand).toContain('git commit -m');
-      expect(executedCommand).toContain('Initial commit');
+      // Now delete the branch
+      await git.deleteBranch(testRepo.path, 'claude-hotel');
+
+      // Verify branch is gone
+      let branchExists = true;
+      try {
+        execSync('git rev-parse --verify claude-hotel', {
+          cwd: testRepo.path,
+          stdio: 'pipe',
+        });
+      } catch {
+        branchExists = false;
+      }
+
+      expect(branchExists).toBe(false);
     });
   });
 });

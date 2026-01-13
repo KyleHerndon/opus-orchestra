@@ -41,7 +41,7 @@ export interface PersistedAgent {
   branch: string;
   worktreePath: string;
   repoPath: string;
-  taskFile: string | null;
+  taskFile?: string | null;
   /** Container config name (e.g., 'unisolated', 'repo:dev', 'user:secure') */
   containerConfigName?: string;
   /** Whether Claude has been started with this sessionId (use -r to resume if true) */
@@ -89,7 +89,7 @@ export interface AgentDisplayData {
   status: AgentStatus;
   statusIcon: string;
   branch: string;
-  taskFile: string | null;
+  taskFile?: string | null;
   pendingApproval: string | null;
   diffStats: DiffStats;
   hasTerminal: boolean;

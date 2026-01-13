@@ -1,0 +1,17 @@
+{
+  "extends": ["../../.eslintrc.json"],
+  "overrides": [
+    {
+      "files": [
+        "src/cli.ts",
+        "src/adapters/FileConfigAdapter.ts",
+        "src/adapters/TerminalUIAdapter.ts",
+        "src/__tests__/**/*.ts",
+        "src/__tests__/**/*.tsx"
+      ],
+      "rules": {
+        "no-console": "off"
+      }
+    }
+  ]
+}

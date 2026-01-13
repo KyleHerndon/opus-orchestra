@@ -109,7 +109,7 @@ export class ContainerManager implements IContainerManager {
     this.configProvider = configProvider;
     this.eventBus = eventBus;
     this.storage = storage;
-    this.logger = logger?.child('ContainerManager');
+    this.logger = logger?.child({ component: 'ContainerManager' });
 
     // Restore containers from storage on construction
     this.restoreContainers();

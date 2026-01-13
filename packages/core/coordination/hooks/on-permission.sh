@@ -5,7 +5,9 @@
 set -euo pipefail
 
 INPUT=$(cat)
-SESSION_ID=$(echo "$INPUT" | grep -o '"session_id":"[^"]*"' | cut -d'"' -f4)
+
+# Extract session_id from JSON input using jq for reliable parsing
+SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
 
 if [[ -z "$SESSION_ID" ]]; then
     exit 0

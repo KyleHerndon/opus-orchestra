@@ -20,10 +20,10 @@ export function activate(context: vscode.ExtensionContext) {
     const container = initializeContainer(context.extensionPath, context);
     const logger = container.logger;
     const logLevel = container.config.get('logLevel');
-    logger.info('Extension activating', { logLevel });
+    logger.info({ logLevel }, 'Extension activating');
 
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
-    logger.debug('Workspace root', { workspaceRoot });
+    logger.debug({ workspaceRoot }, 'Workspace root');
 
     // Initialize persistence service (VSCode-specific, uses vscode.ExtensionContext)
     const persistenceService = initPersistenceService(workspaceRoot);

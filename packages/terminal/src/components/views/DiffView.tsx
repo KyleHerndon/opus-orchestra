@@ -6,6 +6,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
+import { isOk } from '@opus-orchestra/core';
 import type { TerminalAgent } from '../../types.js';
 
 interface DiffViewProps {
@@ -106,11 +107,17 @@ export function DiffView({ agent, onBack }: DiffViewProps): React.ReactElement {
         <Text> </Text>
         <Text dimColor>|</Text>
         <Text> </Text>
-        <Text color="green">+{agent.diffStats.insertions}</Text>
-        <Text>/</Text>
-        <Text color="red">-{agent.diffStats.deletions}</Text>
-        <Text> </Text>
-        <Text dimColor>({agent.diffStats.filesChanged} files)</Text>
+        {isOk(agent.diffStats) ? (
+          <>
+            <Text color="green">+{agent.diffStats.data.insertions}</Text>
+            <Text>/</Text>
+            <Text color="red">-{agent.diffStats.data.deletions}</Text>
+            <Text> </Text>
+            <Text dimColor>({agent.diffStats.data.filesChanged} files)</Text>
+          </>
+        ) : (
+          <Text color="yellow">[error: {agent.diffStats.error}]</Text>
+        )}
       </Box>
 
       {/* Scroll indicator top */}

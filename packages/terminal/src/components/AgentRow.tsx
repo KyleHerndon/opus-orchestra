@@ -7,6 +7,7 @@
 
 import React from 'react';
 import { Box, Text } from 'ink';
+import { isOk } from '@opus-orchestra/core';
 import { StatusBadge } from './StatusBadge.js';
 import { TodoList } from './TodoList.js';
 import { ApprovalPrompt } from './ApprovalPrompt.js';
@@ -28,13 +29,13 @@ function formatTime(date: Date): string {
   const elapsed = now - date.getTime();
 
   const seconds = Math.floor(elapsed / 1000);
-  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 60) {return `${seconds}s`;}
 
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 60) {return `${minutes}m`;}
 
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
+  if (hours < 24) {return `${hours}h`;}
 
   const days = Math.floor(hours / 24);
   return `${days}d`;
@@ -44,7 +45,7 @@ function formatTime(date: Date): string {
  * Pad string to fixed width
  */
 function pad(str: string, width: number): string {
-  if (str.length >= width) return str.slice(0, width);
+  if (str.length >= width) {return str.slice(0, width);}
   return str + ' '.repeat(width - str.length);
 }
 
@@ -86,10 +87,16 @@ export function AgentRow({
         </Text>
 
         {/* Diff stats */}
-        <Text color="green">+{agent.diffStats.insertions}</Text>
-        <Text>/</Text>
-        <Text color="red">-{agent.diffStats.deletions}</Text>
-        <Text> </Text>
+        {isOk(agent.diffStats) ? (
+          <>
+            <Text color="green">+{agent.diffStats.data.insertions}</Text>
+            <Text>/</Text>
+            <Text color="red">-{agent.diffStats.data.deletions}</Text>
+            <Text> </Text>
+          </>
+        ) : (
+          <Text color="yellow" dimColor>[diff err] </Text>
+        )}
 
         {/* Time */}
         <Text dimColor>{pad(formatTime(agent.lastInteractionTime), 5)}</Text>

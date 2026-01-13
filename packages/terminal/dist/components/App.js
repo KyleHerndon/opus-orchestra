@@ -19,23 +19,37 @@ export function App({ onFocusAgent }) {
     const { agents, stats, loading, error, approveAgent, rejectAgent, deleteAgent, createAgents, focusAgent, } = useAgents();
     // View state
     const [view, setView] = useState('agents');
-    // Selection state
-    const [selectedIndex, setSelectedIndex] = useState(0);
+    // Selection state - use ID instead of index to handle deletions correctly
+    const [selectedId, setSelectedId] = useState(null);
     const [expandedIds, setExpandedIds] = useState(new Set());
     // Dialog state
     const [dialog, setDialog] = useState('none');
-    // Get selected agent
-    const selectedAgent = agents[selectedIndex];
-    // Navigation helpers
+    // Derive selected agent and index from ID
+    const selectedAgent = agents.find((a) => a.id === selectedId) ?? null;
+    const selectedIndex = selectedAgent ? agents.findIndex((a) => a.id === selectedAgent.id) : 0;
+    // Navigation helpers - update ID, not index
     const selectNext = useCallback(() => {
-        setSelectedIndex((i) => Math.min(i + 1, agents.length - 1));
-    }, [agents.length]);
+        const currentIdx = agents.findIndex((a) => a.id === selectedId);
+        if (currentIdx === -1)
+            return; // Selected agent not found, do nothing
+        const nextIdx = Math.min(currentIdx + 1, agents.length - 1);
+        if (agents[nextIdx]) {
+            setSelectedId(agents[nextIdx].id);
+        }
+    }, [agents, selectedId]);
     const selectPrev = useCallback(() => {
-        setSelectedIndex((i) => Math.max(i - 1, 0));
-    }, []);
+        const currentIdx = agents.findIndex((a) => a.id === selectedId);
+        if (currentIdx === -1)
+            return; // Selected agent not found, do nothing
+        const prevIdx = Math.max(currentIdx - 1, 0);
+        if (agents[prevIdx]) {
+            setSelectedId(agents[prevIdx].id);
+        }
+    }, [agents, selectedId]);
     const toggleExpand = useCallback(() => {
-        if (!selectedAgent)
+        if (!selectedAgent) {
             return;
+        }
         setExpandedIds((ids) => {
             const newIds = new Set(ids);
             if (newIds.has(selectedAgent.id)) {
@@ -158,17 +172,22 @@ export function App({ onFocusAgent }) {
             }
         }
     });
-    // Keep selection in bounds
+    // Handle selection when agents change
     useEffect(() => {
-        if (selectedIndex >= agents.length && agents.length > 0) {
-            setSelectedIndex(agents.length - 1);
+        if (agents.length === 0) {
+            setSelectedId(null);
+            return;
         }
-    }, [agents.length, selectedIndex]);
+        // If no selection or selected agent was deleted, select first agent
+        if (selectedId === null || !agents.find((a) => a.id === selectedId)) {
+            setSelectedId(agents[0].id);
+        }
+    }, [agents, selectedId]);
     // Show error if any
     if (error) {
         return (_jsx(Box, { flexDirection: "column", padding: 1, children: _jsxs(Text, { color: "red", bold: true, children: ["Error: ", error] }) }));
     }
-    return (_jsxs(Box, { flexDirection: "column", children: [dialog === 'delete' && selectedAgent && (_jsx(ConfirmDialog, { message: `Delete agent "${selectedAgent.name}"? This will remove the worktree and all changes.`, confirmLabel: "Delete", cancelLabel: "Cancel", onConfirm: handleDeleteConfirm, onCancel: () => setDialog('none') })), dialog === 'create' && (_jsx(CreateAgentDialog, { onConfirm: handleCreateConfirm, onCancel: () => setDialog('none') })), dialog === 'none' && (_jsxs(_Fragment, { children: [_jsxs(Box, { flexDirection: "column", minHeight: 10, children: [view === 'agents' && (_jsx(AgentListView, { agents: agents, stats: stats, selectedIndex: selectedIndex, expandedIds: expandedIds, onApprove: handleApprove, onReject: handleReject })), view === 'diff' && (_jsx(DiffView, { agent: selectedAgent, onBack: () => setView('agents') })), view === 'settings' && (_jsx(SettingsView, { onBack: () => setView('agents') })), view === 'help' && _jsx(HelpView, {})] }), loading && (_jsx(Box, { children: _jsx(Text, { color: "cyan", children: "Loading..." }) })), _jsx(HelpBar, { view: view })] }))] }));
+    return (_jsxs(Box, { flexDirection: "column", children: [dialog === 'delete' && selectedAgent && (_jsx(ConfirmDialog, { message: `Delete agent "${selectedAgent.name}"? This will remove the worktree and all changes.`, confirmLabel: "Delete", cancelLabel: "Cancel", onConfirm: handleDeleteConfirm, onCancel: () => setDialog('none') })), dialog === 'create' && (_jsx(CreateAgentDialog, { onConfirm: handleCreateConfirm, onCancel: () => setDialog('none') })), dialog === 'none' && (_jsxs(_Fragment, { children: [_jsxs(Box, { flexDirection: "column", minHeight: 10, children: [view === 'agents' && (_jsx(AgentListView, { agents: agents, stats: stats, selectedIndex: selectedIndex, expandedIds: expandedIds, onApprove: handleApprove, onReject: handleReject })), view === 'diff' && (_jsx(DiffView, { agent: selectedAgent ?? undefined, onBack: () => setView('agents') })), view === 'settings' && (_jsx(SettingsView, { onBack: () => setView('agents') })), view === 'help' && _jsx(HelpView, {})] }), loading && (_jsx(Box, { children: _jsx(Text, { color: "cyan", children: "Loading..." }) })), _jsx(HelpBar, { view: view })] }))] }));
 }
 function HelpView() {
     return (_jsxs(Box, { flexDirection: "column", padding: 1, children: [_jsx(Text, { color: "yellow", bold: true, children: "Keyboard Shortcuts" }), _jsx(Text, { children: " " }), _jsxs(Box, { flexDirection: "column", children: [_jsx(Text, { children: _jsx(Text, { color: "cyan", bold: true, children: "Navigation" }) }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "\u2191/\u2193" }), "     Navigate between agents"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "Enter" }), "   Focus selected agent (attach tmux)"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "e" }), "       Expand/collapse selected agent"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "E" }), "       Expand/collapse all agents"] }), _jsx(Text, { children: " " }), _jsx(Text, { children: _jsx(Text, { color: "cyan", bold: true, children: "Actions" }) }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "a" }), "       Approve pending action"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "r" }), "       Reject pending action"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "c" }), "       Create new agent"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "x" }), "       Delete selected agent"] }), _jsx(Text, { children: " " }), _jsx(Text, { children: _jsx(Text, { color: "cyan", bold: true, children: "Views" }) }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "d" }), " / ", _jsx(Text, { color: "cyan", children: "2" }), "   Switch to diff view"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "s" }), " / ", _jsx(Text, { color: "cyan", children: "3" }), "   Switch to settings view"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "1" }), " / ", _jsx(Text, { color: "cyan", children: "Esc" }), " Return to agent list"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "?" }), "       Toggle this help"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "q" }), "       Quit"] })] })] }));

@@ -25,6 +25,7 @@ import {
     TodoItemUpdate,
     agentToUpdate,
 } from './types';
+import { VERSION_INFO } from '../version';
 
 export class AgentPanel {
     public static currentPanel: AgentPanel | undefined;
@@ -32,7 +33,7 @@ export class AgentPanel {
     private readonly _panel: vscode.WebviewPanel;
     private readonly _agentManager: AgentManager;
     private readonly _extensionUri: vscode.Uri;
-    private readonly _logger = isLoggerInitialized() ? getLogger().child('AgentPanel') : null;
+    private readonly _logger = isLoggerInitialized() ? getLogger().child({ component: 'AgentPanel' }) : null;
 
     private _disposables: vscode.Disposable[] = [];
     private _availableConfigs: DiscoveredConfig[] = [];
@@ -214,6 +215,7 @@ export class AgentPanel {
             repoPaths: this._agentManager.getRepositoryPaths(),
             containerGroups: this._getContainerGroups(),
             uiScale,
+            versionInfo: VERSION_INFO,
         });
     }
 

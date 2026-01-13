@@ -20,9 +20,13 @@ import {
 } from './SystemAdapter';
 
 /**
- * Path for Git Bash on Windows
+ * Common paths for Git Bash on Windows (checked in order)
  */
-const GIT_BASH_PATH = 'C:\\Program Files\\Git\\bin\\bash.exe';
+const GIT_BASH_PATHS = [
+  'C:\\Program Files\\Git\\bin\\bash.exe',
+  'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
+  process.env.GIT_BASH_PATH || '', // Allow override via environment variable
+].filter(Boolean);
 
 /**
  * Parse a path to extract drive letter and path components
@@ -121,9 +125,51 @@ export class NodeSystemAdapter implements SystemAdapter {
   private terminalType: TerminalType;
   private cachedWslDistro: string | null = null;
   private cachedWslHome: string | null = null;
+  private cachedGitBashPath: string | null = null;
 
   constructor(terminalType: TerminalType) {
     this.terminalType = terminalType;
+  }
+
+  /**
+   * Get the Git Bash executable path.
+   * Tries common locations and caches the result.
+   * Returns empty string if not found.
+   */
+  private getGitBashPath(): string {
+    if (this.cachedGitBashPath !== null) {
+      return this.cachedGitBashPath;
+    }
+
+    // Try common paths first (faster than spawning processes)
+    for (const bashPath of GIT_BASH_PATHS) {
+      if (fs.existsSync(bashPath)) {
+        this.cachedGitBashPath = bashPath;
+        return bashPath;
+      }
+    }
+
+    // Try to find bash.exe using 'where' command on Windows
+    try {
+      const result = execSync('where bash.exe 2>nul', { encoding: 'utf-8', timeout: 5000 });
+      const lines = result.trim().split('\n');
+      // Prefer Git Bash over WSL bash
+      const gitBash = lines.find(line => line.toLowerCase().includes('git'));
+      if (gitBash) {
+        this.cachedGitBashPath = gitBash.trim();
+        return this.cachedGitBashPath;
+      }
+      if (lines.length > 0) {
+        this.cachedGitBashPath = lines[0].trim();
+        return this.cachedGitBashPath;
+      }
+    } catch {
+      // 'where' command failed - Git Bash may not be installed
+    }
+
+    // Not found - cache empty string to avoid repeated lookups
+    this.cachedGitBashPath = '';
+    return '';
   }
 
   // ========== Platform Detection ==========
@@ -340,8 +386,12 @@ export class NodeSystemAdapter implements SystemAdapter {
         return execSync(`wsl bash -c "cd '${terminalPath}' && ${escapedCmd}"`, { encoding: 'utf-8' });
       }
       case 'gitbash': {
+        const gitBashPath = this.getGitBashPath();
+        if (!gitBashPath) {
+          throw new Error('Git Bash not found. Set GIT_BASH_PATH environment variable or install Git for Windows.');
+        }
         const escapedCmd = command.replace(/'/g, "'\\''");
-        return execSync(`"${GIT_BASH_PATH}" -c "cd '${terminalPath}' && ${escapedCmd}"`, { encoding: 'utf-8' });
+        return execSync(`"${gitBashPath}" -c "cd '${terminalPath}' && ${escapedCmd}"`, { encoding: 'utf-8' });
       }
       case 'bash':
         return execSync(command, { cwd: terminalPath, encoding: 'utf-8', shell: '/bin/bash' });
@@ -372,8 +422,13 @@ export class NodeSystemAdapter implements SystemAdapter {
             break;
           }
           case 'gitbash': {
+            const gitBashPath = this.getGitBashPath();
+            if (!gitBashPath) {
+              reject(new Error('Git Bash not found. Set GIT_BASH_PATH environment variable or install Git for Windows.'));
+              return;
+            }
             const escapedCmd = command.replace(/'/g, "'\\''");
-            fullCommand = `"${GIT_BASH_PATH}" -c "cd '${terminalPath}' && ${escapedCmd}"`;
+            fullCommand = `"${gitBashPath}" -c "cd '${terminalPath}' && ${escapedCmd}"`;
             break;
           }
           case 'bash':
@@ -417,8 +472,13 @@ export class NodeSystemAdapter implements SystemAdapter {
           break;
         }
         case 'gitbash': {
+          const gitBashPath = this.getGitBashPath();
+          if (!gitBashPath) {
+            // Silent exec - just return without throwing
+            return;
+          }
           const escapedCmd = command.replace(/'/g, "'\\''");
-          execSync(`"${GIT_BASH_PATH}" -c "cd '${terminalPath}' && ${escapedCmd}"`, { stdio: 'ignore' });
+          execSync(`"${gitBashPath}" -c "cd '${terminalPath}' && ${escapedCmd}"`, { stdio: 'ignore' });
           break;
         }
         case 'bash':
@@ -530,5 +590,102 @@ export class NodeSystemAdapter implements SystemAdapter {
   getMtime(inputPath: string): number {
     const nodePath = this.convertPath(inputPath, 'nodeFs');
     return fs.statSync(nodePath).mtimeMs;
+  }
+
+  // ========== Safe File Operations ==========
+
+  /**
+   * Safe file read - returns null if file doesn't exist.
+   * Re-throws non-ENOENT errors.
+   */
+  safeReadFile(inputPath: string): string | null {
+    const nodePath = this.convertPath(inputPath, 'nodeFs');
+    try {
+      return fs.readFileSync(nodePath, 'utf-8');
+    } catch (error: unknown) {
+      if (this.isEnoentError(error)) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Safe directory read - returns empty array if dir doesn't exist.
+   * Re-throws non-ENOENT errors.
+   */
+  safeReadDir(inputPath: string): string[] {
+    const nodePath = this.convertPath(inputPath, 'nodeFs');
+    try {
+      return fs.readdirSync(nodePath);
+    } catch (error: unknown) {
+      if (this.isEnoentError(error)) {
+        return [];
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Safe stat - returns null if path doesn't exist.
+   * Re-throws non-ENOENT errors.
+   */
+  safeStat(inputPath: string): FileStat | null {
+    const nodePath = this.convertPath(inputPath, 'nodeFs');
+    try {
+      const stats = fs.statSync(nodePath);
+      return {
+        mtimeMs: stats.mtimeMs,
+        isDirectory: () => stats.isDirectory(),
+        isFile: () => stats.isFile(),
+      };
+    } catch (error: unknown) {
+      if (this.isEnoentError(error)) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Atomic write - writes to temp file, then renames.
+   * Ensures partial writes don't corrupt data.
+   */
+  atomicWrite(inputPath: string, content: string): void {
+    const nodePath = this.convertPath(inputPath, 'nodeFs');
+    const dir = path.dirname(nodePath);
+
+    // Ensure directory exists
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    // Write to temp file with unique suffix
+    const tempPath = `${nodePath}.tmp.${process.pid}.${Date.now()}`;
+
+    try {
+      fs.writeFileSync(tempPath, content, 'utf-8');
+      fs.renameSync(tempPath, nodePath);
+    } catch (error) {
+      // Clean up temp file on failure
+      try {
+        fs.unlinkSync(tempPath);
+      } catch {
+        // Ignore cleanup errors
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Check if error is ENOENT (file not found)
+   */
+  private isEnoentError(error: unknown): boolean {
+    return (
+      error !== null &&
+      typeof error === 'object' &&
+      'code' in error &&
+      (error as { code: string }).code === 'ENOENT'
+    );
   }
 }

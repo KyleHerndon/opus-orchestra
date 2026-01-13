@@ -55,7 +55,7 @@ export class TodoService implements ITodoService {
    *                   On Windows with WSL, pass a UNC path like `//wsl.localhost/Ubuntu/home/user/.claude/todos`.
    */
   constructor(logger?: ILogger, todosDir?: string) {
-    this.logger = logger?.child('TodoService');
+    this.logger = logger?.child({ component: 'TodoService' });
     // Claude Code stores TODOs in ~/.claude/todos
     // Allow custom path for cross-platform support (e.g., WSL paths on Windows)
     this.todosDir = todosDir ?? path.join(os.homedir(), '.claude', 'todos');

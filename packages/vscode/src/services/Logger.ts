@@ -1,157 +1,33 @@
 /**
- * Logger Service
+ * Logger Service - VSCode singleton wrapper
  *
- * Provides structured logging with file output for debugging.
- * VS Code extension console.log output is not accessible,
- * so this writes to a debug.log file in the extension directory.
+ * This module provides singleton accessor functions for the Logger.
+ * Uses pino from @opus-orchestra/core.
+ *
+ * Usage:
+ * - During early startup (before ServiceContainer): initLogger() creates a local instance
+ * - After ServiceContainer init: getLogger() returns ServiceContainer's logger
  */
 
-import * as fs from 'fs';
 import * as path from 'path';
-import { ILogger } from '../types';
+import { createLogger, LogLevel, ILogger } from '@opus-orchestra/core';
 
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
-
-/**
- * Logger implementation
- */
-export class Logger implements ILogger {
-    private logFile: string;
-    private minLevel: LogLevel;
-    private context: string;
-
-    private static readonly LEVEL_PRIORITY: Record<LogLevel, number> = {
-        debug: 0,
-        info: 1,
-        warn: 2,
-        error: 3,
-    };
-
-    constructor(extensionPath: string, context: string = 'Extension', minLevel: LogLevel = 'debug') {
-        this.logFile = path.join(extensionPath, 'debug.log');
-        this.context = context;
-        this.minLevel = minLevel;
-    }
-
-    /**
-     * Create a child logger with a specific context
-     */
-    child(context: string): Logger {
-        const child = new Logger(path.dirname(this.logFile), context, this.minLevel);
-        child.logFile = this.logFile; // Share the same log file
-        return child;
-    }
-
-    /**
-     * Set minimum log level
-     */
-    setLevel(level: LogLevel): void {
-        this.minLevel = level;
-    }
-
-    /**
-     * Log a debug message
-     */
-    debug(message: string, ...args: unknown[]): void {
-        this.log('debug', message, ...args);
-    }
-
-    /**
-     * Log an info message
-     */
-    info(message: string, ...args: unknown[]): void {
-        this.log('info', message, ...args);
-    }
-
-    /**
-     * Log a warning message
-     */
-    warn(message: string, ...args: unknown[]): void {
-        this.log('warn', message, ...args);
-    }
-
-    /**
-     * Log an error message
-     */
-    error(message: string, error?: Error, ...args: unknown[]): void {
-        if (error) {
-            this.log('error', `${message}: ${error.message}`, ...args);
-            if (error.stack) {
-                this.log('error', `Stack: ${error.stack}`);
-            }
-        } else {
-            this.log('error', message, ...args);
-        }
-    }
-
-    /**
-     * Internal log method
-     */
-    private log(level: LogLevel, message: string, ...args: unknown[]): void {
-        if (Logger.LEVEL_PRIORITY[level] < Logger.LEVEL_PRIORITY[this.minLevel]) {
-            return;
-        }
-
-        const timestamp = new Date().toISOString();
-        const formattedArgs = args.length > 0 ? ` ${this.formatArgs(args)}` : '';
-        const logLine = `[${timestamp}] [${level.toUpperCase()}] [${this.context}] ${message}${formattedArgs}\n`;
-
-        try {
-            fs.appendFileSync(this.logFile, logLine);
-        } catch {
-            // Can't log errors about logging
-        }
-    }
-
-    /**
-     * Format additional arguments
-     */
-    private formatArgs(args: unknown[]): string {
-        return args.map(arg => {
-            if (arg === null) { return 'null'; }
-            if (arg === undefined) { return 'undefined'; }
-            if (typeof arg === 'object') {
-                try {
-                    return JSON.stringify(arg);
-                } catch {
-                    return '[Object]';
-                }
-            }
-            return String(arg);
-        }).join(' ');
-    }
-
-    /**
-     * Clear the log file
-     */
-    clear(): void {
-        try {
-            fs.writeFileSync(this.logFile, '');
-        } catch {
-            // Ignore errors
-        }
-    }
-
-    /**
-     * Get the log file path
-     */
-    getLogFilePath(): string {
-        return this.logFile;
-    }
-}
+// Re-export types for convenience
+export type { LogLevel };
 
 /**
  * Global logger instance (used before ServiceContainer is available)
  */
-let loggerInstance: Logger | null = null;
+let loggerInstance: ILogger | null = null;
 
 /**
  * Initialize the global logger
  * Note: After ServiceContainer is initialized, this is no longer needed
  * but kept for backward compatibility during startup.
  */
-export function initLogger(extensionPath: string, minLevel: LogLevel = 'debug'): Logger {
-    loggerInstance = new Logger(extensionPath, 'Extension', minLevel);
+export function initLogger(extensionPath: string, minLevel: LogLevel = 'debug'): ILogger {
+    const logDir = path.join(extensionPath);
+    loggerInstance = createLogger(logDir, minLevel);
     return loggerInstance;
 }
 
@@ -159,14 +35,14 @@ export function initLogger(extensionPath: string, minLevel: LogLevel = 'debug'):
  * Get the global logger instance.
  * Uses ServiceContainer's logger when available, falls back to local singleton.
  */
-export function getLogger(): Logger {
+export function getLogger(): ILogger {
     // Try to use ServiceContainer's logger first (it's the canonical instance)
     try {
         // Dynamic import to avoid circular dependency
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { isContainerInitialized, getContainer } = require('../ServiceContainer');
         if (isContainerInitialized()) {
-            return getContainer().logger as Logger;
+            return getContainer().logger as ILogger;
         }
     } catch {
         // ServiceContainer not available yet

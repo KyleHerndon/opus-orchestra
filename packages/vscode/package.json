@@ -418,6 +418,7 @@
     }
   },
   "scripts": {
+    "precompile": "node ../../scripts/generate-version.js src/generated/version.ts",
     "vscode:prepublish": "npm run package",
     "package": "npm run check-types && node src/agentPanel/build.js && node esbuild.js --production",
     "compile": "tsc -p ./ && node src/agentPanel/build.js",

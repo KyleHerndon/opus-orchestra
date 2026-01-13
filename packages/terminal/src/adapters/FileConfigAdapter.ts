@@ -5,6 +5,7 @@
  * 1. .opus-orchestra/config.json (project-local)
  * 2. ~/.config/opus-orchestra/config.json (user global)
  *
+ * Uses Zod schema validation for robust config parsing.
  * Supports file watching for live configuration updates.
  */
 
@@ -16,13 +17,19 @@ import type {
   ExtensionConfig,
   ConfigChangeCallback,
 } from '@opus-orchestra/core';
-import { DEFAULT_CONFIG } from '@opus-orchestra/core';
+import {
+  DEFAULT_CONFIG,
+  ExtensionConfigSchema,
+  formatZodError,
+} from '@opus-orchestra/core';
 
 export class FileConfigAdapter implements ConfigAdapter {
   private config: ExtensionConfig;
   private configPath: string | null = null;
   private callbacks: Set<ConfigChangeCallback> = new Set();
   private watcher: fs.FSWatcher | null = null;
+  private configLoaded: boolean = false;
+  private configError: string | null = null;
 
   /**
    * Create a new FileConfigAdapter.
@@ -37,6 +44,21 @@ export class FileConfigAdapter implements ConfigAdapter {
       this.loadConfig();
       this.watchConfig();
     }
+  }
+
+  /**
+   * Check if config was loaded successfully.
+   * Returns false if there was a parse error or the file doesn't exist.
+   */
+  isConfigLoaded(): boolean {
+    return this.configLoaded;
+  }
+
+  /**
+   * Get the error message if config loading failed.
+   */
+  getConfigError(): string | null {
+    return this.configError;
   }
 
   /**
@@ -68,29 +90,70 @@ export class FileConfigAdapter implements ConfigAdapter {
 
   /**
    * Load configuration from file.
+   * Uses Zod schema validation for robust parsing.
+   * Sets configLoaded flag and configError on failure.
    */
   private loadConfig(): void {
-    if (!this.configPath || !fs.existsSync(this.configPath)) {
+    if (!this.configPath) {
+      this.configError = 'No config path specified';
+      return;
+    }
+
+    if (!fs.existsSync(this.configPath)) {
+      // No config file - use defaults (this is normal, not an error)
+      this.configLoaded = false;
+      this.configError = null;
       return;
     }
 
     try {
       const content = fs.readFileSync(this.configPath, 'utf-8');
-      const fileConfig = JSON.parse(content) as Partial<ExtensionConfig>;
+      const rawConfig = JSON.parse(content);
 
-      // Merge with defaults
-      this.config = { ...DEFAULT_CONFIG, ...fileConfig };
+      // Validate with Zod schema - this will apply defaults and type coercion
+      const parseResult = ExtensionConfigSchema.safeParse({
+        ...DEFAULT_CONFIG,
+        ...rawConfig,
+      });
+
+      if (parseResult.success) {
+        this.config = parseResult.data as ExtensionConfig;
+        this.configLoaded = true;
+        this.configError = null;
+      } else {
+        // Schema validation failed - log specific errors
+        const validationErrors = formatZodError(parseResult.error);
+        this.configError = `Invalid config at ${this.configPath}: ${validationErrors}`;
+        console.error(`[opus-orchestra] ${this.configError}`);
+        console.error('[opus-orchestra] Using default configuration. Fix the config file or delete it to use defaults.');
+        this.configLoaded = false;
+      }
     } catch (error) {
-      console.error(`Failed to load config from ${this.configPath}:`, error);
+      // JSON parse error or file read error
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.configError = `Failed to parse config at ${this.configPath}: ${errorMessage}`;
+      console.error(`[opus-orchestra] ${this.configError}`);
+      console.error('[opus-orchestra] Using default configuration. Fix the config file or delete it to use defaults.');
+
+      // Keep using defaults
+      this.configLoaded = false;
     }
   }
 
   /**
    * Watch configuration file for changes.
+   * If watching fails, config changes won't be detected until restart.
+   * Safe to call multiple times - closes existing watcher before creating new one.
    */
   private watchConfig(): void {
     if (!this.configPath || !fs.existsSync(this.configPath)) {
       return;
+    }
+
+    // Close existing watcher if any (prevents resource leak on multiple calls)
+    if (this.watcher) {
+      this.watcher.close();
+      this.watcher = null;
     }
 
     try {
@@ -107,8 +170,16 @@ export class FileConfigAdapter implements ConfigAdapter {
           }
         }
       });
+
+      // Handle watcher errors to prevent unhandled exceptions
+      this.watcher.on('error', (err) => {
+        console.error(`[opus-orchestra] Config file watcher error: ${err.message}`);
+      });
     } catch (error) {
-      console.error('Failed to watch config file:', error);
+      // Note: We use console.error here because this runs before the logger is initialized
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`[opus-orchestra] Failed to watch config file at ${this.configPath}: ${errorMessage}`);
+      console.error('[opus-orchestra] Config changes will not be detected until restart.');
     }
   }
 
@@ -120,7 +191,8 @@ export class FileConfigAdapter implements ConfigAdapter {
       try {
         callback(key);
       } catch (error) {
-        console.error('Config change callback error:', error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error(`[opus-orchestra] Config change callback error for '${key}': ${errorMessage}`);
       }
     }
   }
@@ -142,7 +214,9 @@ export class FileConfigAdapter implements ConfigAdapter {
 
       fs.writeFileSync(this.configPath, JSON.stringify(this.config, null, 2));
     } catch (error) {
-      console.error(`Failed to save config to ${this.configPath}:`, error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`[opus-orchestra] Failed to save config to ${this.configPath}: ${errorMessage}`);
+      console.error('[opus-orchestra] Configuration changes may not persist.');
     }
   }
 

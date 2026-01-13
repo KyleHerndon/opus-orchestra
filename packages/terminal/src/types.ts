@@ -2,7 +2,7 @@
  * Types for terminal UI
  */
 
-import type { AgentStatus, DiffStats } from '@opus-orchestra/core';
+import type { AgentStatus, DiffStats, Result } from '@opus-orchestra/core';
 
 /**
  * Todo item from Claude Code
@@ -23,7 +23,8 @@ export interface TerminalAgent {
   status: AgentStatus;
   repoPath: string;
   branch: string;
-  diffStats: DiffStats;
+  /** Diff stats result - can be success with data or failure with error */
+  diffStats: Result<DiffStats>;
   containerConfigName?: string;
   containerState?: string;
   pendingApproval?: string | null;

@@ -1,0 +1,30 @@
+{"level":"debug","time":"2026-01-12T09:10:53.083Z","component":"debug","component":"ContainerManager","msg":"Restored 0 containers"}
+{"level":"debug","time":"2026-01-12T09:10:53.115Z","component":"debug","component":"WorktreeManager","msg":"Scanning worktrees directory: /mnt/c/Users/Kyle/Documents/Godot/opus-orchestra/.worktrees/claude-alpha/packages/terminal/.worktrees"}
+{"level":"debug","time":"2026-01-12T09:10:53.115Z","component":"debug","component":"WorktreeManager","msg":"Worktrees directory does not exist"}
+{"level":"debug","time":"2026-01-12T09:10:53.115Z","component":"debug","component":"AgentPersistence","msg":"Loaded 0 agents from worktrees"}
+{"level":"debug","time":"2026-01-12T09:10:53.115Z","component":"debug","component":"AgentStatusTracker","data":{"statusInterval":1000,"todoInterval":2000,"diffInterval":60000},"msg":"Starting polling with config:"}
+{"level":"debug","time":"2026-01-12T09:10:53.116Z","component":"debug","component":"AgentStatusTracker","msg":"No status directories to watch"}
+{"level":"debug","time":"2026-01-12T09:10:53.116Z","component":"debug","component":"AgentStatusTracker","msg":"No worktree directories to watch"}
+{"level":"debug","time":"2026-01-12T09:10:53.214Z","component":"debug","component":"AgentStatusTracker","msg":"Polling stopped"}
+{"level":"debug","time":"2026-01-12T09:10:53.215Z","component":"debug","component":"AgentStatusTracker","msg":"Polling stopped"}
+{"level":"info","time":"2026-01-12T09:10:53.215Z","component":"debug","msg":"ServiceContainer disposed"}
+{"level":"debug","time":"2026-01-12T09:11:34.655Z","component":"debug","component":"ContainerManager","msg":"Restored 0 containers"}
+{"level":"debug","time":"2026-01-12T09:11:34.677Z","component":"debug","component":"WorktreeManager","msg":"Scanning worktrees directory: /mnt/c/Users/Kyle/Documents/Godot/opus-orchestra/.worktrees/claude-alpha/packages/terminal/.worktrees"}
+{"level":"debug","time":"2026-01-12T09:11:34.677Z","component":"debug","component":"WorktreeManager","msg":"Worktrees directory does not exist"}
+{"level":"debug","time":"2026-01-12T09:11:34.677Z","component":"debug","component":"AgentPersistence","msg":"Loaded 0 agents from worktrees"}
+{"level":"debug","time":"2026-01-12T09:11:34.678Z","component":"debug","component":"AgentStatusTracker","data":{"statusInterval":1000,"todoInterval":2000,"diffInterval":60000},"msg":"Starting polling with config:"}
+{"level":"debug","time":"2026-01-12T09:11:34.678Z","component":"debug","component":"AgentStatusTracker","msg":"No status directories to watch"}
+{"level":"debug","time":"2026-01-12T09:11:34.678Z","component":"debug","component":"AgentStatusTracker","msg":"No worktree directories to watch"}
+{"level":"debug","time":"2026-01-12T09:11:34.755Z","component":"debug","component":"AgentStatusTracker","msg":"Polling stopped"}
+{"level":"debug","time":"2026-01-12T09:11:34.756Z","component":"debug","component":"AgentStatusTracker","msg":"Polling stopped"}
+{"level":"info","time":"2026-01-12T09:11:34.756Z","component":"debug","msg":"ServiceContainer disposed"}
+{"level":"debug","time":"2026-01-12T09:14:43.823Z","component":"debug","component":"ContainerManager","msg":"Restored 0 containers"}
+{"level":"debug","time":"2026-01-12T09:14:43.842Z","component":"debug","component":"WorktreeManager","msg":"Scanning worktrees directory: /mnt/c/Users/Kyle/Documents/Godot/opus-orchestra/.worktrees/claude-alpha/packages/terminal/.worktrees"}
+{"level":"debug","time":"2026-01-12T09:14:43.842Z","component":"debug","component":"WorktreeManager","msg":"Worktrees directory does not exist"}
+{"level":"debug","time":"2026-01-12T09:14:43.842Z","component":"debug","component":"AgentPersistence","msg":"Loaded 0 agents from worktrees"}
+{"level":"debug","time":"2026-01-12T09:14:43.843Z","component":"debug","component":"AgentStatusTracker","data":{"statusInterval":1000,"todoInterval":2000,"diffInterval":60000},"msg":"Starting polling with config:"}
+{"level":"debug","time":"2026-01-12T09:14:43.843Z","component":"debug","component":"AgentStatusTracker","msg":"No status directories to watch"}
+{"level":"debug","time":"2026-01-12T09:14:43.843Z","component":"debug","component":"AgentStatusTracker","msg":"No worktree directories to watch"}
+{"level":"debug","time":"2026-01-12T09:14:43.923Z","component":"debug","component":"AgentStatusTracker","msg":"Polling stopped"}
+{"level":"debug","time":"2026-01-12T09:14:43.923Z","component":"debug","component":"AgentStatusTracker","msg":"Polling stopped"}
+{"level":"info","time":"2026-01-12T09:14:43.923Z","component":"debug","msg":"ServiceContainer disposed"}

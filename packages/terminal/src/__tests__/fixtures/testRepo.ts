@@ -13,16 +13,24 @@ export interface TestRepo {
 }
 
 /**
- * Create a temporary git repository for testing.
- * Includes initial commit and basic structure.
+ * Cached template repo path - created once, copied for each test.
+ * This avoids running git init/config/commit for every test.
  */
-export function createTestRepo(prefix = 'opus-test-'): TestRepo {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+let cachedTemplateRepo: string | null = null;
 
-  // Initialize git repo
+/**
+ * Get or create the template git repo.
+ * Runs git commands only once per test session.
+ */
+function getTemplateRepo(): string {
+  if (cachedTemplateRepo && fs.existsSync(cachedTemplateRepo)) {
+    return cachedTemplateRepo;
+  }
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opus-template-'));
+
+  // Initialize git repo (only done once)
   execSync('git init', { cwd: tempDir, stdio: 'pipe' });
-
-  // Configure git user for commits
   execSync('git config user.email "test@test.com"', { cwd: tempDir, stdio: 'pipe' });
   execSync('git config user.name "Test User"', { cwd: tempDir, stdio: 'pipe' });
 
@@ -35,12 +43,27 @@ export function createTestRepo(prefix = 'opus-test-'): TestRepo {
   execSync('git add -A', { cwd: tempDir, stdio: 'pipe' });
   execSync('git commit -m "Initial commit"', { cwd: tempDir, stdio: 'pipe' });
 
-  // Create main branch (ensure we're on main)
   try {
     execSync('git branch -M main', { cwd: tempDir, stdio: 'pipe' });
   } catch {
-    // Already on main or branch exists
+    // Already on main
   }
+
+  cachedTemplateRepo = tempDir;
+  return tempDir;
+}
+
+/**
+ * Create a temporary git repository for testing.
+ * Uses cached template - just cp -r instead of running git commands.
+ */
+export function createTestRepo(prefix = 'opus-test-'): TestRepo {
+  const template = getTemplateRepo();
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+
+  // Remove empty dir created by mkdtemp, then copy template
+  fs.rmSync(tempDir, { recursive: true });
+  execSync(`cp -r "${template}" "${tempDir}"`, { stdio: 'pipe' });
 
   return {
     path: tempDir,

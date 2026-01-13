@@ -11,6 +11,7 @@ import {
     containerGroups,
     loading,
     uiScale,
+    versionInfo,
     updateAgent,
     addAgent,
     removeAgent,
@@ -52,6 +53,9 @@ window.addEventListener('message', (event) => {
             }
             if (message.uiScale) {
                 uiScale.set(message.uiScale);
+            }
+            if (message.versionInfo) {
+                versionInfo.set(message.versionInfo);
             }
             break;
         }

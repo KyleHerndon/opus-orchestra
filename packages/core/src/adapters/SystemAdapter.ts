@@ -220,4 +220,37 @@ export interface SystemAdapter {
    * @returns Modification time in milliseconds
    */
   getMtime(path: string): number;
+
+  // ========== Safe File Operations (Optional) ==========
+  // These methods provide defensive alternatives that don't throw on ENOENT.
+  // Implementations are optional for backwards compatibility.
+
+  /**
+   * Safe file read - returns null instead of throwing on ENOENT.
+   * @param path - File path
+   * @returns File contents or null if file doesn't exist
+   */
+  safeReadFile?(path: string): string | null;
+
+  /**
+   * Safe directory read - returns empty array on ENOENT.
+   * @param path - Directory path
+   * @returns Array of entry names, empty if dir doesn't exist
+   */
+  safeReadDir?(path: string): string[];
+
+  /**
+   * Safe stat - returns null instead of throwing on ENOENT.
+   * @param path - Path to stat
+   * @returns File stats or null if doesn't exist
+   */
+  safeStat?(path: string): FileStat | null;
+
+  /**
+   * Atomic write - writes to temp file, then renames.
+   * Ensures partial writes don't corrupt data.
+   * @param path - Target file path
+   * @param content - Content to write
+   */
+  atomicWrite?(path: string, content: string): void;
 }

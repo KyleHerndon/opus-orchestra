@@ -77,9 +77,8 @@ describe('FileConfigAdapter', () => {
 
   describe('onDidChange', () => {
     it('should register change listener', () => {
-      let callCount = 0;
       const unsubscribe = adapter.onDidChange(() => {
-        callCount++;
+        // listener registered
       });
 
       expect(typeof unsubscribe).toBe('function');

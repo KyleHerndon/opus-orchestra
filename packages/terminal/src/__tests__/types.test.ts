@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { ok } from '@opus-orchestra/core';
 import type {
   TerminalAgent,
   DashboardStats,
@@ -19,11 +20,11 @@ describe('Types', () => {
         status: 'working',
         repoPath: '/path/to/repo',
         branch: 'claude-alpha',
-        diffStats: {
+        diffStats: ok({
           insertions: 10,
           deletions: 5,
           filesChanged: 3,
-        },
+        }),
         todos: [],
         lastInteractionTime: new Date(),
       };
@@ -40,11 +41,11 @@ describe('Types', () => {
         status: 'waiting-approval',
         repoPath: '/path/to/repo',
         branch: 'claude-bravo',
-        diffStats: {
+        diffStats: ok({
           insertions: 0,
           deletions: 0,
           filesChanged: 0,
-        },
+        }),
         containerConfigName: 'docker',
         pendingApproval: 'Write to file',
         todos: [

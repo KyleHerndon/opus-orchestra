@@ -1,51 +1,37 @@
 /**
  * ServiceContainer - Composition root for terminal package
  *
- * Creates and wires all adapters, services, and managers for the terminal UI.
- * Uses file-based storage and config instead of VS Code APIs.
+ * Thin wrapper around core ServiceContainer that provides
+ * terminal-specific adapters (file-based storage, tmux terminal).
  */
 
 import {
+  // Core ServiceContainer
+  ServiceContainer as CoreServiceContainer,
+
   // Adapters
   NodeSystemAdapter,
-  SystemAdapter,
 
-  // Services
-  Logger,
-  ILogger,
-  EventBus,
-  IEventBus,
-  GitService,
-  IGitService,
-  StatusService,
-  IStatusService,
+  // Services (for creating TmuxService before core)
   TmuxService,
-  ITmuxService,
-  TodoService,
-  ITodoService,
-
-  // Managers
-  WorktreeManager,
-  IWorktreeManager,
-  AgentStatusTracker,
-  IAgentStatusTracker,
-  AgentPersistence,
-  IAgentPersistence,
-  ContainerManager,
-  IContainerManager,
-  IContainerConfigProvider,
-
-  // Container adapters
-  ContainerRegistry,
-  UnisolatedAdapter,
-  DockerAdapter,
+  createLogger,
 
   // Types
   ConfigAdapter,
   StorageAdapter,
   UIAdapter,
   TerminalAdapter,
-  ContainerConfigRef,
+  ILogger,
+  IEventBus,
+  IGitService,
+  IStatusService,
+  ITmuxService,
+  ITodoService,
+  IWorktreeManager,
+  IAgentStatusTracker,
+  IAgentPersistence,
+  IContainerManager,
+  ContainerRegistry,
 } from '@opus-orchestra/core';
 
 import { FileStorageAdapter } from '../adapters/FileStorageAdapter.js';
@@ -54,126 +40,95 @@ import { TerminalUIAdapter } from '../adapters/TerminalUIAdapter.js';
 import { TmuxTerminalAdapter } from '../adapters/TmuxTerminalAdapter.js';
 
 /**
- * Simple container config provider that returns unisolated by default.
- * Can be extended to read config files from the filesystem.
- */
-class SimpleContainerConfigProvider implements IContainerConfigProvider {
-  loadConfigRef(prefixedName: string, _repoPath: string): ContainerConfigRef | undefined {
-    // Parse the prefixed name
-    if (prefixedName === 'unisolated' || !prefixedName) {
-      return { type: 'unisolated' };
-    }
-
-    // For docker configs, return a basic docker config
-    // The actual docker image is configured separately
-    if (prefixedName.startsWith('docker:') || prefixedName === 'docker') {
-      return { type: 'docker' };
-    }
-
-    // Default to unisolated
-    return { type: 'unisolated' };
-  }
-
-  getDefinitionPath(_prefixedName: string, _repoPath: string): string | undefined {
-    // No definition files in simple mode
-    return undefined;
-  }
-}
-
-/**
- * Container for all terminal application services.
+ * Terminal-specific ServiceContainer.
+ *
+ * Wraps the core ServiceContainer with terminal-specific adapters:
+ * - FileConfigAdapter: Reads config from filesystem
+ * - FileStorageAdapter: Persists data to filesystem
+ * - TerminalUIAdapter: Terminal-based UI interactions
+ * - TmuxTerminalAdapter: Tmux session management
  */
 export class ServiceContainer {
-  // Adapters
-  public readonly system: SystemAdapter;
-  public readonly storage: StorageAdapter;
-  public readonly config: ConfigAdapter;
-  public readonly ui: UIAdapter;
-  public readonly terminal: TerminalAdapter;
+  // The core container does all the heavy lifting
+  private _core: CoreServiceContainer;
 
-  // Core services
-  public readonly logger: ILogger;
-  public readonly eventBus: IEventBus;
-  public readonly gitService: IGitService;
-  public readonly statusService: IStatusService;
-  public readonly tmuxService: ITmuxService;
-  public readonly todoService: ITodoService;
+  // Terminal-specific adapters (for dispose)
+  private _fileConfig: FileConfigAdapter;
 
-  // Core managers
-  public readonly worktreeManager: IWorktreeManager;
-  public readonly statusTracker: IAgentStatusTracker;
-  public readonly persistence: IAgentPersistence;
-  public readonly containerManager: IContainerManager;
+  // Expose all core services via getters for compatibility
+  get system() { return this._core.system; }
+  get storage(): StorageAdapter { return this._core.storage; }
+  get config(): ConfigAdapter { return this._core.config; }
+  get ui(): UIAdapter { return this._core.ui; }
+  get terminal(): TerminalAdapter { return this._core.terminal; }
 
-  // Container registry
-  public readonly containerRegistry: ContainerRegistry;
+  get logger(): ILogger { return this._core.logger; }
+  get eventBus(): IEventBus { return this._core.eventBus; }
+  get gitService(): IGitService { return this._core.gitService; }
+  get statusService(): IStatusService { return this._core.statusService; }
+  get tmuxService(): ITmuxService { return this._core.tmuxService; }
+  get todoService(): ITodoService { return this._core.todoService; }
+
+  get worktreeManager(): IWorktreeManager { return this._core.worktreeManager; }
+  get statusTracker(): IAgentStatusTracker { return this._core.statusTracker; }
+  get persistence(): IAgentPersistence { return this._core.persistence; }
+  get containerManager(): IContainerManager { return this._core.containerManager; }
+  get containerRegistry(): ContainerRegistry { return this._core.containerRegistry; }
 
   constructor(workingDirectory: string) {
-    // 1. Create config adapter first (needed to read settings)
-    this.config = new FileConfigAdapter(workingDirectory);
+    // 1. Create terminal-specific adapters
+    this._fileConfig = new FileConfigAdapter(workingDirectory);
+    const terminalType = this._fileConfig.get('terminalType');
 
-    // 2. Create other adapters using config values
-    const terminalType = this.config.get('terminalType');
-    this.system = new NodeSystemAdapter(terminalType);
-    this.storage = new FileStorageAdapter(workingDirectory);
-    this.ui = new TerminalUIAdapter();
-    this.terminal = new TmuxTerminalAdapter(this.system);
+    const system = new NodeSystemAdapter(terminalType);
+    const storage = new FileStorageAdapter(workingDirectory);
+    const ui = new TerminalUIAdapter();
 
-    // 3. Create core services
-    this.logger = new Logger(workingDirectory, this.config.get('logLevel'));
-    this.eventBus = new EventBus(this.logger);
-    this.gitService = new GitService(this.system, this.logger);
-    this.statusService = new StatusService(this.system, this.logger);
-    this.tmuxService = new TmuxService(
-      this.system,
-      this.config.get('tmuxSessionPrefix'),
-      this.logger
-    );
-    this.todoService = new TodoService(this.logger);
-
-    // 4. Create core managers
-    this.worktreeManager = new WorktreeManager(
-      this.system,
-      this.config,
-      this.logger
-    );
-    this.statusTracker = new AgentStatusTracker(
-      this.statusService,
-      this.gitService,
-      this.todoService,
-      this.eventBus,
-      this.config,
-      this.logger
-    );
-    this.persistence = new AgentPersistence(
-      this.worktreeManager,
-      this.storage,
-      this.logger
+    // 2. Create TmuxService early (needed by TmuxTerminalAdapter)
+    // We create our own logger here for TmuxService since core hasn't been created yet
+    const logDir = `${workingDirectory}/.opus-orchestra`;
+    const earlyLogger = createLogger(logDir, this._fileConfig.get('logLevel'));
+    const tmuxService = new TmuxService(
+      system,
+      this._fileConfig.get('tmuxSessionPrefix'),
+      earlyLogger
     );
 
-    // 5. Create container registry with adapters
-    this.containerRegistry = new ContainerRegistry();
-    this.containerRegistry.register(new UnisolatedAdapter(this.system));
-    this.containerRegistry.register(new DockerAdapter(this.system, this.logger));
+    // 3. Create terminal adapter with TmuxService
+    const terminal = new TmuxTerminalAdapter(system, tmuxService);
 
-    // 6. Create container manager
-    const configProvider = new SimpleContainerConfigProvider();
-    this.containerManager = new ContainerManager(
-      this.containerRegistry,
-      configProvider,
-      this.eventBus,
-      this.storage,
-      this.logger
-    );
+    // 4. Create core container with terminal adapters
+    this._core = new CoreServiceContainer({
+      workingDirectory,
+      adapters: {
+        system,
+        config: this._fileConfig,
+        storage,
+        ui,
+        terminal,
+      },
+      services: {
+        repoPath: workingDirectory,
+      },
+    });
+  }
+
+  /**
+   * Check if the container has been disposed
+   */
+  get isDisposed(): boolean {
+    return this._core.isDisposed;
   }
 
   /**
    * Dispose all resources.
    */
   dispose(): void {
-    if (this.config instanceof FileConfigAdapter) {
-      (this.config as FileConfigAdapter).dispose();
-    }
+    // Dispose terminal-specific resources
+    this._fileConfig.dispose();
+
+    // Dispose core container (stops polling, cleans up)
+    this._core.dispose();
   }
 }
 
@@ -211,7 +166,7 @@ export function getContainer(): ServiceContainer {
  * Check if the container has been initialized.
  */
 export function isContainerInitialized(): boolean {
-  return containerInstance !== null;
+  return containerInstance !== null && !containerInstance.isDisposed;
 }
 
 /**

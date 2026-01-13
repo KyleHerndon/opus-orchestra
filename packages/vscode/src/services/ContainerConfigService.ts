@@ -51,7 +51,7 @@ export interface DiscoveredConfig {
 let containerConfigServiceInstance: ContainerConfigService | null = null;
 
 export class ContainerConfigService implements IContainerConfigProvider {
-    private readonly logger = isLoggerInitialized() ? getLogger().child('ContainerConfigService') : null;
+    private readonly logger = isLoggerInitialized() ? getLogger().child({ component: 'ContainerConfigService' }) : null;
 
     /**
      * Discover all available container configurations.

@@ -60,8 +60,15 @@ export interface ContainerGroup {
     options: ContainerOption[];
 }
 
+export interface VersionInfo {
+    version: string;
+    branch: string;
+    timestamp: string;
+    dirty: boolean;
+}
+
 export type WebviewOutgoingMessage =
-    | { command: 'init'; agents: AgentUpdate[]; repoPaths: string[]; containerGroups: ContainerGroup[]; uiScale: number }
+    | { command: 'init'; agents: AgentUpdate[]; repoPaths: string[]; containerGroups: ContainerGroup[]; uiScale: number; versionInfo: VersionInfo }
     | { command: 'updateAgents'; agents: AgentUpdate[] }
     | { command: 'addCard'; agent: AgentUpdate }
     | { command: 'removeCard'; agentId: number }
