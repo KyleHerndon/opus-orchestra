@@ -8,17 +8,17 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { StatusService } from '../../services/StatusService';
-import { NodeSystemAdapter } from '../../adapters/NodeSystemAdapter';
-import { createTempDir, TestRepo } from '../fixtures/testRepo';
+import { SystemAdapter } from '../../adapters/SystemAdapter';
+import { createTempDir, TestRepo, getTestSystemAdapter } from '../fixtures/testRepo';
 
 describe('StatusService', () => {
   let tempDir: TestRepo;
-  let system: NodeSystemAdapter;
+  let system: SystemAdapter;
   let status: StatusService;
 
   beforeEach(() => {
     tempDir = createTempDir('status-service-test-');
-    system = new NodeSystemAdapter('bash');
+    system = getTestSystemAdapter();
     status = new StatusService(system);
   });
 

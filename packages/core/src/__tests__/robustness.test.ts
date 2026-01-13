@@ -12,13 +12,13 @@ import { GitService } from '../services/GitService';
 import { StatusService } from '../services/StatusService';
 import { WorktreeManager } from '../managers/WorktreeManager';
 import { AgentPersistence } from '../managers/AgentPersistence';
-import { NodeSystemAdapter } from '../adapters/NodeSystemAdapter';
 import type { SystemAdapter, ConfigAdapter } from '../adapters';
 import type { Agent, PersistedAgent } from '../types/agent';
 import type { IWorktreeManager } from '../managers/WorktreeManager';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { getTestSystemAdapter } from './fixtures/testRepo';
 
 // Create temp directory for tests
 function createTempDir(prefix: string): string {
@@ -238,7 +238,7 @@ describe('StatusService Robustness', () => {
 
   beforeEach(() => {
     tempDir = createTempDir('status-test-');
-    system = new NodeSystemAdapter('bash');
+    system = getTestSystemAdapter();
     statusService = new StatusService(system);
   });
 
@@ -302,7 +302,7 @@ describe('WorktreeManager Robustness', () => {
 
   beforeEach(() => {
     tempDir = createTempDir('worktree-test-');
-    system = new NodeSystemAdapter('bash');
+    system = getTestSystemAdapter();
     config = {
       get: vi.fn((key: string) => {
         if (key === 'worktreeDirectory') {return '.worktrees';}
@@ -464,16 +464,22 @@ describe('AgentPersistence Robustness', () => {
 });
 
 describe('NodeSystemAdapter Robustness', () => {
-  let adapter: NodeSystemAdapter;
+  let adapter: SystemAdapter;
+  let tempDir: string;
 
   beforeEach(() => {
-    adapter = new NodeSystemAdapter('bash');
+    adapter = getTestSystemAdapter();
+    tempDir = createTempDir('adapter-robustness-');
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tempDir);
   });
 
   it('should handle non-existent command', () => {
     // Should throw or return error string
     try {
-      const result = adapter.execSync('nonexistent-command-12345', '/tmp');
+      const result = adapter.execSync('nonexistent-command-12345', tempDir);
       expect(result).toBeDefined();
     } catch (e) {
       // Expected to throw for non-existent command
@@ -483,7 +489,7 @@ describe('NodeSystemAdapter Robustness', () => {
 
   it('should handle command with very long output', () => {
     // Generate a command that produces long output
-    const result = adapter.execSync('echo ' + 'x'.repeat(1000), '/tmp');
+    const result = adapter.execSync('echo ' + 'x'.repeat(1000), tempDir);
 
     expect(result).toBeDefined();
   });
@@ -491,30 +497,24 @@ describe('NodeSystemAdapter Robustness', () => {
   it('should handle short-running command', () => {
     // Just verify the adapter handles basic commands gracefully
     expect(() => {
-      adapter.execSync('echo test', '/tmp');
+      adapter.execSync('echo test', tempDir);
     }).not.toThrow();
   });
 
   it('should handle exists for various paths', () => {
-    expect(adapter.exists('/')).toBe(true);
-    expect(adapter.exists('/nonexistent/path/12345')).toBe(false);
-    // Empty string behavior may vary
+    // Check that temp dir exists (cross-platform)
+    expect(adapter.exists(tempDir)).toBe(true);
+    expect(adapter.exists(path.join(tempDir, 'nonexistent', 'path', '12345'))).toBe(false);
   });
 
   it('should handle mkdir for nested paths', () => {
-    const tempDir = createTempDir('adapter-test-');
+    const deepPath = path.join(tempDir, 'a', 'b', 'c', 'd', 'e');
 
-    try {
-      const deepPath = path.join(tempDir, 'a', 'b', 'c', 'd', 'e');
+    expect(() => {
+      adapter.mkdir(deepPath);
+    }).not.toThrow();
 
-      expect(() => {
-        adapter.mkdir(deepPath);
-      }).not.toThrow();
-
-      expect(fs.existsSync(deepPath)).toBe(true);
-    } finally {
-      cleanupTempDir(tempDir);
-    }
+    expect(fs.existsSync(deepPath)).toBe(true);
   });
 });
 

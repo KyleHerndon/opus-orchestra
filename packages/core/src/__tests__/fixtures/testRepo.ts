@@ -5,11 +5,41 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { execSync } from 'node:child_process';
+import { NodeSystemAdapter } from '../../adapters/NodeSystemAdapter';
+import type { SystemAdapter } from '../../adapters/SystemAdapter';
 
 export interface TestRepo {
   path: string;
   cleanup: () => void;
+}
+
+/**
+ * Default system adapter for tests.
+ * Uses 'wsl' terminal type on Windows, 'bash' on Unix.
+ */
+function getDefaultAdapter(): SystemAdapter {
+  const terminalType = os.platform() === 'win32' ? 'wsl' : 'bash';
+  return new NodeSystemAdapter(terminalType);
+}
+
+/**
+ * Shared adapter instance for test fixtures
+ */
+let sharedAdapter: SystemAdapter | null = null;
+
+function getSharedAdapter(): SystemAdapter {
+  if (!sharedAdapter) {
+    sharedAdapter = getDefaultAdapter();
+  }
+  return sharedAdapter;
+}
+
+/**
+ * Get a SystemAdapter configured for the current platform.
+ * Tests should use this instead of hardcoding terminal types.
+ */
+export function getTestSystemAdapter(): SystemAdapter {
+  return getSharedAdapter();
 }
 
 /**
@@ -27,12 +57,13 @@ function getTemplateRepo(): string {
     return cachedTemplateRepo;
   }
 
+  const adapter = getSharedAdapter();
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opus-core-template-'));
 
   // Initialize git repo (only done once)
-  execSync('git init', { cwd: tempDir, stdio: 'pipe' });
-  execSync('git config user.email "test@test.com"', { cwd: tempDir, stdio: 'pipe' });
-  execSync('git config user.name "Test User"', { cwd: tempDir, stdio: 'pipe' });
+  adapter.execSync('git init', tempDir);
+  adapter.execSync('git config user.email "test@test.com"', tempDir);
+  adapter.execSync('git config user.name "Test User"', tempDir);
 
   // Create initial structure
   fs.writeFileSync(path.join(tempDir, 'README.md'), '# Test Repo\n');
@@ -40,11 +71,11 @@ function getTemplateRepo(): string {
   fs.writeFileSync(path.join(tempDir, 'src', 'index.ts'), 'export const hello = "world";\n');
 
   // Initial commit
-  execSync('git add -A', { cwd: tempDir, stdio: 'pipe' });
-  execSync('git commit -m "Initial commit"', { cwd: tempDir, stdio: 'pipe' });
+  adapter.execSync('git add -A', tempDir);
+  adapter.execSync('git commit -m "Initial commit"', tempDir);
 
   try {
-    execSync('git branch -M main', { cwd: tempDir, stdio: 'pipe' });
+    adapter.execSync('git branch -M main', tempDir);
   } catch {
     // Already on main
   }
@@ -55,15 +86,16 @@ function getTemplateRepo(): string {
 
 /**
  * Create a temporary git repository for testing.
- * Uses cached template - just cp -r instead of running git commands.
+ * Uses cached template - copies directory instead of running git commands.
  */
 export function createTestRepo(prefix = 'opus-core-test-'): TestRepo {
+  const adapter = getSharedAdapter();
   const template = getTemplateRepo();
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 
   // Remove empty dir created by mkdtemp, then copy template
   fs.rmSync(tempDir, { recursive: true });
-  execSync(`cp -r "${template}" "${tempDir}"`, { stdio: 'pipe' });
+  adapter.copyDirRecursive(template, tempDir);
 
   return {
     path: tempDir,
@@ -115,15 +147,14 @@ export function createWorktree(
   repoPath: string,
   branchName: string
 ): string {
+  const adapter = getSharedAdapter();
   const worktreeDir = path.join(repoPath, '.worktrees');
   fs.mkdirSync(worktreeDir, { recursive: true });
 
   const worktreePath = path.join(worktreeDir, branchName);
+  const terminalWorktreePath = adapter.convertPath(worktreePath, 'terminal');
 
-  execSync(`git worktree add -b "${branchName}" "${worktreePath}"`, {
-    cwd: repoPath,
-    stdio: 'pipe',
-  });
+  adapter.execSync(`git worktree add -b "${branchName}" "${terminalWorktreePath}"`, repoPath);
 
   return worktreePath;
 }
@@ -137,9 +168,10 @@ export function addAndCommit(
   content: string,
   message: string
 ): void {
+  const adapter = getSharedAdapter();
   fs.writeFileSync(path.join(repoPath, filename), content);
-  execSync('git add -A', { cwd: repoPath, stdio: 'pipe' });
-  execSync(`git commit -m "${message}"`, { cwd: repoPath, stdio: 'pipe' });
+  adapter.execSync('git add -A', repoPath);
+  adapter.execSync(`git commit -m "${message}"`, repoPath);
 }
 
 /**

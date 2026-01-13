@@ -8,9 +8,9 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { WorktreeManager } from '../../managers/WorktreeManager';
-import { NodeSystemAdapter } from '../../adapters/NodeSystemAdapter';
 import { ConfigAdapter } from '../../adapters/ConfigAdapter';
-import { createTestRepoWithConfig, TestRepo } from '../fixtures/testRepo';
+import { SystemAdapter } from '../../adapters/SystemAdapter';
+import { createTestRepoWithConfig, TestRepo, getTestSystemAdapter } from '../fixtures/testRepo';
 
 /**
  * Simple ConfigAdapter implementation for testing
@@ -55,13 +55,13 @@ class TestConfigAdapter implements ConfigAdapter {
 
 describe('WorktreeManager', () => {
   let testRepo: TestRepo;
-  let system: NodeSystemAdapter;
+  let system: SystemAdapter;
   let config: TestConfigAdapter;
   let manager: WorktreeManager;
 
   beforeEach(() => {
     testRepo = createTestRepoWithConfig('worktree-manager-test-');
-    system = new NodeSystemAdapter('bash');
+    system = getTestSystemAdapter();
     config = new TestConfigAdapter({ worktreeDirectory: '.worktrees' });
     manager = new WorktreeManager(system, config);
   });

@@ -8,14 +8,17 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { NodeSystemAdapter } from '../../adapters/NodeSystemAdapter';
-import { createTempDir, TestRepo } from '../fixtures/testRepo';
+import { SystemAdapter } from '../../adapters/SystemAdapter';
+import { createTempDir, TestRepo, getTestSystemAdapter } from '../fixtures/testRepo';
 
 describe('NodeSystemAdapter', () => {
   let adapter: NodeSystemAdapter;
+  let execAdapter: SystemAdapter; // Platform-appropriate adapter for command execution
   let tempDir: TestRepo;
 
   beforeEach(() => {
     adapter = new NodeSystemAdapter('bash');
+    execAdapter = getTestSystemAdapter();
     tempDir = createTempDir('system-adapter-test-');
   });
 
@@ -147,24 +150,25 @@ describe('NodeSystemAdapter', () => {
   });
 
   describe('command execution', () => {
+    // These tests use execAdapter which auto-selects the right terminal type (wsl on Windows, bash on Unix)
     it('can execute sync commands', () => {
-      const result = adapter.execSync('echo hello', tempDir.path);
+      const result = execAdapter.execSync('echo hello', tempDir.path);
       expect(result.trim()).toBe('hello');
     });
 
     it('can execute async commands', async () => {
-      const result = await adapter.exec('echo world', tempDir.path);
+      const result = await execAdapter.exec('echo world', tempDir.path);
       expect(result.trim()).toBe('world');
     });
 
     it('throws on failed sync command', () => {
       expect(() => {
-        adapter.execSync('exit 1', tempDir.path);
+        execAdapter.execSync('exit 1', tempDir.path);
       }).toThrow();
     });
 
     it('rejects on failed async command', async () => {
-      await expect(adapter.exec('exit 1', tempDir.path)).rejects.toThrow();
+      await expect(execAdapter.exec('exit 1', tempDir.path)).rejects.toThrow();
     });
   });
 });
