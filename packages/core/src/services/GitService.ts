@@ -114,6 +114,11 @@ export class GitService implements IGitService {
    * Get the base branch (main or master)
    */
   async getBaseBranch(repoPath: string): Promise<string> {
+    // Fail fast if not a git repo
+    if (!this.isGitRepo(repoPath)) {
+      return 'HEAD~1';
+    }
+
     try {
       const result = await this.system.exec('git branch -l main master', repoPath);
       const branches = result.trim().split('\n').map(b => b.replace(/^\*?\s*/, '').trim());
