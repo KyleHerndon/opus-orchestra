@@ -4,17 +4,20 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { FileConfigAdapter } from '../adapters/FileConfigAdapter.js';
+import { getTestSystemAdapter } from './fixtures/testRepo.js';
+import type { SystemAdapter } from '@opus-orchestra/core';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import * as os from 'node:os';
 
 describe('FileConfigAdapter', () => {
   let tempDir: string;
   let adapter: FileConfigAdapter;
+  let system: SystemAdapter;
 
   beforeEach(() => {
+    system = getTestSystemAdapter();
     // Create a temp directory for testing
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opus-test-'));
+    tempDir = fs.mkdtempSync(system.joinPath(os.tmpdir(), 'opus-test-'));
     adapter = new FileConfigAdapter(tempDir);
   });
 
@@ -53,10 +56,10 @@ describe('FileConfigAdapter', () => {
   describe('config file loading', () => {
     it('should load config from file when present', () => {
       // Create config directory and file
-      const configDir = path.join(tempDir, '.opus-orchestra');
+      const configDir = system.joinPath(tempDir, '.opus-orchestra');
       fs.mkdirSync(configDir, { recursive: true });
       fs.writeFileSync(
-        path.join(configDir, 'config.json'),
+        system.joinPath(configDir, 'config.json'),
         JSON.stringify({
           defaultAgentCount: 5,
           tmuxSessionPrefix: 'custom',

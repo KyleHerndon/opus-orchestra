@@ -9,7 +9,6 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { App } from '../components/App.js';
 import { AgentRow } from '../components/AgentRow.js';
 import { StatsBar } from '../components/StatsBar.js';
@@ -18,6 +17,7 @@ import { CreateAgentDialog } from '../components/CreateAgentDialog.js';
 import {
   createTestRepoWithConfig,
   createWorktree,
+  getTestSystemAdapter,
   TestRepo,
 } from './fixtures/testRepo.js';
 import {
@@ -211,15 +211,16 @@ describe('Dashboard Integration with Real Repo', () => {
   });
 
   it('should show agents after creation', async () => {
+    const system = getTestSystemAdapter();
     // Create an agent first
     createWorktree(testRepo.path, 'alpha', 'claude-alpha');
 
     // ARCHITECTURE: Worktree-only persistence - save agent metadata to worktree
-    const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
-    const metadataDir = path.join(worktreePath, '.opus-orchestra');
+    const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
+    const metadataDir = system.joinPath(worktreePath, '.opus-orchestra');
     fs.mkdirSync(metadataDir, { recursive: true });
     fs.writeFileSync(
-      path.join(metadataDir, 'agent.json'),
+      system.joinPath(metadataDir, 'agent.json'),
       JSON.stringify({
         id: 1,
         name: 'alpha',
@@ -240,15 +241,16 @@ describe('Dashboard Integration with Real Repo', () => {
   });
 
   it('should call onFocusAgent when Enter is pressed on selected agent', async () => {
+    const system = getTestSystemAdapter();
     // Create an agent
     createWorktree(testRepo.path, 'alpha', 'claude-alpha');
 
     // ARCHITECTURE: Worktree-only persistence - save agent metadata to worktree
-    const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
-    const metadataDir = path.join(worktreePath, '.opus-orchestra');
+    const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
+    const metadataDir = system.joinPath(worktreePath, '.opus-orchestra');
     fs.mkdirSync(metadataDir, { recursive: true });
     fs.writeFileSync(
-      path.join(metadataDir, 'agent.json'),
+      system.joinPath(metadataDir, 'agent.json'),
       JSON.stringify({
         id: 1,
         name: 'alpha',
@@ -287,6 +289,7 @@ describe('Dashboard Integration with Real Repo', () => {
 
 describe('Keyboard Navigation', () => {
   let testRepo: TestRepo;
+  const system = getTestSystemAdapter();
 
   beforeEach(() => {
     disposeContainer();
@@ -297,11 +300,11 @@ describe('Keyboard Navigation', () => {
     createWorktree(testRepo.path, 'bravo', 'claude-bravo');
 
     // ARCHITECTURE: Worktree-only persistence - save agent metadata to each worktree
-    const alphaPath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
-    const alphaMetadataDir = path.join(alphaPath, '.opus-orchestra');
+    const alphaPath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
+    const alphaMetadataDir = system.joinPath(alphaPath, '.opus-orchestra');
     fs.mkdirSync(alphaMetadataDir, { recursive: true });
     fs.writeFileSync(
-      path.join(alphaMetadataDir, 'agent.json'),
+      system.joinPath(alphaMetadataDir, 'agent.json'),
       JSON.stringify({
         id: 1,
         name: 'alpha',
@@ -312,11 +315,11 @@ describe('Keyboard Navigation', () => {
       })
     );
 
-    const bravoPath = path.join(testRepo.path, '.worktrees', 'claude-bravo');
-    const bravoMetadataDir = path.join(bravoPath, '.opus-orchestra');
+    const bravoPath = system.joinPath(testRepo.path, '.worktrees', 'claude-bravo');
+    const bravoMetadataDir = system.joinPath(bravoPath, '.opus-orchestra');
     fs.mkdirSync(bravoMetadataDir, { recursive: true });
     fs.writeFileSync(
-      path.join(bravoMetadataDir, 'agent.json'),
+      system.joinPath(bravoMetadataDir, 'agent.json'),
       JSON.stringify({
         id: 2,
         name: 'bravo',

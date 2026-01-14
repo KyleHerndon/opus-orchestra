@@ -1,6 +1,5 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
-import * as path from 'path';
 
 /**
  * Tests for Terminal Auto-Start Feature and Tmux Integration
@@ -11,16 +10,16 @@ import * as path from 'path';
 
 suite('Terminal Auto-Start Feature Test Suite', () => {
     // Load source files
-    const agentManagerPath = path.resolve(__dirname, '../../../src/agentManager.ts');
+    const agentManagerPath = `${__dirname}/../../../src/agentManager.ts`;
     // ExtensionConfig is now in the core package
-    const configPath = path.resolve(__dirname, '../../../../core/src/adapters/ConfigAdapter.ts');
+    const configPath = `${__dirname}/../../../../core/src/adapters/ConfigAdapter.ts`;
     // Events are now defined in core, vscode re-exports from there
-    const eventsPath = path.resolve(__dirname, '../../../../core/src/types/events.ts');
-    const configServicePath = path.resolve(__dirname, '../../../src/services/ConfigService.ts');
+    const eventsPath = `${__dirname}/../../../../core/src/types/events.ts`;
+    const configServicePath = `${__dirname}/../../../src/services/ConfigService.ts`;
     // TmuxService implementation is now in core, vscode re-exports from there
-    const tmuxServicePath = path.resolve(__dirname, '../../../../core/src/services/TmuxService.ts');
-    const tmuxServiceWrapperPath = path.resolve(__dirname, '../../../src/services/TmuxService.ts');
-    const packageJsonPath = path.resolve(__dirname, '../../../package.json');
+    const tmuxServicePath = `${__dirname}/../../../../core/src/services/TmuxService.ts`;
+    const tmuxServiceWrapperPath = `${__dirname}/../../../src/services/TmuxService.ts`;
+    const packageJsonPath = `${__dirname}/../../../package.json`;
 
     const agentManagerContent = fs.readFileSync(agentManagerPath, 'utf-8');
     const configContent = fs.readFileSync(configPath, 'utf-8');

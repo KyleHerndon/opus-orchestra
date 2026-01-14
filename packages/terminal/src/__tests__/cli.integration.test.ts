@@ -8,14 +8,18 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
+import type { SystemAdapter } from '@opus-orchestra/core';
 import {
   createTestRepoWithConfig,
   createWorktree,
+  getTestSystemAdapter,
   TestRepo,
 } from './fixtures/testRepo.js';
 import { disposeContainer } from '../services/ServiceContainer.js';
 import { runCommand } from '../cli.js';
+
+// Get system adapter for path operations
+const system: SystemAdapter = getTestSystemAdapter();
 
 /**
  * Run CLI command in-process (fast).
@@ -54,11 +58,11 @@ describe('CLI Integration Tests', async () => {
       createWorktree(testRepo.path, 'alpha', 'claude-alpha');
 
       // ARCHITECTURE: Worktree-only persistence - save agent metadata to worktree
-      const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
-      const metadataDir = path.join(worktreePath, '.opus-orchestra');
+      const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
+      const metadataDir = system.joinPath(worktreePath, '.opus-orchestra');
       fs.mkdirSync(metadataDir, { recursive: true });
       fs.writeFileSync(
-        path.join(metadataDir, 'agent.json'),
+        system.joinPath(metadataDir, 'agent.json'),
         JSON.stringify({
           id: 1,
           name: 'alpha',
@@ -89,11 +93,11 @@ describe('CLI Integration Tests', async () => {
       createWorktree(testRepo.path, 'bravo', 'claude-bravo');
 
       // ARCHITECTURE: Worktree-only persistence - save agent metadata to worktree
-      const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-bravo');
-      const metadataDir = path.join(worktreePath, '.opus-orchestra');
+      const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'claude-bravo');
+      const metadataDir = system.joinPath(worktreePath, '.opus-orchestra');
       fs.mkdirSync(metadataDir, { recursive: true });
       fs.writeFileSync(
-        path.join(metadataDir, 'agent.json'),
+        system.joinPath(metadataDir, 'agent.json'),
         JSON.stringify({
           id: 1,
           name: 'bravo',
@@ -113,11 +117,11 @@ describe('CLI Integration Tests', async () => {
       createWorktree(testRepo.path, 'charlie', 'claude-charlie');
 
       // ARCHITECTURE: Worktree-only persistence - save agent metadata to worktree
-      const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-charlie');
-      const metadataDir = path.join(worktreePath, '.opus-orchestra');
+      const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'claude-charlie');
+      const metadataDir = system.joinPath(worktreePath, '.opus-orchestra');
       fs.mkdirSync(metadataDir, { recursive: true });
       fs.writeFileSync(
-        path.join(metadataDir, 'agent.json'),
+        system.joinPath(metadataDir, 'agent.json'),
         JSON.stringify({
           id: 1,
           name: 'charlie',
@@ -146,7 +150,7 @@ describe('CLI Integration Tests', async () => {
       expect(result.stdout).toContain('Created 1 agent');
 
       // Verify worktree was created
-      const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
+      const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
       expect(fs.existsSync(worktreePath)).toBe(true);
     });
 
@@ -157,8 +161,8 @@ describe('CLI Integration Tests', async () => {
       expect(result.stdout).toContain('Created 2 agent');
 
       // Verify worktrees were created
-      expect(fs.existsSync(path.join(testRepo.path, '.worktrees', 'claude-alpha'))).toBe(true);
-      expect(fs.existsSync(path.join(testRepo.path, '.worktrees', 'claude-bravo'))).toBe(true);
+      expect(fs.existsSync(system.joinPath(testRepo.path, '.worktrees', 'claude-alpha'))).toBe(true);
+      expect(fs.existsSync(system.joinPath(testRepo.path, '.worktrees', 'claude-bravo'))).toBe(true);
     });
 
     it('should reject invalid count', async () => {
@@ -229,7 +233,7 @@ describe('CLI Integration Tests', async () => {
       await runCli(['agents', 'create'], testRepo.path);
 
       // Verify it exists
-      const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
+      const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
       expect(fs.existsSync(worktreePath)).toBe(true);
 
       // Delete with force
@@ -301,7 +305,7 @@ describe('Tmux Session Management', async () => {
 
     // Now test that `tmux new-session -A` recreates it
     // This is what attachToAgentSession uses
-    const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
+    const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
     const recreate = spawnSync(
       'tmux',
       ['new-session', '-A', '-d', '-s', sessionName, '-c', worktreePath],

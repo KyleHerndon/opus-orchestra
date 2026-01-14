@@ -3,13 +3,41 @@
  */
 
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import * as os from 'node:os';
-import { execSync } from 'node:child_process';
+import { NodeSystemAdapter, type SystemAdapter } from '@opus-orchestra/core';
 
 export interface TestRepo {
   path: string;
   cleanup: () => void;
+}
+
+/**
+ * Default system adapter for tests.
+ * Uses 'wsl' terminal type on Windows, 'bash' on Unix.
+ */
+function getDefaultAdapter(): SystemAdapter {
+  const terminalType = os.platform() === 'win32' ? 'wsl' : 'bash';
+  return new NodeSystemAdapter(terminalType);
+}
+
+/**
+ * Shared adapter instance for test fixtures
+ */
+let sharedAdapter: SystemAdapter | null = null;
+
+function getSharedAdapter(): SystemAdapter {
+  if (!sharedAdapter) {
+    sharedAdapter = getDefaultAdapter();
+  }
+  return sharedAdapter;
+}
+
+/**
+ * Get a SystemAdapter configured for the current platform.
+ * Tests should use this instead of hardcoding terminal types.
+ */
+export function getTestSystemAdapter(): SystemAdapter {
+  return getSharedAdapter();
 }
 
 /**
@@ -27,24 +55,25 @@ function getTemplateRepo(): string {
     return cachedTemplateRepo;
   }
 
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opus-template-'));
+  const adapter = getSharedAdapter();
+  const tempDir = fs.mkdtempSync(adapter.joinPath(os.tmpdir(), 'opus-template-'));
 
   // Initialize git repo (only done once)
-  execSync('git init', { cwd: tempDir, stdio: 'pipe' });
-  execSync('git config user.email "test@test.com"', { cwd: tempDir, stdio: 'pipe' });
-  execSync('git config user.name "Test User"', { cwd: tempDir, stdio: 'pipe' });
+  adapter.execSync('git init', tempDir);
+  adapter.execSync('git config user.email "test@test.com"', tempDir);
+  adapter.execSync('git config user.name "Test User"', tempDir);
 
   // Create initial structure
-  fs.writeFileSync(path.join(tempDir, 'README.md'), '# Test Repo\n');
-  fs.mkdirSync(path.join(tempDir, 'src'), { recursive: true });
-  fs.writeFileSync(path.join(tempDir, 'src', 'index.ts'), 'export const hello = "world";\n');
+  fs.writeFileSync(adapter.joinPath(tempDir, 'README.md'), '# Test Repo\n');
+  fs.mkdirSync(adapter.joinPath(tempDir, 'src'), { recursive: true });
+  fs.writeFileSync(adapter.joinPath(tempDir, 'src', 'index.ts'), 'export const hello = "world";\n');
 
   // Initial commit
-  execSync('git add -A', { cwd: tempDir, stdio: 'pipe' });
-  execSync('git commit -m "Initial commit"', { cwd: tempDir, stdio: 'pipe' });
+  adapter.execSync('git add -A', tempDir);
+  adapter.execSync('git commit -m "Initial commit"', tempDir);
 
   try {
-    execSync('git branch -M main', { cwd: tempDir, stdio: 'pipe' });
+    adapter.execSync('git branch -M main', tempDir);
   } catch {
     // Already on main
   }
@@ -58,12 +87,13 @@ function getTemplateRepo(): string {
  * Uses cached template - just cp -r instead of running git commands.
  */
 export function createTestRepo(prefix = 'opus-test-'): TestRepo {
+  const adapter = getSharedAdapter();
   const template = getTemplateRepo();
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const tempDir = fs.mkdtempSync(adapter.joinPath(os.tmpdir(), prefix));
 
   // Remove empty dir created by mkdtemp, then copy template
   fs.rmSync(tempDir, { recursive: true });
-  execSync(`cp -r "${template}" "${tempDir}"`, { stdio: 'pipe' });
+  adapter.copyDirRecursive(template, tempDir);
 
   return {
     path: tempDir,
@@ -84,10 +114,11 @@ export function createTestRepoWithConfig(
   prefix = 'opus-test-',
   config: Record<string, unknown> = {}
 ): TestRepo {
+  const adapter = getSharedAdapter();
   const repo = createTestRepo(prefix);
 
   // Create config directory
-  const configDir = path.join(repo.path, '.opus-orchestra');
+  const configDir = adapter.joinPath(repo.path, '.opus-orchestra');
   fs.mkdirSync(configDir, { recursive: true });
 
   // Write config file
@@ -101,7 +132,7 @@ export function createTestRepoWithConfig(
     ...config,
   };
   fs.writeFileSync(
-    path.join(configDir, 'config.json'),
+    adapter.joinPath(configDir, 'config.json'),
     JSON.stringify(defaultConfig, null, 2)
   );
 
@@ -113,18 +144,16 @@ export function createTestRepoWithConfig(
  */
 export function createWorktree(
   repoPath: string,
-  worktreeName: string,
   branchName: string
 ): string {
-  const worktreeDir = path.join(repoPath, '.worktrees');
+  const adapter = getSharedAdapter();
+  const worktreeDir = adapter.joinPath(repoPath, '.worktrees');
   fs.mkdirSync(worktreeDir, { recursive: true });
 
-  const worktreePath = path.join(worktreeDir, worktreeName);
+  const worktreePath = adapter.joinPath(worktreeDir, branchName);
+  const terminalWorktreePath = adapter.convertPath(worktreePath, 'terminal');
 
-  execSync(`git worktree add -b "${branchName}" "${worktreePath}"`, {
-    cwd: repoPath,
-    stdio: 'pipe',
-  });
+  adapter.execSync(`git worktree add -b "${branchName}" "${terminalWorktreePath}"`, repoPath);
 
   return worktreePath;
 }
@@ -133,27 +162,39 @@ export function createWorktree(
  * Remove a worktree from the test repo.
  */
 export function removeWorktree(repoPath: string, worktreePath: string): void {
-  execSync(`git worktree remove "${worktreePath}" --force`, {
-    cwd: repoPath,
-    stdio: 'pipe',
-  });
+  const adapter = getSharedAdapter();
+  const terminalWorktreePath = adapter.convertPath(worktreePath, 'terminal');
+  adapter.execSync(`git worktree remove "${terminalWorktreePath}" --force`, repoPath);
 }
 
 /**
  * Add a file to the repo and commit.
  */
-export function addAndCommit(repoPath: string, filename: string, content: string, message: string): void {
-  fs.writeFileSync(path.join(repoPath, filename), content);
-  execSync('git add -A', { cwd: repoPath, stdio: 'pipe' });
-  execSync(`git commit -m "${message}"`, { cwd: repoPath, stdio: 'pipe' });
+export function addAndCommit(
+  repoPath: string,
+  filename: string,
+  content: string,
+  message: string
+): void {
+  const adapter = getSharedAdapter();
+  fs.writeFileSync(adapter.joinPath(repoPath, filename), content);
+  adapter.execSync('git add -A', repoPath);
+  adapter.execSync(`git commit -m "${message}"`, repoPath);
 }
 
 /**
  * Make changes to a file without committing (for diff testing).
  */
-export function makeUncommittedChange(repoPath: string, filename: string, content: string): void {
-  const filePath = path.join(repoPath, filename);
-  const dir = path.dirname(filePath);
+export function makeUncommittedChange(
+  repoPath: string,
+  filename: string,
+  content: string
+): void {
+  const adapter = getSharedAdapter();
+  const filePath = adapter.joinPath(repoPath, filename);
+  // Get parent directory by finding last slash
+  const lastSlash = filePath.lastIndexOf('/');
+  const dir = lastSlash > 0 ? filePath.substring(0, lastSlash) : filePath;
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -164,21 +205,17 @@ export function makeUncommittedChange(repoPath: string, filename: string, conten
  * Get the current branch name.
  */
 export function getCurrentBranch(repoPath: string): string {
-  return execSync('git rev-parse --abbrev-ref HEAD', {
-    cwd: repoPath,
-    encoding: 'utf-8',
-  }).trim();
+  const adapter = getSharedAdapter();
+  return adapter.execSync('git rev-parse --abbrev-ref HEAD', repoPath).trim();
 }
 
 /**
  * Check if a branch exists.
  */
 export function branchExists(repoPath: string, branchName: string): boolean {
+  const adapter = getSharedAdapter();
   try {
-    execSync(`git rev-parse --verify "${branchName}"`, {
-      cwd: repoPath,
-      stdio: 'pipe',
-    });
+    adapter.execSync(`git rev-parse --verify "${branchName}"`, repoPath);
     return true;
   } catch {
     return false;

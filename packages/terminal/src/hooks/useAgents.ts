@@ -8,7 +8,6 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { TerminalAgent, DashboardStats } from '../types.js';
 import {
@@ -16,7 +15,7 @@ import {
   getContainer,
   type ServiceContainer,
 } from '../services/ServiceContainer.js';
-import { getAvailableNames, ok, err, isOk, unwrapOr, type PersistedAgent, type Agent, type Result, type DiffStats } from '@opus-orchestra/core';
+import { getAvailableNames, ok, isOk, unwrapOr, type PersistedAgent, type Agent, type SystemAdapter } from '@opus-orchestra/core';
 import { TmuxTerminalAdapter } from '../adapters/TmuxTerminalAdapter.js';
 
 // Session naming is now handled by TmuxService.getAgentSessionName() - single source of truth
@@ -103,9 +102,9 @@ function persistedToTerminalAgent(persisted: PersistedAgent): TerminalAgent {
  * Scan worktrees directory directly for any claude-* directories.
  * This catches worktrees that exist but don't have metadata files.
  */
-function scanWorktreeDirectories(repoPath: string, worktreeDir: string): TerminalAgent[] {
+function scanWorktreeDirectories(repoPath: string, worktreeDir: string, system: SystemAdapter): TerminalAgent[] {
   const agents: TerminalAgent[] = [];
-  const worktreesPath = path.join(repoPath, worktreeDir);
+  const worktreesPath = system.joinPath(repoPath, worktreeDir);
 
   if (!fs.existsSync(worktreesPath)) {
     return agents;
@@ -120,7 +119,7 @@ function scanWorktreeDirectories(repoPath: string, worktreeDir: string): Termina
         continue;
       }
 
-      const entryPath = path.join(worktreesPath, entry);
+      const entryPath = system.joinPath(worktreesPath, entry);
       try {
         const stat = fs.statSync(entryPath);
         if (!stat.isDirectory()) {
@@ -242,7 +241,7 @@ export function useAgents(): UseAgentsResult {
 
           // Also scan for worktree directories without metadata (legacy worktrees)
           const worktreeDir = container.config.get('worktreeDirectory');
-          const directoryAgents = scanWorktreeDirectories(process.cwd(), worktreeDir);
+          const directoryAgents = scanWorktreeDirectories(process.cwd(), worktreeDir, container.system);
 
           // Merge directory agents, avoiding duplicates by name
           const existingNames = new Set(terminalAgents.map((a) => a.name));

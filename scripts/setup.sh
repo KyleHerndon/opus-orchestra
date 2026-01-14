@@ -19,6 +19,26 @@ SETUP_DIR="$SCRIPT_DIR/setup"
 # Source common utilities
 source "$SETUP_DIR/common.sh"
 
+# Check required dependencies
+check_dependencies() {
+    local missing=0
+
+    echo "Required Dependencies:"
+
+    # jq is required for Claude Code hooks to parse JSON input
+    if command_exists jq; then
+        print_status "ok" "jq" "$(jq --version 2>/dev/null || echo 'installed')"
+    else
+        print_status "error" "jq" "not installed - required for status hooks"
+        echo "       Install with: sudo apt-get install jq"
+        missing=1
+    fi
+
+    echo ""
+
+    return $missing
+}
+
 # Check all components
 check_all() {
     print_header
@@ -27,6 +47,8 @@ check_all() {
 
     echo "Platform: $OS ($ARCH)"
     echo ""
+
+    check_dependencies
 
     echo "Isolation Tiers:"
 
@@ -54,6 +76,20 @@ setup_all() {
     print_header
     echo -e "${BLUE}Setting up all available isolation features...${NC}"
     echo ""
+
+    # Check required dependencies first
+    echo "Checking dependencies..."
+    if ! check_dependencies; then
+        echo -e "${YELLOW}Warning: Some required dependencies are missing.${NC}"
+        echo "The status hooks may not work correctly without jq."
+        echo ""
+        read -p "Continue anyway? [y/N]: " confirm
+        if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+            echo "Setup cancelled. Please install missing dependencies and try again."
+            exit 1
+        fi
+        echo ""
+    fi
 
     # Sandbox (lightweight, try first)
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

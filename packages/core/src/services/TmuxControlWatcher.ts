@@ -2,8 +2,18 @@
  * TmuxControlWatcher - Monitor tmux sessions via control mode
  *
  * Uses tmux control mode (-C) to receive real-time notifications
- * when panes produce output. This enables detecting when a user
- * responds to a permission prompt without polling.
+ * when panes produce output.
+ *
+ * IMPORTANT LIMITATION: This detects ANY terminal output, not just user input.
+ * Claude Code also outputs to the terminal, so this cannot distinguish between
+ * user messages and Claude's responses. For detecting user input specifically:
+ * - Use Claude Code hooks (e.g., UserPromptSubmit) which fire on user input
+ * - Read the conversation log to detect new user messages
+ *
+ * This watcher is useful for:
+ * - Detecting when a tmux session becomes active (any output)
+ * - Triggering UI refreshes when terminal activity occurs
+ * - NOT for reliably detecting user-initiated actions
  *
  * Control mode provides a machine-readable event stream including:
  * - %output pane-id value - When a pane produces output
@@ -11,9 +21,9 @@
  * - %exit - When the control client exits
  */
 
-import { ChildProcess, spawn } from 'child_process';
 import { EventEmitter } from 'events';
 import { ILogger } from './Logger';
+import { SystemAdapter, SpawnedProcess } from '../adapters/SystemAdapter';
 
 export interface TmuxOutputEvent {
   paneId: string;
@@ -36,12 +46,14 @@ export interface ITmuxControlWatcher extends EventEmitter {
 export class TmuxControlWatcher extends EventEmitter implements ITmuxControlWatcher {
   private sessionName: string;
   private logger?: ILogger;
-  private process: ChildProcess | null = null;
+  private system: SystemAdapter;
+  private process: SpawnedProcess | null = null;
   private buffer: string = '';
 
-  constructor(sessionName: string, logger?: ILogger) {
+  constructor(sessionName: string, system: SystemAdapter, logger?: ILogger) {
     super();
     this.sessionName = sessionName;
+    this.system = system;
     this.logger = logger?.child({ component: 'TmuxControlWatcher', session: sessionName });
   }
 
@@ -58,9 +70,8 @@ export class TmuxControlWatcher extends EventEmitter implements ITmuxControlWatc
 
     try {
       // Spawn tmux in control mode, attached to the target session
-      this.process = spawn('tmux', ['-C', 'attach-session', '-t', this.sessionName], {
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
+      // Uses SystemAdapter.spawn() for cross-platform support (WSL on Windows)
+      this.process = this.system.spawn('tmux', ['-C', 'attach-session', '-t', this.sessionName]);
 
       this.process.stdout?.on('data', (data: Buffer) => {
         this.handleData(data.toString());
@@ -192,9 +203,11 @@ export class TmuxControlWatcher extends EventEmitter implements ITmuxControlWatc
  */
 export class TmuxControlWatcherManager {
   private watchers: Map<string, TmuxControlWatcher> = new Map();
+  private system: SystemAdapter;
   private logger?: ILogger;
 
-  constructor(logger?: ILogger) {
+  constructor(system: SystemAdapter, logger?: ILogger) {
+    this.system = system;
     this.logger = logger?.child({ component: 'TmuxControlWatcherManager' });
   }
 
@@ -204,7 +217,7 @@ export class TmuxControlWatcherManager {
   getWatcher(sessionName: string): TmuxControlWatcher {
     let watcher = this.watchers.get(sessionName);
     if (!watcher) {
-      watcher = new TmuxControlWatcher(sessionName, this.logger);
+      watcher = new TmuxControlWatcher(sessionName, this.system, this.logger);
       this.watchers.set(sessionName, watcher);
 
       // Clean up when watcher exits

@@ -9,7 +9,6 @@
  * - After ServiceContainer init: getLogger() returns ServiceContainer's logger
  */
 
-import * as path from 'path';
 import { createLogger, LogLevel, ILogger } from '@opus-orchestra/core';
 
 // Re-export types for convenience
@@ -26,8 +25,7 @@ let loggerInstance: ILogger | null = null;
  * but kept for backward compatibility during startup.
  */
 export function initLogger(extensionPath: string, minLevel: LogLevel = 'debug'): ILogger {
-    const logDir = path.join(extensionPath);
-    loggerInstance = createLogger(logDir, minLevel);
+    loggerInstance = createLogger(extensionPath, minLevel);
     return loggerInstance;
 }
 

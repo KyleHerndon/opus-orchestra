@@ -5,16 +5,20 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { FileStorageAdapter } from '../adapters/FileStorageAdapter.js';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import * as os from 'node:os';
+import { NodeSystemAdapter, type SystemAdapter } from '@opus-orchestra/core';
 
 describe('FileStorageAdapter', () => {
   let tempDir: string;
   let adapter: FileStorageAdapter;
+  let system: SystemAdapter;
 
   beforeEach(() => {
+    // Create system adapter for cross-platform path operations
+    const terminalType = os.platform() === 'win32' ? 'wsl' : 'bash';
+    system = new NodeSystemAdapter(terminalType);
     // Create a temp directory for testing
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opus-test-'));
+    tempDir = fs.mkdtempSync(system.joinPath(os.tmpdir(), 'opus-test-'));
     adapter = new FileStorageAdapter(tempDir);
   });
 

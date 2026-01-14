@@ -171,7 +171,11 @@ export class ServiceContainer {
     this.eventBus = new EventBus(this.logger);
     this.gitService = new GitService(this.system, this.logger);
     this.statusService = new StatusService(this.system, this.logger);
-    this.todoService = new TodoService(this.logger, services.todosDirectory);
+    // TodoService requires a todos directory path for cross-platform compatibility
+    if (!services.todosDirectory) {
+      throw new Error('todosDirectory is required for TodoService. Use SystemAdapter or getHomeDir() to get the correct path.');
+    }
+    this.todoService = new TodoService(services.todosDirectory, this.logger);
 
     // Create managers
     this.worktreeManager = new WorktreeManager(
@@ -214,6 +218,7 @@ export class ServiceContainer {
       configProvider,
       this.eventBus,
       this.storage,
+      this.system,
       this.logger
     );
 

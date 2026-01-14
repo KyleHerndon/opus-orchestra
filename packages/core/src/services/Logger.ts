@@ -7,7 +7,6 @@
 
 import pino from 'pino';
 import * as fs from 'fs';
-import * as path from 'path';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -30,7 +29,7 @@ export function createLogger(logDir: string, level: LogLevel = 'debug'): pino.Lo
     effectiveDir = require('os').tmpdir();
   }
 
-  const logPath = path.join(effectiveDir, 'opus.log');
+  const logPath = `${effectiveDir}/opus.log`;
 
   return pino(
     {

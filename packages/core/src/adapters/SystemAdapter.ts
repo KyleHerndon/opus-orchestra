@@ -37,6 +37,19 @@ export interface FileStat {
 }
 
 /**
+ * Spawned process interface (subset of ChildProcess)
+ * Used for long-running processes like tmux control mode
+ */
+export interface SpawnedProcess {
+  stdin: NodeJS.WritableStream | null;
+  stdout: NodeJS.ReadableStream | null;
+  stderr: NodeJS.ReadableStream | null;
+  kill(signal?: NodeJS.Signals | number): boolean;
+  on(event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void): this;
+  on(event: 'error', listener: (err: Error) => void): this;
+}
+
+/**
  * SystemAdapter abstracts all OS-specific operations.
  * This is the single point of platform detection and path conversion.
  */
@@ -138,6 +151,16 @@ export interface SystemAdapter {
    * @param cwd - Working directory
    */
   execSilent(command: string, cwd: string): void;
+
+  /**
+   * Spawn a long-running process (for tmux control mode, etc).
+   * Automatically wraps command for correct shell (WSL, Git Bash, etc.).
+   *
+   * @param command - Command to spawn (e.g., 'tmux')
+   * @param args - Command arguments
+   * @returns An object with stdin, stdout, stderr streams, and kill/on methods
+   */
+  spawn(command: string, args: string[]): SpawnedProcess;
 
   // ========== File System ==========
 

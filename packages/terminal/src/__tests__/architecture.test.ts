@@ -7,15 +7,19 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import {
   createTestRepoWithConfig,
+  getTestSystemAdapter,
   TestRepo,
 } from './fixtures/testRepo.js';
+
 import {
   disposeContainer,
 } from '../services/ServiceContainer.js';
 import { runCommand } from '../cli.js';
+
+// Get system adapter for path operations
+const system = getTestSystemAdapter();
 
 describe('Architecture: Worktree-Only Persistence', () => {
   let testRepo: TestRepo;
@@ -35,8 +39,8 @@ describe('Architecture: Worktree-Only Persistence', () => {
     await runCommand(['agents', 'create'], testRepo.path);
 
     // Check worktree has agent.json
-    const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
-    const agentMetadataPath = path.join(worktreePath, '.opus-orchestra', 'agent.json');
+    const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
+    const agentMetadataPath = system.joinPath(worktreePath, '.opus-orchestra', 'agent.json');
 
     expect(fs.existsSync(agentMetadataPath)).toBe(true);
 
@@ -52,7 +56,7 @@ describe('Architecture: Worktree-Only Persistence', () => {
     await runCommand(['agents', 'create', '2'], testRepo.path);
 
     // Delete central storage
-    const storageFile = path.join(testRepo.path, '.opus-orchestra', 'storage.json');
+    const storageFile = system.joinPath(testRepo.path, '.opus-orchestra', 'storage.json');
     if (fs.existsSync(storageFile)) {
       fs.unlinkSync(storageFile);
     }
@@ -65,8 +69,8 @@ describe('Architecture: Worktree-Only Persistence', () => {
     // Currently agents are in central storage, so this shows what we WANT:
     // When we enforce worktree-only, this test should pass
     // For now, we just verify the worktree metadata exists
-    expect(fs.existsSync(path.join(testRepo.path, '.worktrees', 'claude-alpha', '.opus-orchestra', 'agent.json'))).toBe(true);
-    expect(fs.existsSync(path.join(testRepo.path, '.worktrees', 'claude-bravo', '.opus-orchestra', 'agent.json'))).toBe(true);
+    expect(fs.existsSync(system.joinPath(testRepo.path, '.worktrees', 'claude-alpha', '.opus-orchestra', 'agent.json'))).toBe(true);
+    expect(fs.existsSync(system.joinPath(testRepo.path, '.worktrees', 'claude-bravo', '.opus-orchestra', 'agent.json'))).toBe(true);
   });
 
   it('should include sessionId in worktree metadata for stable session names', async () => {
@@ -74,7 +78,7 @@ describe('Architecture: Worktree-Only Persistence', () => {
     await runCommand(['agents', 'create'], testRepo.path);
 
     // Read worktree metadata
-    const metadataPath = path.join(
+    const metadataPath = system.joinPath(
       testRepo.path,
       '.worktrees',
       'claude-alpha',
@@ -137,7 +141,7 @@ describe('Architecture: Error Handling', () => {
 
   it('should handle corrupted config gracefully', async () => {
     // Corrupt the config file
-    const configPath = path.join(testRepo.path, '.opus-orchestra', 'config.json');
+    const configPath = system.joinPath(testRepo.path, '.opus-orchestra', 'config.json');
     fs.writeFileSync(configPath, 'not valid json {{{');
 
     // CLI should still work (use defaults)
@@ -152,7 +156,7 @@ describe('Architecture: Error Handling', () => {
     await runCommand(['agents', 'create'], testRepo.path);
 
     // Manually delete worktree directory
-    const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
+    const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
     fs.rmSync(worktreePath, { recursive: true, force: true });
 
     // Status should not crash
@@ -232,7 +236,7 @@ describe('Architecture: Cleanup Verification', () => {
   it('should remove worktree directory on delete', async () => {
     await runCommand(['agents', 'create'], testRepo.path);
 
-    const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
+    const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
     expect(fs.existsSync(worktreePath)).toBe(true);
 
     await runCommand(['agents', 'delete', 'alpha', '--force'], testRepo.path);

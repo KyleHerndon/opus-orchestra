@@ -6,8 +6,6 @@
  */
 
 import * as fs from 'node:fs';
-import * as path from 'node:path';
-import * as os from 'node:os';
 import { ILogger } from './Logger';
 
 /**
@@ -49,16 +47,21 @@ export class TodoService implements ITodoService {
   /**
    * Create a TodoService.
    *
+   * @param todosDir - Path to the Claude Code todos directory (for Node.js fs operations).
+   *                   On Windows with WSL, use a UNC path like `//wsl.localhost/Ubuntu/home/user/.claude/todos`.
+   *                   Use SystemAdapter or getHomeDir() from pathUtils to get the correct path.
    * @param logger - Optional logger
-   * @param todosDir - Optional custom todos directory path (for Node.js fs operations).
-   *                   If not provided, defaults to `~/.claude/todos` using os.homedir().
-   *                   On Windows with WSL, pass a UNC path like `//wsl.localhost/Ubuntu/home/user/.claude/todos`.
    */
-  constructor(logger?: ILogger, todosDir?: string) {
+  constructor(todosDir: string, logger?: ILogger) {
     this.logger = logger?.child({ component: 'TodoService' });
-    // Claude Code stores TODOs in ~/.claude/todos
-    // Allow custom path for cross-platform support (e.g., WSL paths on Windows)
-    this.todosDir = todosDir ?? path.join(os.homedir(), '.claude', 'todos');
+    this.todosDir = todosDir;
+  }
+
+  /**
+   * Join paths using forward slashes for cross-platform compatibility.
+   */
+  private joinPath(...parts: string[]): string {
+    return parts.join('/').replace(/\/+/g, '/');
   }
 
   /**
@@ -91,8 +94,9 @@ export class TodoService implements ITodoService {
         return null;
       }
 
-      // Extract session ID from filename
-      const sessionId = path.basename(latestFile.path, '.json').split('-agent-')[0];
+      // Extract session ID from filename (use simple split instead of path.basename)
+      const filename = latestFile.path.split('/').pop() || '';
+      const sessionId = filename.replace('.json', '').split('-agent-')[0];
 
       return {
         items,
@@ -132,7 +136,7 @@ export class TodoService implements ITodoService {
       // Sort by modification time (most recent first) and find first with content
       const sortedFiles = matchingFiles
         .map(f => {
-          const filePath = path.join(this.todosDir, f);
+          const filePath = this.joinPath(this.todosDir, f);
           try {
             const stat = fs.statSync(filePath);
             return { path: filePath, mtime: stat.mtimeMs };
@@ -186,7 +190,7 @@ export class TodoService implements ITodoService {
         continue;
       }
 
-      const filePath = path.join(this.todosDir, file);
+      const filePath = this.joinPath(this.todosDir, file);
       try {
         const stat = fs.statSync(filePath);
         if (stat.mtimeMs > latestTime) {

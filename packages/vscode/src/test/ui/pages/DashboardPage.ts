@@ -6,7 +6,6 @@
  */
 
 import * as fs from 'fs';
-import * as path from 'path';
 import {
     WebDriver,
     WebElement,
@@ -159,6 +158,43 @@ export class DashboardPage {
 
     async getAgentButton(card: WebElement, action: string): Promise<WebElement | null> {
         return this.getAgentCardElement(card, `button[data-action="${action}"]`);
+    }
+
+    /**
+     * Get the waiting/working time value from an agent card (e.g., "0s", "5m", "2h")
+     */
+    async getAgentTimeSince(card: WebElement): Promise<string> {
+        const statValue = await card.findElement(By.css('.stat-value'));
+        return statValue.getText();
+    }
+
+    /**
+     * Get the diff stats (insertions/deletions) from an agent card
+     */
+    async getAgentDiffStats(card: WebElement): Promise<{ insertions: string; deletions: string }> {
+        const diffAdd = await card.findElement(By.css('.diff-add'));
+        const diffDel = await card.findElement(By.css('.diff-del'));
+        return {
+            insertions: await diffAdd.getText(),
+            deletions: await diffDel.getText(),
+        };
+    }
+
+    /**
+     * Parse the time string (e.g., "5s", "2m", "1h") to seconds
+     */
+    parseTimeToSeconds(timeStr: string): number {
+        const match = timeStr.match(/^(\d+)([smhd])$/);
+        if (!match) return 0;
+        const value = parseInt(match[1], 10);
+        const unit = match[2];
+        switch (unit) {
+            case 's': return value;
+            case 'm': return value * 60;
+            case 'h': return value * 3600;
+            case 'd': return value * 86400;
+            default: return 0;
+        }
     }
 
     // --- Actions ---
@@ -356,7 +392,7 @@ export class DashboardPage {
         }
 
         const screenshot = await this.driver.takeScreenshot();
-        const filePath = path.join(screenshotDir, `${name}-${Date.now()}.png`);
+        const filePath = `${screenshotDir}/${name}-${Date.now()}.png`;
         fs.writeFileSync(filePath, screenshot, 'base64');
         return filePath;
     }

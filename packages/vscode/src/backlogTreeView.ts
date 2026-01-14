@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import * as path from 'path';
+import { agentPath } from './pathUtils';
 
 export class BacklogTreeProvider implements vscode.TreeDataProvider<BacklogItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<BacklogItem | undefined | null | void> =
@@ -29,7 +29,7 @@ export class BacklogTreeProvider implements vscode.TreeDataProvider<BacklogItem>
             // Try to find backlog in workspace
             const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
             if (workspaceRoot) {
-                const defaultPath = path.join(workspaceRoot, '.opus-orchestra', 'backlog');
+                const defaultPath = agentPath(workspaceRoot).join('.opus-orchestra', 'backlog').forNodeFs();
                 if (fs.existsSync(defaultPath)) {
                     this.backlogPath = defaultPath;
                 }
@@ -72,7 +72,7 @@ export class BacklogTreeProvider implements vscode.TreeDataProvider<BacklogItem>
 
             const items = taskFiles.map(file => {
                 const taskName = file.replace('.md', '');
-                const filePath = path.join(this.backlogPath, file);
+                const filePath = agentPath(this.backlogPath).join(file).forNodeFs();
                 const item = new BacklogItem(
                     taskName,
                     '',

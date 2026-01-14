@@ -7,18 +7,22 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import {
   createTestRepoWithConfig,
   createWorktree,
+  getTestSystemAdapter,
   TestRepo,
 } from './fixtures/testRepo.js';
+import type { SystemAdapter } from '@opus-orchestra/core';
 import {
   initializeContainer,
   disposeContainer,
   getContainer,
 } from '../services/ServiceContainer.js';
 import { runCommand } from '../cli.js';
+
+// Get system adapter for path operations
+const system: SystemAdapter = getTestSystemAdapter();
 
 /**
  * Helper to write agent metadata to worktree
@@ -28,11 +32,11 @@ function writeAgentMetadata(
   name: string,
   data: Record<string, unknown>
 ): void {
-  const worktreePath = path.join(repoPath, '.worktrees', `claude-${name}`);
-  const metadataDir = path.join(worktreePath, '.opus-orchestra');
+  const worktreePath = system.joinPath(repoPath, '.worktrees', `claude-${name}`);
+  const metadataDir = system.joinPath(worktreePath, '.opus-orchestra');
   fs.mkdirSync(metadataDir, { recursive: true });
   fs.writeFileSync(
-    path.join(metadataDir, 'agent.json'),
+    system.joinPath(metadataDir, 'agent.json'),
     JSON.stringify(data)
   );
 }
@@ -58,13 +62,13 @@ describe('Data Corruption & Recovery', () => {
       name: 'alpha',
       sessionId: 'valid-session-123',
       branch: 'claude-alpha',
-      worktreePath: path.join(testRepo.path, '.worktrees', 'claude-alpha'),
+      worktreePath: system.joinPath(testRepo.path, '.worktrees', 'claude-alpha'),
       repoPath: testRepo.path,
     });
 
     // Create agent with corrupted JSON
     createWorktree(testRepo.path, 'bravo', 'claude-bravo');
-    const corruptPath = path.join(
+    const corruptPath = system.joinPath(
       testRepo.path,
       '.worktrees',
       'claude-bravo',
@@ -72,7 +76,7 @@ describe('Data Corruption & Recovery', () => {
     );
     fs.mkdirSync(corruptPath, { recursive: true });
     fs.writeFileSync(
-      path.join(corruptPath, 'agent.json'),
+      system.joinPath(corruptPath, 'agent.json'),
       '{ invalid json {{{'
     );
 
@@ -86,14 +90,14 @@ describe('Data Corruption & Recovery', () => {
 
   it('should handle empty metadata files gracefully', async () => {
     createWorktree(testRepo.path, 'alpha', 'claude-alpha');
-    const metadataPath = path.join(
+    const metadataPath = system.joinPath(
       testRepo.path,
       '.worktrees',
       'claude-alpha',
       '.opus-orchestra'
     );
     fs.mkdirSync(metadataPath, { recursive: true });
-    fs.writeFileSync(path.join(metadataPath, 'agent.json'), '');
+    fs.writeFileSync(system.joinPath(metadataPath, 'agent.json'), '');
 
     initializeContainer(testRepo.path);
     const agents = getContainer().persistence.loadPersistedAgents();
@@ -123,7 +127,7 @@ describe('Data Corruption & Recovery', () => {
       name: 'alpha',
       sessionId: 'valid-session-123',
       branch: 'claude-alpha',
-      worktreePath: path.join(testRepo.path, '.worktrees', 'claude-alpha'),
+      worktreePath: system.joinPath(testRepo.path, '.worktrees', 'claude-alpha'),
       repoPath: testRepo.path,
       // Extra fields (forward compatibility)
       futureField: 'some value',
@@ -139,7 +143,7 @@ describe('Data Corruption & Recovery', () => {
 
   it('should handle truncated metadata files', async () => {
     createWorktree(testRepo.path, 'alpha', 'claude-alpha');
-    const metadataPath = path.join(
+    const metadataPath = system.joinPath(
       testRepo.path,
       '.worktrees',
       'claude-alpha',
@@ -148,7 +152,7 @@ describe('Data Corruption & Recovery', () => {
     fs.mkdirSync(metadataPath, { recursive: true });
     // Truncated JSON
     fs.writeFileSync(
-      path.join(metadataPath, 'agent.json'),
+      system.joinPath(metadataPath, 'agent.json'),
       '{"id":1,"name":"alp'
     );
 
@@ -161,7 +165,7 @@ describe('Data Corruption & Recovery', () => {
 
   it('should recover from corrupted config file', async () => {
     // Corrupt the config
-    const configPath = path.join(testRepo.path, '.opus-orchestra', 'config.json');
+    const configPath = system.joinPath(testRepo.path, '.opus-orchestra', 'config.json');
     fs.writeFileSync(configPath, 'not valid json');
 
     // Should not crash - should use defaults
@@ -279,13 +283,13 @@ describe('Edge Cases - Agent Names & Paths', () => {
       name: 'alpha',
       sessionId: 'session-123',
       branch: 'claude-alpha',
-      worktreePath: path.join(testRepo.path, '.worktrees', 'claude-alpha'),
+      worktreePath: system.joinPath(testRepo.path, '.worktrees', 'claude-alpha'),
       repoPath: testRepo.path,
     });
 
     // Now delete the worktree directory but keep metadata (simulate partial deletion)
     // This shouldn't happen normally, but testing resilience
-    // The worktree path is: path.join(testRepo.path, '.worktrees', 'claude-alpha')
+    // The worktree path is: system.joinPath(testRepo.path, '.worktrees', 'claude-alpha')
 
     // Verify agent loads initially
     initializeContainer(testRepo.path);
@@ -301,7 +305,7 @@ describe('Edge Cases - Agent Names & Paths', () => {
       name: longName,
       sessionId: 'session-123',
       branch: 'claude-alpha',
-      worktreePath: path.join(testRepo.path, '.worktrees', 'claude-alpha'),
+      worktreePath: system.joinPath(testRepo.path, '.worktrees', 'claude-alpha'),
       repoPath: testRepo.path,
     });
 
@@ -320,7 +324,7 @@ describe('Edge Cases - Agent Names & Paths', () => {
       name: 'alpha',
       sessionId: 'special-<>"/\\:*?|session',
       branch: 'claude-alpha',
-      worktreePath: path.join(testRepo.path, '.worktrees', 'claude-alpha'),
+      worktreePath: system.joinPath(testRepo.path, '.worktrees', 'claude-alpha'),
       repoPath: testRepo.path,
     });
 
@@ -337,7 +341,7 @@ describe('Edge Cases - Agent Names & Paths', () => {
       name: 'alpha',
       sessionId: 'session-123',
       branch: 'claude-alpha',
-      worktreePath: path.join(testRepo.path, '.worktrees', 'claude-alpha'),
+      worktreePath: system.joinPath(testRepo.path, '.worktrees', 'claude-alpha'),
       repoPath: testRepo.path,
     });
 
@@ -367,8 +371,8 @@ describe('State Recovery & Cleanup', () => {
     // Create agent
     await runCommand(['agents', 'create'], testRepo.path);
 
-    const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
-    const metadataPath = path.join(worktreePath, '.opus-orchestra', 'agent.json');
+    const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
+    const metadataPath = system.joinPath(worktreePath, '.opus-orchestra', 'agent.json');
 
     expect(fs.existsSync(worktreePath)).toBe(true);
     expect(fs.existsSync(metadataPath)).toBe(true);
@@ -534,13 +538,13 @@ describe('Worktree Integrity', () => {
   it('should create valid git worktree', async () => {
     await runCommand(['agents', 'create'], testRepo.path);
 
-    const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
+    const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
 
     // Check it's a valid git worktree
-    expect(fs.existsSync(path.join(worktreePath, '.git'))).toBe(true);
+    expect(fs.existsSync(system.joinPath(worktreePath, '.git'))).toBe(true);
 
     // Check branch exists
-    const gitDir = path.join(worktreePath, '.git');
+    const gitDir = system.joinPath(worktreePath, '.git');
     const gitContent = fs.readFileSync(gitDir, 'utf-8');
     expect(gitContent).toContain('gitdir');
   });
@@ -548,7 +552,7 @@ describe('Worktree Integrity', () => {
   it('should create metadata in correct location', async () => {
     await runCommand(['agents', 'create'], testRepo.path);
 
-    const metadataPath = path.join(
+    const metadataPath = system.joinPath(
       testRepo.path,
       '.worktrees',
       'claude-alpha',
@@ -567,10 +571,10 @@ describe('Worktree Integrity', () => {
   it('should copy coordination files to worktree', async () => {
     await runCommand(['agents', 'create'], testRepo.path);
 
-    const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
+    const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
 
     // Check for CLAUDE.md or other coordination files
-    const opusDir = path.join(worktreePath, '.opus-orchestra');
+    const opusDir = system.joinPath(worktreePath, '.opus-orchestra');
     expect(fs.existsSync(opusDir)).toBe(true);
   });
 });

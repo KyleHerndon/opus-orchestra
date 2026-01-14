@@ -5,7 +5,6 @@
  * Uses adapters for container operations and a config provider for config discovery.
  */
 
-import { execSync } from 'child_process';
 import {
   ContainerInfo,
   ContainerConfigRef,
@@ -18,6 +17,7 @@ import { ContainerRegistry, ContainerStats, ShellCommand } from '../containers';
 import { IEventBus } from '../types';
 import { ILogger } from '../services/Logger';
 import { StorageAdapter } from '../adapters/StorageAdapter';
+import { SystemAdapter } from '../adapters/SystemAdapter';
 
 // Re-export ContainerConfigRef for convenience
 export { ContainerConfigRef };
@@ -96,6 +96,7 @@ export class ContainerManager implements IContainerManager {
   private readonly configProvider: IContainerConfigProvider;
   private readonly eventBus: IEventBus;
   private readonly storage: StorageAdapter;
+  private readonly system: SystemAdapter;
   private readonly logger?: ILogger;
 
   constructor(
@@ -103,12 +104,14 @@ export class ContainerManager implements IContainerManager {
     configProvider: IContainerConfigProvider,
     eventBus: IEventBus,
     storage: StorageAdapter,
+    system: SystemAdapter,
     logger?: ILogger
   ) {
     this.containerRegistry = containerRegistry;
     this.configProvider = configProvider;
     this.eventBus = eventBus;
     this.storage = storage;
+    this.system = system;
     this.logger = logger?.child({ component: 'ContainerManager' });
 
     // Restore containers from storage on construction
@@ -341,9 +344,9 @@ export class ContainerManager implements IContainerManager {
    */
   async findOrphanedContainers(): Promise<string[]> {
     try {
-      const output = execSync(
+      const output = this.system.execSync(
         `docker ps -q --filter "label=${CONTAINER_LABELS.managed}"`,
-        { encoding: 'utf8', timeout: 5000 }
+        '.'
       );
 
       const runningIds = output.trim().split('\n').filter((id) => id);
@@ -365,11 +368,7 @@ export class ContainerManager implements IContainerManager {
   async cleanupOrphanedContainers(): Promise<number> {
     const orphans = await this.findOrphanedContainers();
     for (const id of orphans) {
-      try {
-        execSync(`docker rm -f ${id}`, { stdio: 'ignore', timeout: 5000 });
-      } catch {
-        // Ignore errors
-      }
+      this.system.execSilent(`docker rm -f ${id}`, '.');
     }
     return orphans.length;
   }
@@ -403,9 +402,9 @@ export class ContainerManager implements IContainerManager {
 
       if (p.type === 'docker') {
         try {
-          const output = execSync(
+          const output = this.system.execSync(
             `docker inspect -f '{{.State.Running}}' ${p.id}`,
-            { encoding: 'utf8', timeout: 5000 }
+            '.'
           );
           state = output.trim() === 'true' ? 'running' : 'stopped';
         } catch {

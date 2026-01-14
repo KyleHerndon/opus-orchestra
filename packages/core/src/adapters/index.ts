@@ -12,6 +12,7 @@ export {
   TerminalType,
   PathContext,
   FileStat,
+  SpawnedProcess,
 } from './SystemAdapter';
 
 // Node.js implementation of SystemAdapter

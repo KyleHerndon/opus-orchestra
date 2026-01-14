@@ -10,12 +10,13 @@
  * File watchers (especially on network drives, WSL, etc.) can be unreliable,
  * so we always poll as a safety net.
  *
- * WSL Detection: Automatically enables polling mode on WSL for reliability.
+ * Note: Callers should use usePollingOnly option when running on WSL or other
+ * environments where native file watchers are unreliable. Use SystemAdapter.isWsl()
+ * to detect WSL and set this option accordingly.
  */
 
 import type { FSWatcher } from 'chokidar';
 import type { ILogger } from '../services/Logger';
-import * as fs from 'fs';
 
 /**
  * File watch event types
@@ -86,39 +87,6 @@ export interface IFileWatcher {
 const DEFAULT_POLL_INTERVAL = 5000;
 const DEFAULT_HEALTH_CHECK_INTERVAL = 60000;
 const DEFAULT_DEBOUNCE_MS = 100;
-
-/**
- * Cached WSL detection result
- */
-let isWslCached: boolean | null = null;
-
-/**
- * Detect if running in WSL (Windows Subsystem for Linux)
- * Native file watchers are unreliable in WSL, so we use polling instead.
- * Exported for use in tests and other modules that need environment detection.
- */
-export function isWsl(): boolean {
-  if (isWslCached !== null) {
-    return isWslCached;
-  }
-
-  try {
-    // Check if /proc/version contains 'microsoft' (case-insensitive)
-    if (process.platform === 'linux' && fs.existsSync('/proc/version')) {
-      const version = fs.readFileSync('/proc/version', 'utf8').toLowerCase();
-      isWslCached = version.includes('microsoft') || version.includes('wsl');
-      return isWslCached;
-    }
-  } catch {
-    // Ignore errors, assume not WSL
-  }
-
-  isWslCached = false;
-  return false;
-}
-
-// Internal alias for backwards compatibility
-const detectWsl = isWsl;
 
 /**
  * Hybrid FileWatcher implementation

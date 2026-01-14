@@ -7,7 +7,6 @@
  */
 import { useState, useCallback, useEffect, useRef } from 'react';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { isContainerInitialized, getContainer, } from '../services/ServiceContainer.js';
 import { getAvailableNames, ok, isOk, unwrapOr } from '@opus-orchestra/core';
@@ -91,9 +90,9 @@ function persistedToTerminalAgent(persisted) {
  * Scan worktrees directory directly for any claude-* directories.
  * This catches worktrees that exist but don't have metadata files.
  */
-function scanWorktreeDirectories(repoPath, worktreeDir) {
+function scanWorktreeDirectories(repoPath, worktreeDir, system) {
     const agents = [];
-    const worktreesPath = path.join(repoPath, worktreeDir);
+    const worktreesPath = system.joinPath(repoPath, worktreeDir);
     if (!fs.existsSync(worktreesPath)) {
         return agents;
     }
@@ -104,7 +103,7 @@ function scanWorktreeDirectories(repoPath, worktreeDir) {
             if (!entry.startsWith('claude-')) {
                 continue;
             }
-            const entryPath = path.join(worktreesPath, entry);
+            const entryPath = system.joinPath(worktreesPath, entry);
             try {
                 const stat = fs.statSync(entryPath);
                 if (!stat.isDirectory()) {
@@ -196,7 +195,7 @@ export function useAgents() {
                     const terminalAgents = persisted.map(persistedToTerminalAgent);
                     // Also scan for worktree directories without metadata (legacy worktrees)
                     const worktreeDir = container.config.get('worktreeDirectory');
-                    const directoryAgents = scanWorktreeDirectories(process.cwd(), worktreeDir);
+                    const directoryAgents = scanWorktreeDirectories(process.cwd(), worktreeDir, container.system);
                     // Merge directory agents, avoiding duplicates by name
                     const existingNames = new Set(terminalAgents.map((a) => a.name));
                     for (const da of directoryAgents) {

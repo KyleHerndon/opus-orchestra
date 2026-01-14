@@ -10,13 +10,14 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { execSync, exec } from 'child_process';
+import { execSync, exec, spawn } from 'child_process';
 import {
   SystemAdapter,
   Platform,
   TerminalType,
   PathContext,
   FileStat,
+  SpawnedProcess,
 } from './SystemAdapter';
 
 /**
@@ -510,6 +511,56 @@ export class NodeSystemAdapter implements SystemAdapter {
       }
     } catch {
       // Silently ignore errors
+    }
+  }
+
+  /**
+   * Spawn a long-running process with cross-platform support.
+   * On Windows with WSL terminal, wraps the command through wsl.exe.
+   */
+  spawn(command: string, args: string[]): SpawnedProcess {
+    const platform = this.getPlatform();
+
+    // On Linux/Mac, spawn directly
+    if (platform !== 'win32') {
+      return spawn(command, args, {
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }) as unknown as SpawnedProcess;
+    }
+
+    // On Windows, use configured terminal type
+    switch (this.terminalType) {
+      case 'wsl': {
+        // Wrap command with wsl.exe
+        // wsl command arg1 arg2 ...
+        return spawn('wsl', [command, ...args], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+        }) as unknown as SpawnedProcess;
+      }
+      case 'gitbash': {
+        const gitBashPath = this.getGitBashPath();
+        if (!gitBashPath) {
+          throw new Error('Git Bash not found. Set GIT_BASH_PATH environment variable or install Git for Windows.');
+        }
+        // Git Bash: bash -c "command args..."
+        const fullCmd = [command, ...args].join(' ');
+        return spawn(gitBashPath, ['-c', fullCmd], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+        }) as unknown as SpawnedProcess;
+      }
+      case 'bash':
+        // Native bash available on Windows (rare)
+        return spawn(command, args, {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          shell: '/bin/bash',
+        }) as unknown as SpawnedProcess;
+      case 'powershell':
+      case 'cmd':
+      default:
+        // Native Windows - try to run command directly
+        return spawn(command, args, {
+          stdio: ['pipe', 'pipe', 'pipe'],
+        }) as unknown as SpawnedProcess;
     }
   }
 

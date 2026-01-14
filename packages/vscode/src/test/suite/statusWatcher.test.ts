@@ -1,6 +1,5 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
-import * as path from 'path';
 
 /**
  * Static analysis tests for StatusService and StatusWatcher
@@ -16,11 +15,11 @@ import * as path from 'path';
  */
 
 suite('StatusWatcher Stale File Detection Test Suite', () => {
-    const statusWatcherPath = path.resolve(__dirname, '../../../src/services/StatusWatcher.ts');
+    const statusWatcherPath = `${__dirname}/../../../src/services/StatusWatcher.ts`;
     // StatusService implementation is in the core package
-    const statusServicePath = path.resolve(__dirname, '../../../../core/src/services/StatusService.ts');
+    const statusServicePath = `${__dirname}/../../../../core/src/services/StatusService.ts`;
     // ParsedStatus is now in the core package
-    const hooksTypesPath = path.resolve(__dirname, '../../../../core/src/types/hooks.ts');
+    const hooksTypesPath = `${__dirname}/../../../../core/src/types/hooks.ts`;
 
     let statusWatcherContent: string;
     let statusServiceContent: string;
@@ -115,7 +114,7 @@ suite('StatusWatcher Stale File Detection Test Suite', () => {
 });
 
 suite('AgentManager sendToAgent Test Suite', () => {
-    const agentManagerPath = path.resolve(__dirname, '../../../src/agentManager.ts');
+    const agentManagerPath = `${__dirname}/../../../src/agentManager.ts`;
     let content: string;
 
     setup(() => {
@@ -179,10 +178,10 @@ suite('Approval Flow Integration Test Suite', () => {
 
     test('All approval flow components are in sync', () => {
         // ParsedStatus is now in the core package
-        const hooksTypesPath = path.resolve(__dirname, '../../../../core/src/types/hooks.ts');
+        const hooksTypesPath = `${__dirname}/../../../../core/src/types/hooks.ts`;
         // StatusService implementation is in the core package
-        const statusServicePath = path.resolve(__dirname, '../../../../core/src/services/StatusService.ts');
-        const statusWatcherPath = path.resolve(__dirname, '../../../src/services/StatusWatcher.ts');
+        const statusServicePath = `${__dirname}/../../../../core/src/services/StatusService.ts`;
+        const statusWatcherPath = `${__dirname}/../../../src/services/StatusWatcher.ts`;
 
         const hooksTypes = fs.readFileSync(hooksTypesPath, 'utf-8');
         const statusService = fs.readFileSync(statusServicePath, 'utf-8');
@@ -220,7 +219,7 @@ suite('AgentManager getAgents Terminal Validation Test Suite', () => {
      * to fix the bug where button shows wrong state after VS Code reload
      */
 
-    const agentManagerPath = path.resolve(__dirname, '../../../src/agentManager.ts');
+    const agentManagerPath = `${__dirname}/../../../src/agentManager.ts`;
     let content: string;
 
     setup(() => {
@@ -265,7 +264,7 @@ suite('AgentManager showAgentDiff Test Suite', () => {
      * Tests verifying the multi-file diff view feature
      */
 
-    const agentManagerPath = path.resolve(__dirname, '../../../src/agentManager.ts');
+    const agentManagerPath = `${__dirname}/../../../src/agentManager.ts`;
     let content: string;
 
     setup(() => {

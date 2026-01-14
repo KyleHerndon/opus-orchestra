@@ -6,7 +6,6 @@
  */
 
 import * as fs from 'fs';
-import * as path from 'path';
 import * as os from 'os';
 import { execSync } from 'child_process';
 
@@ -48,7 +47,7 @@ function toWslPath(winPath: string): string {
  */
 export function getTestRepoPath(suffix?: string): string {
     const name = suffix ? `${TEST_REPO_BASE}-${suffix}` : TEST_REPO_BASE;
-    return path.join(os.tmpdir(), name);
+    return `${os.tmpdir()}/${name}`;
 }
 
 /**
@@ -73,7 +72,7 @@ export function createTestRepo(suffix?: string): string {
     wslExec('git config user.name "Test User"', repoPath);
 
     // Create initial commit
-    const readmePath = path.join(repoPath, 'README.md');
+    const readmePath = `${repoPath}/README.md`;
     fs.writeFileSync(readmePath, '# Test Repository\n\nThis is a test repository for Claude Agents UI tests.\n');
     wslExec('git add .', repoPath);
     wslExec('git commit -m "Initial commit"', repoPath);
@@ -95,12 +94,12 @@ function cleanupRepo(repoPath: string): void {
 
     try {
         // First, try to remove any worktrees using WSL git
-        const worktreesDir = path.join(repoPath, '.worktrees');
+        const worktreesDir = `${repoPath}/.worktrees`;
         if (fs.existsSync(worktreesDir)) {
             const worktrees = fs.readdirSync(worktreesDir);
             for (const wt of worktrees) {
                 try {
-                    const wtPath = toWslPath(path.join(worktreesDir, wt));
+                    const wtPath = toWslPath(`${worktreesDir}/${wt}`);
                     wslExec(`git worktree remove --force "${wtPath}"`, repoPath);
                 } catch {
                     // Ignore errors

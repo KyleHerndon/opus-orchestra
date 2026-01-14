@@ -374,4 +374,110 @@ describe('Claude Agents Dashboard', function () {
             expect(focusText).to.not.equal(startClaudeText);
         });
     });
+
+    describe('Status Data Flow (Waiting/Changes Fields)', function () {
+        /**
+         * E2E tests for bug where:
+         * 1. "Waiting" field was stuck at 0s because webview used Date.now()
+         *    instead of agentData.lastInteractionTime
+         * 2. "Changes" field was empty because webview read agentData.insertions
+         *    instead of agentData.diffStats.insertions
+         */
+
+        before(async () => await page.open());
+        after(async () => await page.close());
+
+        beforeEach(async function () {
+            await page.switchBack();
+            await driver.sleep(200);
+            await page.switchToFrame();
+        });
+
+        it('should increment waiting time over multiple poll cycles without resetting', async function () {
+            // Ensure we have an agent
+            if (await page.hasEmptyState()) {
+                await page.createAgents(1);
+            }
+
+            const cards = await page.getAgentCards();
+            if (cards.length === 0) {
+                this.skip();
+            }
+
+            const card = cards[0];
+
+            // Get initial time
+            const initialTime = await page.getAgentTimeSince(card);
+            const initialSeconds = page.parseTimeToSeconds(initialTime);
+
+            // Wait 5 seconds - this should span multiple poll cycles (1s interval)
+            // If the bug exists, time would reset to 0s on each poll
+            await driver.sleep(5000);
+
+            // Get updated time
+            const updatedTime = await page.getAgentTimeSince(card);
+            const updatedSeconds = page.parseTimeToSeconds(updatedTime);
+
+            // Time should have increased by approximately 5 seconds
+            // Allow some tolerance for timing variations
+            const timeDiff = updatedSeconds - initialSeconds;
+            expect(timeDiff).to.be.at.least(3,
+                `Waiting time should increment over time. ` +
+                `Initial: ${initialTime} (${initialSeconds}s), ` +
+                `Updated: ${updatedTime} (${updatedSeconds}s). ` +
+                `If stuck at 0s, the webview may be overwriting lastInteractionTime with Date.now().`
+            );
+        });
+
+        it('should display diff stats values from extension data', async function () {
+            const cards = await page.getAgentCards();
+            if (cards.length === 0) {
+                this.skip();
+            }
+
+            const card = cards[0];
+            const diffStats = await page.getAgentDiffStats(card);
+
+            // Verify the diff stats are displayed (format: "+N" and "-N")
+            expect(diffStats.insertions).to.match(/^\+\d+$/,
+                'Insertions should be displayed as "+N". ' +
+                'If empty or undefined, the webview may be reading wrong property.'
+            );
+            expect(diffStats.deletions).to.match(/^-\d+$/,
+                'Deletions should be displayed as "-N". ' +
+                'If empty or undefined, the webview may be reading wrong property.'
+            );
+        });
+
+        it('should not reset waiting time to 0s on status updates', async function () {
+            const cards = await page.getAgentCards();
+            if (cards.length === 0) {
+                this.skip();
+            }
+
+            const card = cards[0];
+
+            // Sample the time multiple times over 6 seconds
+            const samples: number[] = [];
+            for (let i = 0; i < 6; i++) {
+                const time = await page.getAgentTimeSince(card);
+                samples.push(page.parseTimeToSeconds(time));
+                await driver.sleep(1000);
+            }
+
+            // Check that time is monotonically increasing (not resetting to 0)
+            let resetCount = 0;
+            for (let i = 1; i < samples.length; i++) {
+                if (samples[i] < samples[i - 1]) {
+                    resetCount++;
+                }
+            }
+
+            expect(resetCount).to.equal(0,
+                `Waiting time reset ${resetCount} times during sampling. ` +
+                `Samples: [${samples.join(', ')}]. ` +
+                `Time should never decrease unless agent status changes.`
+            );
+        });
+    });
 });

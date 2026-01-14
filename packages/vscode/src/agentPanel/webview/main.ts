@@ -65,11 +65,8 @@ window.addEventListener('message', (event) => {
             for (const agentData of message.agents) {
                 updateAgent(agentData.id, {
                     status: agentData.status,
-                    lastInteractionTime: Date.now(),
-                    diffStats: {
-                        insertions: agentData.insertions,
-                        deletions: agentData.deletions,
-                    },
+                    lastInteractionTime: agentData.lastInteractionTime,
+                    diffStats: agentData.diffStats,
                     todoItems: agentData.todoItems || [],
                     pendingApproval: agentData.pendingApproval,
                     hasTerminal: agentData.hasTerminal,

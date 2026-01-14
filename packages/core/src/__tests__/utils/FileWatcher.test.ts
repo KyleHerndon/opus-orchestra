@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
-import { FileWatcher, FileWatchEvent, createFileWatcher, isWsl } from '../../utils/FileWatcher';
+import { FileWatcher, FileWatchEvent, createFileWatcher } from '../../utils/FileWatcher';
 import { getTestSystemAdapter } from '../fixtures/testRepo';
 
 // Get shared system adapter for consistent path handling
@@ -19,7 +19,7 @@ const systemAdapter = getTestSystemAdapter();
  * because inotify doesn't work across the WSL/Windows boundary.
  */
 function getNativeTmpDir(): string {
-  if (isWsl()) {
+  if (systemAdapter.isWsl()) {
     // Force use of Linux-native /tmp where inotify works
     return '/tmp';
   }

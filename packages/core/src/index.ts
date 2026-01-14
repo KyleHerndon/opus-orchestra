@@ -5,8 +5,6 @@
  * This package contains no VS Code or OS-specific dependencies.
  */
 
-import * as path from 'node:path';
-
 // Types
 export * from './types';
 export * from './types/stateMachines';
@@ -37,5 +35,5 @@ export * from './errors';
  */
 export function getCoordinationPath(): string {
   // __dirname is the dist/ folder after build, coordination is at package root
-  return path.join(__dirname, '..', 'coordination');
+  return `${__dirname}/../coordination`;
 }

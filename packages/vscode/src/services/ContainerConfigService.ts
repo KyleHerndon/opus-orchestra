@@ -12,7 +12,6 @@
  */
 
 import * as fs from 'fs';
-import * as path from 'path';
 import { agentPath, getHomeDir } from '../pathUtils';
 import { ContainerConfigRef, IContainerConfigProvider, ContainerDisplayInfo } from '@opus-orchestra/core';
 import { getContainer, isContainerInitialized } from '../ServiceContainer';
@@ -136,7 +135,8 @@ export class ContainerConfigService implements IContainerConfigProvider {
         }
 
         // Resolve file path relative to the config file's directory
-        const configDir = path.dirname(config.configPath);
+        // Extract directory by removing the filename from the path
+        const configDir = config.configPath.replace(/[\\/][^\\/]+$/, '');
         return agentPath(configDir).join(config.configRef.file).forNodeFs();
     }
 
@@ -221,7 +221,7 @@ export class ContainerConfigService implements IContainerConfigProvider {
                     continue;
                 }
 
-                const filePath = path.join(dirPath, file);
+                const filePath = agentPath(dirPath).join(file).forNodeFs();
                 const stat = fs.statSync(filePath);
 
                 if (!stat.isFile()) {

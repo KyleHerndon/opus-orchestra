@@ -7,12 +7,12 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { execSync } from 'node:child_process';
 import {
   createTestRepoWithConfig,
   makeUncommittedChange,
   branchExists,
+  getTestSystemAdapter,
   TestRepo,
 } from './fixtures/testRepo.js';
 import {
@@ -75,18 +75,19 @@ describe('E2E: Fresh Project Setup Workflow', () => {
   });
 
   it('should create agents with proper git structure', async () => {
+    const system = getTestSystemAdapter();
     // Create agents
     await runCli(['agents', 'create', '2'], testRepo.path);
 
     // Verify git worktrees exist
-    const worktreesDir = path.join(testRepo.path, '.worktrees');
+    const worktreesDir = system.joinPath(testRepo.path, '.worktrees');
     expect(fs.existsSync(worktreesDir)).toBe(true);
-    expect(fs.existsSync(path.join(worktreesDir, 'claude-alpha'))).toBe(true);
-    expect(fs.existsSync(path.join(worktreesDir, 'claude-bravo'))).toBe(true);
+    expect(fs.existsSync(system.joinPath(worktreesDir, 'claude-alpha'))).toBe(true);
+    expect(fs.existsSync(system.joinPath(worktreesDir, 'claude-bravo'))).toBe(true);
 
     // Verify each worktree is a valid git directory
-    expect(fs.existsSync(path.join(worktreesDir, 'claude-alpha', '.git'))).toBe(true);
-    expect(fs.existsSync(path.join(worktreesDir, 'claude-bravo', '.git'))).toBe(true);
+    expect(fs.existsSync(system.joinPath(worktreesDir, 'claude-alpha', '.git'))).toBe(true);
+    expect(fs.existsSync(system.joinPath(worktreesDir, 'claude-bravo', '.git'))).toBe(true);
 
     // Verify branches were created
     expect(branchExists(testRepo.path, 'claude-alpha')).toBe(true);
@@ -108,11 +109,12 @@ describe('E2E: Agent Lifecycle Workflow', () => {
   });
 
   it('should handle create-work-delete lifecycle', async () => {
+    const system = getTestSystemAdapter();
     // 1. Create an agent
     let result = await runCli(['agents', 'create'], testRepo.path);
     expect(result.status).toBe(0);
 
-    const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
+    const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
     expect(fs.existsSync(worktreePath)).toBe(true);
 
     // 2. Simulate work in worktree (make changes)
@@ -123,7 +125,7 @@ describe('E2E: Agent Lifecycle Workflow', () => {
     );
 
     // 3. Verify the file exists in worktree
-    expect(fs.existsSync(path.join(worktreePath, 'src', 'new-feature.ts'))).toBe(true);
+    expect(fs.existsSync(system.joinPath(worktreePath, 'src', 'new-feature.ts'))).toBe(true);
 
     // 4. List agents - should show alpha
     result = await runCli(['agents', 'list', '--verbose'], testRepo.path);
@@ -144,26 +146,27 @@ describe('E2E: Agent Lifecycle Workflow', () => {
   });
 
   it('should handle multiple agents independently', async () => {
+    const system = getTestSystemAdapter();
     // Create 3 agents
     await runCli(['agents', 'create', '3'], testRepo.path);
 
     // Make different changes in each worktree
-    const alphaPath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
-    const bravoPath = path.join(testRepo.path, '.worktrees', 'claude-bravo');
-    const charliePath = path.join(testRepo.path, '.worktrees', 'claude-charlie');
+    const alphaPath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
+    const bravoPath = system.joinPath(testRepo.path, '.worktrees', 'claude-bravo');
+    const charliePath = system.joinPath(testRepo.path, '.worktrees', 'claude-charlie');
 
     makeUncommittedChange(alphaPath, 'alpha-work.ts', 'console.log("alpha");\n');
     makeUncommittedChange(bravoPath, 'bravo-work.ts', 'console.log("bravo");\n');
     makeUncommittedChange(charliePath, 'charlie-work.ts', 'console.log("charlie");\n');
 
     // Verify each agent has its own changes
-    expect(fs.existsSync(path.join(alphaPath, 'alpha-work.ts'))).toBe(true);
-    expect(fs.existsSync(path.join(bravoPath, 'bravo-work.ts'))).toBe(true);
-    expect(fs.existsSync(path.join(charliePath, 'charlie-work.ts'))).toBe(true);
+    expect(fs.existsSync(system.joinPath(alphaPath, 'alpha-work.ts'))).toBe(true);
+    expect(fs.existsSync(system.joinPath(bravoPath, 'bravo-work.ts'))).toBe(true);
+    expect(fs.existsSync(system.joinPath(charliePath, 'charlie-work.ts'))).toBe(true);
 
     // Verify changes are isolated (alpha doesn't have bravo's changes)
-    expect(fs.existsSync(path.join(alphaPath, 'bravo-work.ts'))).toBe(false);
-    expect(fs.existsSync(path.join(bravoPath, 'alpha-work.ts'))).toBe(false);
+    expect(fs.existsSync(system.joinPath(alphaPath, 'bravo-work.ts'))).toBe(false);
+    expect(fs.existsSync(system.joinPath(bravoPath, 'alpha-work.ts'))).toBe(false);
 
     // Delete middle agent
     await runCli(['agents', 'delete', 'bravo', '--force'], testRepo.path);
@@ -253,8 +256,9 @@ describe('E2E: Error Recovery Workflow', () => {
   });
 
   it('should recover from corrupted storage', async () => {
+    const system = getTestSystemAdapter();
     // Create corrupt storage file
-    const storageFile = path.join(testRepo.path, '.opus-orchestra', 'storage.json');
+    const storageFile = system.joinPath(testRepo.path, '.opus-orchestra', 'storage.json');
     fs.writeFileSync(storageFile, 'not valid json {{{');
 
     // Commands should still work (using defaults)

@@ -1,6 +1,5 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
-import * as path from 'path';
 
 /**
  * Tests for Container Adapters
@@ -10,10 +9,10 @@ import * as path from 'path';
  */
 
 suite('Container Adapters Test Suite', () => {
-    const containersDir = path.resolve(__dirname, '../../../src/containers');
+    const containersDir = `${__dirname}/../../../src/containers`;
 
     suite('CloudHypervisorAdapter', () => {
-        const adapterPath = path.join(containersDir, 'CloudHypervisorAdapter.ts');
+        const adapterPath = `${containersDir}/CloudHypervisorAdapter.ts`;
         let adapterContent: string;
 
         suiteSetup(() => {
@@ -182,7 +181,7 @@ suite('Container Adapters Test Suite', () => {
     });
 
     suite('Adapter Exports', () => {
-        const indexPath = path.join(containersDir, 'index.ts');
+        const indexPath = `${containersDir}/index.ts`;
         const indexContent = fs.readFileSync(indexPath, 'utf-8');
 
         test('should re-export ContainerAdapter from core', () => {

@@ -4,8 +4,16 @@
  * Polls agent status files and emits EventBus events when changes are detected.
  * This allows UI components to subscribe to events instead of being manually refreshed.
  *
- * Also uses tmux control mode to detect when users respond to permission prompts
- * directly in the terminal (without using the UI buttons).
+ * User Input Detection:
+ * - UI button clicks: Detected directly via sendToAgent(), updates lastInteractionTime
+ * - Terminal input: Should be detected via Claude Code hooks (UserPromptSubmit),
+ *   which update status files. The hooks are the authoritative source for user input.
+ *
+ * NOTE: TmuxControlWatcher is used to detect terminal output, but this includes BOTH
+ * user input AND Claude's responses. It cannot reliably distinguish user actions.
+ * For accurate user input detection, rely on:
+ * - Claude Code hooks (UserPromptSubmit, PermissionRequest, etc.)
+ * - Reading the conversation log
  */
 
 import { Agent, AgentStatus } from '../types';
@@ -58,8 +66,8 @@ export class StatusWatcher {
 
         // Initialize tmux control watcher manager for approval detection
         if (isContainerInitialized()) {
-            const logger = getContainer().logger;
-            this.tmuxWatcherManager = new TmuxControlWatcherManager(logger);
+            const container = getContainer();
+            this.tmuxWatcherManager = new TmuxControlWatcherManager(container.system, container.logger);
         }
 
         // Start status polling (fixed 1 second interval)
@@ -184,8 +192,16 @@ export class StatusWatcher {
     }
 
     /**
-     * Handle tmux output event - if we're watching for approval resolution,
-     * any output means the user responded and Claude is working again.
+     * Handle tmux output event.
+     *
+     * NOTE: This detects ANY terminal output (both user input AND Claude responses).
+     * It cannot reliably distinguish user-initiated actions from Claude output.
+     * This is used as a heuristic to clear pending approvals, but the authoritative
+     * source for user input is Claude Code hooks (UserPromptSubmit, etc.).
+     *
+     * When output is detected on a session with a pending approval, we assume
+     * the user responded (since Claude was waiting for input). This assumption
+     * may be incorrect if Claude outputs something before receiving user input.
      */
     private handleTmuxOutput(event: TmuxOutputEvent): void {
         const agentId = this.sessionToAgentId.get(event.sessionName);
@@ -207,9 +223,11 @@ export class StatusWatcher {
 
         this.debugLog(`Detected output for agent ${agent.name} with pending approval - clearing approval`);
 
-        // Clear the pending approval
+        // Clear the pending approval and update lastInteractionTime
+        // This prevents the next status poll from overwriting our changes with a stale status file
         agent.pendingApproval = null;
         agent.status = 'working';
+        agent.lastInteractionTime = new Date();
         this.updateAgentIcon(agent);
 
         // Emit approval resolved event

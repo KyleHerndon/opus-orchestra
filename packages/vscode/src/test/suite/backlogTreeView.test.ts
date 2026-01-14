@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
-import * as path from 'path';
+import * as os from 'os';
 
 suite('BacklogTreeProvider Test Suite', () => {
 
@@ -28,7 +28,7 @@ suite('BacklogTreeProvider Test Suite', () => {
 
     test('BacklogTreeProvider should handle empty directory', () => {
         // readdirSync on an existing empty directory should return empty array
-        const tempDir = fs.mkdtempSync(path.join('/tmp', 'backlog-test-'));
+        const tempDir = fs.mkdtempSync(`${os.tmpdir()}/backlog-test-`);
         try {
             const files = fs.readdirSync(tempDir);
             assert.deepStrictEqual(files, []);
@@ -38,13 +38,13 @@ suite('BacklogTreeProvider Test Suite', () => {
     });
 
     test('BacklogTreeProvider should filter only .md files', () => {
-        const tempDir = fs.mkdtempSync(path.join('/tmp', 'backlog-test-'));
+        const tempDir = fs.mkdtempSync(`${os.tmpdir()}/backlog-test-`);
         try {
             // Create various files
-            fs.writeFileSync(path.join(tempDir, 'task1.md'), '# Task 1');
-            fs.writeFileSync(path.join(tempDir, 'task2.md'), '# Task 2');
-            fs.writeFileSync(path.join(tempDir, 'readme.txt'), 'Not a task');
-            fs.writeFileSync(path.join(tempDir, '.hidden.md'), 'Hidden file');
+            fs.writeFileSync(`${tempDir}/task1.md`, '# Task 1');
+            fs.writeFileSync(`${tempDir}/task2.md`, '# Task 2');
+            fs.writeFileSync(`${tempDir}/readme.txt`, 'Not a task');
+            fs.writeFileSync(`${tempDir}/.hidden.md`, 'Hidden file');
 
             const files = fs.readdirSync(tempDir);
             const taskFiles = files.filter(f => f.endsWith('.md'));
@@ -60,19 +60,17 @@ suite('BacklogTreeProvider Test Suite', () => {
         }
     });
 
-    test('BacklogTreeProvider path.join should handle various inputs', () => {
-        // Test that path.join doesn't throw on edge cases
+    test('Template string path joining should handle various inputs', () => {
+        // Test that template string path joining works for basic cases
         const testCases = [
-            ['', 'file.md'],
-            ['/path', 'file.md'],
-            ['/path/', 'file.md'],
-            ['/path/to/backlog', '..', 'other'],
+            { base: '', file: 'file.md', expected: '/file.md' },
+            { base: '/path', file: 'file.md', expected: '/path/file.md' },
+            { base: '/path/', file: 'file.md', expected: '/path//file.md' },
         ];
 
-        for (const args of testCases) {
-            assert.doesNotThrow(() => {
-                path.join(...args);
-            }, `path.join threw for args: ${args}`);
+        for (const { base, file, expected } of testCases) {
+            const result = `${base}/${file}`;
+            assert.strictEqual(result, expected, `Template path join failed for base='${base}', file='${file}'`);
         }
     });
 });

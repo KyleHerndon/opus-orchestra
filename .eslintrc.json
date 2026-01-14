@@ -30,7 +30,53 @@
     "@typescript-eslint/no-explicit-any": "warn",
     "no-case-declarations": "warn",
     "no-useless-escape": "warn",
-    "@typescript-eslint/no-var-requires": "warn"
+    "@typescript-eslint/no-var-requires": "warn",
+
+    "no-restricted-imports": ["error", {
+      "paths": [
+        {
+          "name": "child_process",
+          "message": "Use SystemAdapter.exec/execSync/spawn instead of child_process directly. SystemAdapter handles cross-platform execution (WSL on Windows, native on Linux/Mac)."
+        },
+        {
+          "name": "path",
+          "message": "Use SystemAdapter.joinPath() instead of path.join(). SystemAdapter uses forward slashes and handles cross-platform paths correctly."
+        }
+      ]
+    }],
+
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "CallExpression[callee.object.name='path'][callee.property.name='join']",
+        "message": "Use SystemAdapter.joinPath() instead of path.join(). SystemAdapter uses forward slashes and handles cross-platform paths correctly."
+      },
+      {
+        "selector": "CallExpression[callee.object.name='os'][callee.property.name='homedir']",
+        "message": "Use getHomeDir() from pathUtils instead of os.homedir(). getHomeDir() returns the correct home directory based on terminal type (WSL home for WSL terminals, Windows home otherwise)."
+      },
+      {
+        "selector": "MemberExpression[object.name='process'][property.name='platform']",
+        "message": "Avoid checking process.platform directly. Use SystemAdapter to abstract platform differences. The adapter handles WSL-on-Windows vs native Linux/Mac transparently."
+      }
+    ]
   },
+  "overrides": [
+    {
+      "files": [
+        "**/adapters/**/*.ts",
+        "**/containers/**/*.ts",
+        "**/pathUtils.ts",
+        "**/SystemAdapter*.ts",
+        "**/TmuxControlWatcher.ts",
+        "**/fixtures/testRepo.ts",
+        "**/test/ui/testUtils.ts"
+      ],
+      "rules": {
+        "no-restricted-imports": "off",
+        "no-restricted-syntax": "off"
+      }
+    }
+  ],
   "ignorePatterns": ["out", "dist", "**/*.d.ts", "node_modules"]
 }

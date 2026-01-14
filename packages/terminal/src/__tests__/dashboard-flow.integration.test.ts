@@ -11,9 +11,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import {
   createTestRepoWithConfig,
+  getTestSystemAdapter,
   TestRepo,
 } from './fixtures/testRepo.js';
 import {
@@ -187,7 +187,8 @@ describe('Dashboard Flow Integration', () => {
     container.worktreeManager.saveAgentMetadata(agentForSetup);
 
     // Verify agent metadata file exists
-    const metadataPath = path.join(worktreePath, '.opus-orchestra', 'agent.json');
+    const system = getTestSystemAdapter();
+    const metadataPath = system.joinPath(worktreePath, '.opus-orchestra', 'agent.json');
     expect(fs.existsSync(metadataPath)).toBe(true);
 
     // Now verify it's in persistence

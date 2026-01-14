@@ -1,6 +1,5 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
-import * as path from 'path';
 
 /**
  * Static analysis tests for AgentPanel (Svelte-based architecture)
@@ -12,20 +11,20 @@ import * as path from 'path';
 
 suite('AgentPanel Svelte Test Suite', () => {
     // Load source files once for all tests
-    const agentPanelSrcDir = path.resolve(__dirname, '../../../src/agentPanel');
-    const webviewDir = path.join(agentPanelSrcDir, 'webview');
-    const componentsDir = path.join(webviewDir, 'components');
+    const agentPanelSrcDir = `${__dirname}/../../../src/agentPanel`;
+    const webviewDir = `${agentPanelSrcDir}/webview`;
+    const componentsDir = `${webviewDir}/components`;
 
-    const agentCardPath = path.join(componentsDir, 'AgentCard.svelte');
-    const mainTsPath = path.join(webviewDir, 'main.ts');
-    const agentPanelTsPath = path.join(agentPanelSrcDir, 'AgentPanel.ts');
+    const agentCardPath = `${componentsDir}/AgentCard.svelte`;
+    const mainTsPath = `${webviewDir}/main.ts`;
+    const agentPanelTsPath = `${agentPanelSrcDir}/AgentPanel.ts`;
 
     const agentCardContent = fs.readFileSync(agentCardPath, 'utf-8').replace(/\r\n/g, '\n');
     const mainTsContent = fs.readFileSync(mainTsPath, 'utf-8').replace(/\r\n/g, '\n');
     const agentPanelContent = fs.readFileSync(agentPanelTsPath, 'utf-8').replace(/\r\n/g, '\n');
 
     // Also load EmptyState for create form tests
-    const emptyStatePath = path.join(componentsDir, 'EmptyState.svelte');
+    const emptyStatePath = `${componentsDir}/EmptyState.svelte`;
     const emptyStateContent = fs.readFileSync(emptyStatePath, 'utf-8').replace(/\r\n/g, '\n');
 
     test('AgentCard should include required action buttons', () => {
@@ -104,11 +103,11 @@ suite('AgentPanel Svelte Test Suite', () => {
 });
 
 suite('Message Handler Test Suite', () => {
-    const agentPanelSrcDir = path.resolve(__dirname, '../../../src/agentPanel');
-    const webviewDir = path.join(agentPanelSrcDir, 'webview');
+    const agentPanelSrcDir = `${__dirname}/../../../src/agentPanel`;
+    const webviewDir = `${agentPanelSrcDir}/webview`;
 
-    const mainTsPath = path.join(webviewDir, 'main.ts');
-    const agentPanelTsPath = path.join(agentPanelSrcDir, 'AgentPanel.ts');
+    const mainTsPath = `${webviewDir}/main.ts`;
+    const agentPanelTsPath = `${agentPanelSrcDir}/AgentPanel.ts`;
 
     const mainTsContent = fs.readFileSync(mainTsPath, 'utf-8').replace(/\r\n/g, '\n');
     const agentPanelContent = fs.readFileSync(agentPanelTsPath, 'utf-8').replace(/\r\n/g, '\n');
@@ -124,10 +123,10 @@ suite('Message Handler Test Suite', () => {
         }
 
         // Also check Svelte components
-        const componentsDir = path.join(webviewDir, 'components');
+        const componentsDir = `${webviewDir}/components`;
         const svelteFiles = fs.readdirSync(componentsDir).filter(f => f.endsWith('.svelte'));
         for (const file of svelteFiles) {
-            const content = fs.readFileSync(path.join(componentsDir, file), 'utf-8');
+            const content = fs.readFileSync(`${componentsDir}/${file}`, 'utf-8');
             while ((match = commandPattern.exec(content)) !== null) {
                 sentCommands.add(match[1]);
             }
