@@ -148,18 +148,21 @@ describe('GitService', () => {
   describe('createWorktree', () => {
     it('creates a new worktree with branch', async () => {
       const worktreesDir = system.joinPath(testRepo.path, '.worktrees');
-      const worktreePath = system.joinPath(worktreesDir, 'claude-echo');
+      // nodeFs path for fs operations
+      const worktreeNodePath = system.joinPath(worktreesDir, 'claude-echo');
+      // terminal path for git commands
+      const worktreeTerminalPath = system.convertPath(worktreeNodePath, 'terminal');
       fs.mkdirSync(worktreesDir, { recursive: true });
 
       await git.createWorktree(
         testRepo.path,
         'claude-echo',
-        worktreePath,
+        worktreeTerminalPath,
         'main'
       );
 
-      expect(fs.existsSync(worktreePath)).toBe(true);
-      expect(fs.existsSync(system.joinPath(worktreePath, '.git'))).toBe(true);
+      expect(fs.existsSync(worktreeNodePath)).toBe(true);
+      expect(fs.existsSync(system.joinPath(worktreeNodePath, '.git'))).toBe(true);
     });
   });
 
