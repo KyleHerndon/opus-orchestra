@@ -44,22 +44,58 @@ jobs:
         uses: Vampire/setup-wsl@v4
         with:
           distribution: Ubuntu-24.04
+          additional-packages: nodejs npm git
 
-      - uses: actions/setup-node@v4
+      # Non-Windows: use native Node
+      - name: Setup Node (non-Windows)
+        if: runner.os != 'Windows'
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
           cache: 'npm'
 
-      - name: Install dependencies
+      - name: Install dependencies (non-Windows)
+        if: runner.os != 'Windows'
         run: npm ci
 
-      - name: Build core package
+      - name: Build core package (non-Windows)
+        if: runner.os != 'Windows'
         run: npm run build -w @opus-orchestra/core
 
-      - name: Run core tests
+      - name: Run core tests (non-Windows)
+        if: runner.os != 'Windows'
         run: npm test -w @opus-orchestra/core
 
-      - name: Run VSCode unit tests
+      - name: Run VSCode unit tests (non-Windows)
+        if: runner.os != 'Windows'
+        run: npm run test:unit -w opus-orchestra
+
+      # Windows: run everything inside WSL
+      - name: Install Node in WSL (Windows)
+        if: runner.os == 'Windows'
+        shell: wsl-bash {0}
+        run: |
+          curl -fsSL https://deb.nodesource.com/setup_${{ matrix.node }}.x | sudo -E bash -
+          sudo apt-get install -y nodejs
+
+      - name: Install dependencies (Windows/WSL)
+        if: runner.os == 'Windows'
+        shell: wsl-bash {0}
+        run: npm ci
+
+      - name: Build core package (Windows/WSL)
+        if: runner.os == 'Windows'
+        shell: wsl-bash {0}
+        run: npm run build -w @opus-orchestra/core
+
+      - name: Run core tests (Windows/WSL)
+        if: runner.os == 'Windows'
+        shell: wsl-bash {0}
+        run: npm test -w @opus-orchestra/core
+
+      - name: Run VSCode unit tests (Windows/WSL)
+        if: runner.os == 'Windows'
+        shell: wsl-bash {0}
         run: npm run test:unit -w opus-orchestra
 
   integration-tests:
