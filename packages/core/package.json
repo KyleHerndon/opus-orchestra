@@ -22,7 +22,6 @@
     "chokidar": "^5.0.0",
     "p-retry": "^7.1.1",
     "pino": "^10.1.1",
-    "simple-git": "^3.30.0",
     "zod": "^4.3.5"
   },
   "devDependencies": {

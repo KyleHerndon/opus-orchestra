@@ -24,8 +24,8 @@ describe('GitService', () => {
 
   beforeEach(() => {
     testRepo = createTestRepo('git-service-test-');
-    git = new GitService();
     system = getTestSystemAdapter();
+    git = new GitService(system);
   });
 
   afterEach(() => {

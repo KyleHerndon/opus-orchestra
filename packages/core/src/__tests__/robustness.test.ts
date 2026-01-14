@@ -190,7 +190,7 @@ describe('GitService Robustness', () => {
 
   beforeEach(() => {
     tempDir = createTempDir('git-test-');
-    gitService = new GitService();
+    gitService = new GitService(systemAdapter);
   });
 
   afterEach(() => {

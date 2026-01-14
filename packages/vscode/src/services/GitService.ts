@@ -9,7 +9,8 @@
  * with a NodeSystemAdapter.
  */
 
-import { GitService, IGitService } from '@opus-orchestra/core';
+import { GitService, IGitService, NodeSystemAdapter } from '@opus-orchestra/core';
+import { getConfig } from './ConfigService';
 
 /**
  * Singleton instance (fallback when ServiceContainer not available)
@@ -33,9 +34,11 @@ export function getGitService(): IGitService {
         // ServiceContainer not available yet
     }
 
-    // Fall back to local singleton (GitService now uses simple-git internally, no SystemAdapter needed)
+    // Fall back to local singleton with NodeSystemAdapter
     if (!gitServiceInstance) {
-        gitServiceInstance = new GitService();
+        const terminalType = getConfig<string>('terminalType') ?? 'bash';
+        const system = new NodeSystemAdapter(terminalType as 'bash' | 'wsl' | 'powershell' | 'cmd' | 'gitbash');
+        gitServiceInstance = new GitService(system);
     }
     return gitServiceInstance;
 }

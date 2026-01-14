@@ -1,34 +1,21 @@
 /**
- * GitService - Git operations abstraction using simple-git
+ * GitService - Git operations abstraction using CLI git
  *
  * Provides all git-related operations with:
- * - Type-safe API via simple-git
+ * - Cross-platform support via SystemAdapter (uses WSL on Windows)
  * - Automatic retry with exponential backoff for transient failures
  * - Structured error handling with Result types
- * - Timeout protection for long operations
  *
  * Error handling:
  * - Methods that can fail in expected ways return Result<T>
  * - Callers can distinguish between "no data" and "error getting data"
  */
 
-import simpleGit, { SimpleGit, SimpleGitOptions } from 'simple-git';
 import pRetry from 'p-retry';
 import { DiffStats } from '../types/agent';
 import { Result, ok, err, GitErrorCode } from '../types/result';
 import { ILogger } from './Logger';
-
-/**
- * Default timeouts for git operations (in milliseconds)
- */
-export const GIT_TIMEOUTS = {
-  /** Fast operations like branch listing */
-  fast: 5000,
-  /** Medium operations like diff stats */
-  medium: 15000,
-  /** Slow operations like worktree creation */
-  slow: 60000,
-} as const;
+import { SystemAdapter } from '../adapters/SystemAdapter';
 
 /**
  * Retry configuration for git operations
@@ -69,28 +56,15 @@ export interface IGitService {
 }
 
 /**
- * Git operations service using simple-git
+ * Git operations service using CLI git via SystemAdapter
  */
 export class GitService implements IGitService {
   private logger?: ILogger;
+  private system: SystemAdapter;
 
-  constructor(logger?: ILogger) {
+  constructor(system: SystemAdapter, logger?: ILogger) {
+    this.system = system;
     this.logger = logger?.child({ component: 'GitService' });
-  }
-
-  /**
-   * Create a simple-git instance for a specific directory
-   */
-  private git(cwd: string, timeout: number = GIT_TIMEOUTS.medium): SimpleGit {
-    const options: Partial<SimpleGitOptions> = {
-      baseDir: cwd,
-      binary: 'git',
-      maxConcurrentProcesses: 6,
-      timeout: {
-        block: timeout,
-      },
-    };
-    return simpleGit(options);
   }
 
   /**
@@ -119,11 +93,7 @@ export class GitService implements IGitService {
    */
   isGitRepo(path: string): boolean {
     try {
-      // Use synchronous check via simple-git
-      const git = this.git(path, GIT_TIMEOUTS.fast);
-      // checkIsRepo is async, so we use a sync approach
-      const { execSync } = require('child_process');
-      execSync('git rev-parse --git-dir', { cwd: path, stdio: 'ignore' });
+      this.system.execSync('git rev-parse --git-dir', path);
       return true;
     } catch {
       return false;
@@ -135,9 +105,8 @@ export class GitService implements IGitService {
    */
   async getCurrentBranch(repoPath: string): Promise<string> {
     return this.withRetry(async () => {
-      const git = this.git(repoPath, GIT_TIMEOUTS.fast);
-      const branchSummary = await git.branch();
-      return branchSummary.current;
+      const result = await this.system.exec('git branch --show-current', repoPath);
+      return result.trim();
     }, 'getCurrentBranch');
   }
 
@@ -146,13 +115,13 @@ export class GitService implements IGitService {
    */
   async getBaseBranch(repoPath: string): Promise<string> {
     try {
-      const git = this.git(repoPath, GIT_TIMEOUTS.fast);
-      const branchSummary = await git.branch(['-l', 'main', 'master']);
+      const result = await this.system.exec('git branch -l main master', repoPath);
+      const branches = result.trim().split('\n').map(b => b.replace(/^\*?\s*/, '').trim());
 
-      if (branchSummary.all.includes('main')) {
+      if (branches.includes('main')) {
         return 'main';
       }
-      if (branchSummary.all.includes('master')) {
+      if (branches.includes('master')) {
         return 'master';
       }
       return 'HEAD~1';
@@ -163,7 +132,7 @@ export class GitService implements IGitService {
 
   /**
    * Get diff statistics between current branch and base
-   * Protected with timeout and retry to handle transient failures.
+   * Protected with retry to handle transient failures.
    * @deprecated Use getDiffStatsResult for explicit error handling
    */
   async getDiffStats(worktreePath: string, baseBranch: string): Promise<DiffStats> {
@@ -182,14 +151,12 @@ export class GitService implements IGitService {
   async getDiffStatsResult(worktreePath: string, baseBranch: string): Promise<Result<DiffStats>> {
     try {
       const stats = await this.withRetry(async () => {
-        const git = this.git(worktreePath, GIT_TIMEOUTS.medium);
-        // Use diffSummary for structured output
-        const summary = await git.diffSummary([`${baseBranch}...HEAD`]);
-        return {
-          filesChanged: summary.changed,
-          insertions: summary.insertions,
-          deletions: summary.deletions,
-        };
+        // Use --shortstat for easy parsing
+        const result = await this.system.exec(
+          `git diff --shortstat "${baseBranch}...HEAD"`,
+          worktreePath
+        );
+        return this.parseShortstat(result);
       }, 'getDiffStats');
 
       return ok(stats);
@@ -207,8 +174,38 @@ export class GitService implements IGitService {
   }
 
   /**
+   * Parse git diff --shortstat output
+   * Example: " 3 files changed, 10 insertions(+), 5 deletions(-)"
+   */
+  private parseShortstat(output: string): DiffStats {
+    const stats: DiffStats = { filesChanged: 0, insertions: 0, deletions: 0 };
+    const trimmed = output.trim();
+
+    if (!trimmed) {
+      return stats;
+    }
+
+    // Match patterns like "3 files changed", "10 insertions(+)", "5 deletions(-)"
+    const filesMatch = trimmed.match(/(\d+)\s+files?\s+changed/);
+    const insertionsMatch = trimmed.match(/(\d+)\s+insertions?\(\+\)/);
+    const deletionsMatch = trimmed.match(/(\d+)\s+deletions?\(-\)/);
+
+    if (filesMatch) {
+      stats.filesChanged = parseInt(filesMatch[1], 10);
+    }
+    if (insertionsMatch) {
+      stats.insertions = parseInt(insertionsMatch[1], 10);
+    }
+    if (deletionsMatch) {
+      stats.deletions = parseInt(deletionsMatch[1], 10);
+    }
+
+    return stats;
+  }
+
+  /**
    * Get list of changed files
-   * Protected with timeout and retry.
+   * Protected with retry.
    * @deprecated Use getChangedFilesResult for explicit error handling
    */
   async getChangedFiles(worktreePath: string, baseBranch: string): Promise<string[]> {
@@ -227,9 +224,15 @@ export class GitService implements IGitService {
   async getChangedFilesResult(worktreePath: string, baseBranch: string): Promise<Result<string[]>> {
     try {
       const files = await this.withRetry(async () => {
-        const git = this.git(worktreePath, GIT_TIMEOUTS.medium);
-        const summary = await git.diffSummary([`${baseBranch}...HEAD`]);
-        return summary.files.map(f => f.file);
+        const result = await this.system.exec(
+          `git diff --name-only "${baseBranch}...HEAD"`,
+          worktreePath
+        );
+        const trimmed = result.trim();
+        if (!trimmed) {
+          return [];
+        }
+        return trimmed.split('\n').filter(f => f.length > 0);
       }, 'getChangedFiles');
 
       return ok(files);
@@ -247,7 +250,7 @@ export class GitService implements IGitService {
 
   /**
    * Create a new worktree with a new branch
-   * Protected with timeout and retry (can be slow on large repos)
+   * Protected with retry (can be slow on large repos)
    */
   async createWorktree(
     repoPath: string,
@@ -256,9 +259,10 @@ export class GitService implements IGitService {
     baseBranch: string
   ): Promise<void> {
     await this.withRetry(async () => {
-      const git = this.git(repoPath, GIT_TIMEOUTS.slow);
-      // simple-git doesn't have direct worktree support, use raw command
-      await git.raw(['worktree', 'add', '-b', branchName, worktreePath, baseBranch]);
+      await this.system.exec(
+        `git worktree add -b "${branchName}" "${worktreePath}" "${baseBranch}"`,
+        repoPath
+      );
     }, 'createWorktree');
   }
 
@@ -267,8 +271,10 @@ export class GitService implements IGitService {
    */
   async removeWorktree(repoPath: string, worktreePath: string): Promise<void> {
     try {
-      const git = this.git(repoPath, GIT_TIMEOUTS.medium);
-      await git.raw(['worktree', 'remove', worktreePath, '--force']);
+      await this.system.exec(
+        `git worktree remove "${worktreePath}" --force`,
+        repoPath
+      );
     } catch (error) {
       // Log but don't throw - worktree removal failures are often expected
       this.logger?.debug(`Worktree removal may have partially failed: ${error}`);
@@ -280,8 +286,7 @@ export class GitService implements IGitService {
    */
   async deleteBranch(repoPath: string, branchName: string): Promise<void> {
     try {
-      const git = this.git(repoPath, GIT_TIMEOUTS.fast);
-      await git.deleteLocalBranch(branchName, true);
+      await this.system.exec(`git branch -D "${branchName}"`, repoPath);
     } catch (error) {
       // Log but don't throw - branch deletion failures are often expected
       this.logger?.debug(`Branch deletion may have failed: ${error}`);
@@ -293,8 +298,7 @@ export class GitService implements IGitService {
    */
   async renameBranch(repoPath: string, oldName: string, newName: string): Promise<void> {
     await this.withRetry(async () => {
-      const git = this.git(repoPath, GIT_TIMEOUTS.fast);
-      await git.raw(['branch', '-m', oldName, newName]);
+      await this.system.exec(`git branch -m "${oldName}" "${newName}"`, repoPath);
     }, 'renameBranch');
   }
 
@@ -302,8 +306,7 @@ export class GitService implements IGitService {
    * Initialize a new git repository
    */
   async initRepo(path: string): Promise<void> {
-    const git = this.git(path, GIT_TIMEOUTS.fast);
-    await git.init();
+    await this.system.exec('git init', path);
   }
 
   /**
@@ -311,8 +314,7 @@ export class GitService implements IGitService {
    */
   async stageAll(repoPath: string): Promise<void> {
     await this.withRetry(async () => {
-      const git = this.git(repoPath, GIT_TIMEOUTS.medium);
-      await git.add('-A');
+      await this.system.exec('git add -A', repoPath);
     }, 'stageAll');
   }
 
@@ -321,8 +323,9 @@ export class GitService implements IGitService {
    */
   async commit(repoPath: string, message: string): Promise<void> {
     await this.withRetry(async () => {
-      const git = this.git(repoPath, GIT_TIMEOUTS.medium);
-      await git.commit(message);
+      // Escape double quotes in message
+      const escapedMessage = message.replace(/"/g, '\\"');
+      await this.system.exec(`git commit -m "${escapedMessage}"`, repoPath);
     }, 'commit');
   }
 }

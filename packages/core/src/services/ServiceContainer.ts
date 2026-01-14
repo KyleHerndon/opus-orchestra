@@ -169,7 +169,7 @@ export class ServiceContainer {
 
     // Create core services
     this.eventBus = new EventBus(this.logger);
-    this.gitService = new GitService(this.logger);
+    this.gitService = new GitService(this.system, this.logger);
     this.statusService = new StatusService(this.system, this.logger);
     this.todoService = new TodoService(this.logger, services.todosDirectory);
 
