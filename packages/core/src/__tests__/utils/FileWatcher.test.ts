@@ -6,9 +6,12 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import * as os from 'node:os';
 import { FileWatcher, FileWatchEvent, createFileWatcher, isWsl } from '../../utils/FileWatcher';
+import { getTestSystemAdapter } from '../fixtures/testRepo';
+
+// Get shared system adapter for consistent path handling
+const systemAdapter = getTestSystemAdapter();
 
 /**
  * Get a temp directory that's on the native filesystem.
@@ -28,7 +31,7 @@ describe('FileWatcher', () => {
   let watcher: FileWatcher | null = null;
 
   beforeEach(() => {
-    testDir = fs.mkdtempSync(path.join(getNativeTmpDir(), 'filewatcher-test-'));
+    testDir = fs.mkdtempSync(systemAdapter.joinPath(getNativeTmpDir(), 'filewatcher-test-'));
   });
 
   afterEach(() => {
@@ -241,7 +244,7 @@ describe('FileWatcher', () => {
       await new Promise(resolve => setTimeout(resolve, 200));
 
       // Create a new file
-      const testFile = path.join(testDir, 'new-file.txt');
+      const testFile = systemAdapter.joinPath(testDir, 'new-file.txt');
       fs.writeFileSync(testFile, 'hello');
 
       // Wait for debounce and event
@@ -256,7 +259,7 @@ describe('FileWatcher', () => {
 
     it('detects file changes', async () => {
       // Create file before starting watcher
-      const testFile = path.join(testDir, 'existing-file.txt');
+      const testFile = systemAdapter.joinPath(testDir, 'existing-file.txt');
       fs.writeFileSync(testFile, 'initial');
 
       const events: FileWatchEvent[] = [];
@@ -284,7 +287,7 @@ describe('FileWatcher', () => {
 
     it('detects file deletion', async () => {
       // Create file before starting watcher
-      const testFile = path.join(testDir, 'to-delete.txt');
+      const testFile = systemAdapter.joinPath(testDir, 'to-delete.txt');
       fs.writeFileSync(testFile, 'delete me');
 
       const events: FileWatchEvent[] = [];
@@ -365,7 +368,7 @@ describe('FileWatcher', () => {
 
     it('addPath works while watcher is running', async () => {
       const events: FileWatchEvent[] = [];
-      const additionalDir = fs.mkdtempSync(path.join(getNativeTmpDir(), 'filewatcher-add-'));
+      const additionalDir = fs.mkdtempSync(systemAdapter.joinPath(getNativeTmpDir(), 'filewatcher-add-'));
 
       try {
         watcher = new FileWatcher({
@@ -385,7 +388,7 @@ describe('FileWatcher', () => {
         await new Promise(resolve => setTimeout(resolve, 300));
 
         // Create file in new path
-        const testFile = path.join(additionalDir, 'new-file.txt');
+        const testFile = systemAdapter.joinPath(additionalDir, 'new-file.txt');
         fs.writeFileSync(testFile, 'hello');
 
         // Longer wait for file event
@@ -403,7 +406,7 @@ describe('FileWatcher', () => {
 
   describe('debouncing', () => {
     it('debounces rapid file changes', async () => {
-      const testFile = path.join(testDir, 'rapid-changes.txt');
+      const testFile = systemAdapter.joinPath(testDir, 'rapid-changes.txt');
       fs.writeFileSync(testFile, 'initial');
 
       const events: FileWatchEvent[] = [];
@@ -532,7 +535,7 @@ describe('FileWatcher', () => {
       await watcher.start();
       await new Promise(resolve => setTimeout(resolve, 200));
 
-      const testFile = path.join(testDir, 'structure-test.txt');
+      const testFile = systemAdapter.joinPath(testDir, 'structure-test.txt');
       fs.writeFileSync(testFile, 'content');
 
       await new Promise(resolve => setTimeout(resolve, 300));

@@ -6,7 +6,6 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { NodeSystemAdapter } from '../../adapters/NodeSystemAdapter';
 import { SystemAdapter } from '../../adapters/SystemAdapter';
 import { createTempDir, TestRepo, getTestSystemAdapter } from '../fixtures/testRepo';
@@ -45,7 +44,7 @@ describe('NodeSystemAdapter', () => {
 
   describe('file system operations', () => {
     it('can check if file exists', () => {
-      const filePath = path.join(tempDir.path, 'test.txt');
+      const filePath = adapter.joinPath(tempDir.path, 'test.txt');
       expect(adapter.exists(filePath)).toBe(false);
 
       fs.writeFileSync(filePath, 'content');
@@ -53,26 +52,26 @@ describe('NodeSystemAdapter', () => {
     });
 
     it('can read files', () => {
-      const filePath = path.join(tempDir.path, 'test.txt');
+      const filePath = adapter.joinPath(tempDir.path, 'test.txt');
       fs.writeFileSync(filePath, 'hello world');
 
       expect(adapter.readFile(filePath)).toBe('hello world');
     });
 
     it('can write files', () => {
-      const filePath = path.join(tempDir.path, 'new-file.txt');
+      const filePath = adapter.joinPath(tempDir.path, 'new-file.txt');
       adapter.writeFile(filePath, 'new content');
 
       expect(fs.readFileSync(filePath, 'utf-8')).toBe('new content');
     });
 
     it('throws on reading non-existent file', () => {
-      const filePath = path.join(tempDir.path, 'does-not-exist.txt');
+      const filePath = adapter.joinPath(tempDir.path, 'does-not-exist.txt');
       expect(() => adapter.readFile(filePath)).toThrow();
     });
 
     it('can create directories', () => {
-      const dirPath = path.join(tempDir.path, 'subdir');
+      const dirPath = adapter.joinPath(tempDir.path, 'subdir');
       adapter.mkdir(dirPath);
 
       expect(fs.existsSync(dirPath)).toBe(true);
@@ -80,7 +79,7 @@ describe('NodeSystemAdapter', () => {
     });
 
     it('can delete files', () => {
-      const filePath = path.join(tempDir.path, 'to-delete.txt');
+      const filePath = adapter.joinPath(tempDir.path, 'to-delete.txt');
       fs.writeFileSync(filePath, 'content');
 
       adapter.unlink(filePath);
@@ -88,9 +87,9 @@ describe('NodeSystemAdapter', () => {
     });
 
     it('can list directory contents', () => {
-      fs.writeFileSync(path.join(tempDir.path, 'file1.txt'), '1');
-      fs.writeFileSync(path.join(tempDir.path, 'file2.txt'), '2');
-      fs.mkdirSync(path.join(tempDir.path, 'subdir'));
+      fs.writeFileSync(adapter.joinPath(tempDir.path, 'file1.txt'), '1');
+      fs.writeFileSync(adapter.joinPath(tempDir.path, 'file2.txt'), '2');
+      fs.mkdirSync(adapter.joinPath(tempDir.path, 'subdir'));
 
       const entries = adapter.readDir(tempDir.path);
 
@@ -100,8 +99,8 @@ describe('NodeSystemAdapter', () => {
     });
 
     it('can copy files', () => {
-      const srcPath = path.join(tempDir.path, 'source.txt');
-      const destPath = path.join(tempDir.path, 'dest.txt');
+      const srcPath = adapter.joinPath(tempDir.path, 'source.txt');
+      const destPath = adapter.joinPath(tempDir.path, 'dest.txt');
 
       fs.writeFileSync(srcPath, 'source content');
       adapter.copyFile(srcPath, destPath);
@@ -110,7 +109,7 @@ describe('NodeSystemAdapter', () => {
     });
 
     it('can get file stats', () => {
-      const filePath = path.join(tempDir.path, 'test.txt');
+      const filePath = adapter.joinPath(tempDir.path, 'test.txt');
       fs.writeFileSync(filePath, 'content');
 
       const stat = adapter.stat(filePath);
@@ -121,9 +120,9 @@ describe('NodeSystemAdapter', () => {
     });
 
     it('can recursively remove directories', () => {
-      const dirPath = path.join(tempDir.path, 'nested');
-      fs.mkdirSync(path.join(dirPath, 'deep', 'dir'), { recursive: true });
-      fs.writeFileSync(path.join(dirPath, 'deep', 'file.txt'), 'content');
+      const dirPath = adapter.joinPath(tempDir.path, 'nested');
+      fs.mkdirSync(adapter.joinPath(dirPath, 'deep', 'dir'), { recursive: true });
+      fs.writeFileSync(adapter.joinPath(dirPath, 'deep', 'file.txt'), 'content');
 
       adapter.rmdir(dirPath, { recursive: true });
 

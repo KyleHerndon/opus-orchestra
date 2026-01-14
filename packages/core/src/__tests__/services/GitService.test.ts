@@ -6,24 +6,26 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
-import * as os from 'node:os';
 import { GitService } from '../../services/GitService';
+import { SystemAdapter } from '../../adapters/SystemAdapter';
 import {
   createTestRepo,
   addAndCommit,
   makeUncommittedChange,
   createWorktree,
   TestRepo,
+  getTestSystemAdapter,
 } from '../fixtures/testRepo';
 
 describe('GitService', () => {
   let testRepo: TestRepo;
   let git: GitService;
+  let system: SystemAdapter;
 
   beforeEach(() => {
     testRepo = createTestRepo('git-service-test-');
     git = new GitService();
+    system = getTestSystemAdapter();
   });
 
   afterEach(() => {
@@ -37,7 +39,7 @@ describe('GitService', () => {
 
     it('returns false for non-git directories', () => {
       // Create temp dir outside the git repo
-      const nonGitDir = fs.mkdtempSync(path.join(os.tmpdir(), 'not-git-'));
+      const nonGitDir = fs.mkdtempSync(system.joinPath(system.getTempDirectory(), 'not-git-'));
       try {
         expect(git.isGitRepo(nonGitDir)).toBe(false);
       } finally {
@@ -90,7 +92,7 @@ describe('GitService', () => {
       const worktreePath = createWorktree(testRepo.path, 'claude-bravo');
 
       // Delete content from README
-      fs.writeFileSync(path.join(worktreePath, 'README.md'), '');
+      fs.writeFileSync(system.joinPath(worktreePath, 'README.md'), '');
       addAndCommit(worktreePath, 'README.md', '', 'Clear README');
 
       const stats = await git.getDiffStats(worktreePath, 'main');
@@ -104,7 +106,7 @@ describe('GitService', () => {
 
       // Modify existing file (add lines and change existing)
       const newContent = 'export const goodbye = "world";\nexport const foo = "bar";\n';
-      fs.writeFileSync(path.join(worktreePath, 'src', 'index.ts'), newContent);
+      fs.writeFileSync(system.joinPath(worktreePath, 'src', 'index.ts'), newContent);
 
       // Stage and commit the changes
       const { execSync } = await import('node:child_process');
@@ -147,8 +149,9 @@ describe('GitService', () => {
 
   describe('createWorktree', () => {
     it('creates a new worktree with branch', async () => {
-      const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-echo');
-      fs.mkdirSync(path.dirname(worktreePath), { recursive: true });
+      const worktreesDir = system.joinPath(testRepo.path, '.worktrees');
+      const worktreePath = system.joinPath(worktreesDir, 'claude-echo');
+      fs.mkdirSync(worktreesDir, { recursive: true });
 
       await git.createWorktree(
         testRepo.path,
@@ -158,7 +161,7 @@ describe('GitService', () => {
       );
 
       expect(fs.existsSync(worktreePath)).toBe(true);
-      expect(fs.existsSync(path.join(worktreePath, '.git'))).toBe(true);
+      expect(fs.existsSync(system.joinPath(worktreePath, '.git'))).toBe(true);
     });
   });
 
@@ -175,7 +178,7 @@ describe('GitService', () => {
 
   describe('initRepo', () => {
     it('initializes a new git repository', async () => {
-      const newDir = path.join(testRepo.path, 'new-repo');
+      const newDir = system.joinPath(testRepo.path, 'new-repo');
       fs.mkdirSync(newDir);
 
       await git.initRepo(newDir);

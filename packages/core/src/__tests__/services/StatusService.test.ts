@@ -6,7 +6,6 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { StatusService } from '../../services/StatusService';
 import { SystemAdapter } from '../../adapters/SystemAdapter';
 import { createTempDir, TestRepo, getTestSystemAdapter } from '../fixtures/testRepo';
@@ -29,7 +28,9 @@ describe('StatusService', () => {
   describe('getStatusDirectory', () => {
     it('returns correct status directory path', () => {
       const result = status.getStatusDirectory(tempDir.path);
-      expect(result).toBe(path.join(tempDir.path, '.opus-orchestra', 'status'));
+      // Use adapter's joinPath for consistent path format (forward slashes)
+      const expected = system.joinPath(tempDir.path, '.opus-orchestra', 'status');
+      expect(result).toBe(expected);
     });
   });
 
@@ -40,7 +41,7 @@ describe('StatusService', () => {
     });
 
     it('returns null when status directory is empty', () => {
-      const statusDir = path.join(tempDir.path, '.opus-orchestra', 'status');
+      const statusDir = system.joinPath(tempDir.path, '.opus-orchestra', 'status');
       fs.mkdirSync(statusDir, { recursive: true });
 
       const result = status.checkStatus(tempDir.path);
@@ -48,7 +49,7 @@ describe('StatusService', () => {
     });
 
     it('parses JSON hook data with tool_name as waiting-approval', () => {
-      const statusDir = path.join(tempDir.path, '.opus-orchestra', 'status');
+      const statusDir = system.joinPath(tempDir.path, '.opus-orchestra', 'status');
       fs.mkdirSync(statusDir, { recursive: true });
 
       const hookData = {
@@ -56,7 +57,7 @@ describe('StatusService', () => {
         tool_input: { command: 'npm test' },
       };
       fs.writeFileSync(
-        path.join(statusDir, 'session-123'),
+        system.joinPath(statusDir, 'session-123'),
         JSON.stringify(hookData)
       );
 
@@ -68,14 +69,14 @@ describe('StatusService', () => {
     });
 
     it('parses JSON hook data with session_id as working', () => {
-      const statusDir = path.join(tempDir.path, '.opus-orchestra', 'status');
+      const statusDir = system.joinPath(tempDir.path, '.opus-orchestra', 'status');
       fs.mkdirSync(statusDir, { recursive: true });
 
       const hookData = {
         session_id: 'abc-123',
       };
       fs.writeFileSync(
-        path.join(statusDir, 'session-123'),
+        system.joinPath(statusDir, 'session-123'),
         JSON.stringify(hookData)
       );
 
@@ -87,7 +88,7 @@ describe('StatusService', () => {
     });
 
     it('parses Write tool with file_path context', () => {
-      const statusDir = path.join(tempDir.path, '.opus-orchestra', 'status');
+      const statusDir = system.joinPath(tempDir.path, '.opus-orchestra', 'status');
       fs.mkdirSync(statusDir, { recursive: true });
 
       const hookData = {
@@ -95,7 +96,7 @@ describe('StatusService', () => {
         tool_input: { file_path: '/src/index.ts' },
       };
       fs.writeFileSync(
-        path.join(statusDir, 'session-123'),
+        system.joinPath(statusDir, 'session-123'),
         JSON.stringify(hookData)
       );
 
@@ -106,7 +107,7 @@ describe('StatusService', () => {
     });
 
     it('parses Edit tool with file_path context', () => {
-      const statusDir = path.join(tempDir.path, '.opus-orchestra', 'status');
+      const statusDir = system.joinPath(tempDir.path, '.opus-orchestra', 'status');
       fs.mkdirSync(statusDir, { recursive: true });
 
       const hookData = {
@@ -114,7 +115,7 @@ describe('StatusService', () => {
         tool_input: { file_path: '/src/utils.ts' },
       };
       fs.writeFileSync(
-        path.join(statusDir, 'session-123'),
+        system.joinPath(statusDir, 'session-123'),
         JSON.stringify(hookData)
       );
 
@@ -125,14 +126,14 @@ describe('StatusService', () => {
     });
 
     it('handles tool without context', () => {
-      const statusDir = path.join(tempDir.path, '.opus-orchestra', 'status');
+      const statusDir = system.joinPath(tempDir.path, '.opus-orchestra', 'status');
       fs.mkdirSync(statusDir, { recursive: true });
 
       const hookData = {
         tool_name: 'UnknownTool',
       };
       fs.writeFileSync(
-        path.join(statusDir, 'session-123'),
+        system.joinPath(statusDir, 'session-123'),
         JSON.stringify(hookData)
       );
 
@@ -143,12 +144,12 @@ describe('StatusService', () => {
     });
 
     it('reads most recent status file when multiple exist', async () => {
-      const statusDir = path.join(tempDir.path, '.opus-orchestra', 'status');
+      const statusDir = system.joinPath(tempDir.path, '.opus-orchestra', 'status');
       fs.mkdirSync(statusDir, { recursive: true });
 
       // Create older file
       fs.writeFileSync(
-        path.join(statusDir, 'old-session'),
+        system.joinPath(statusDir, 'old-session'),
         JSON.stringify({ tool_name: 'OldTool' })
       );
 
@@ -157,7 +158,7 @@ describe('StatusService', () => {
 
       // Create newer file
       fs.writeFileSync(
-        path.join(statusDir, 'new-session'),
+        system.joinPath(statusDir, 'new-session'),
         JSON.stringify({ tool_name: 'NewTool' })
       );
 
@@ -202,15 +203,15 @@ describe('StatusService', () => {
 
   describe('clearStatus', () => {
     it('removes all files in status directory', () => {
-      const statusDir = path.join(tempDir.path, '.opus-orchestra', 'status');
+      const statusDir = system.joinPath(tempDir.path, '.opus-orchestra', 'status');
       fs.mkdirSync(statusDir, { recursive: true });
-      fs.writeFileSync(path.join(statusDir, 'session-1'), 'content1');
-      fs.writeFileSync(path.join(statusDir, 'session-2'), 'content2');
+      fs.writeFileSync(system.joinPath(statusDir, 'session-1'), 'content1');
+      fs.writeFileSync(system.joinPath(statusDir, 'session-2'), 'content2');
 
       status.clearStatus(tempDir.path);
 
-      expect(fs.existsSync(path.join(statusDir, 'session-1'))).toBe(false);
-      expect(fs.existsSync(path.join(statusDir, 'session-2'))).toBe(false);
+      expect(fs.existsSync(system.joinPath(statusDir, 'session-1'))).toBe(false);
+      expect(fs.existsSync(system.joinPath(statusDir, 'session-2'))).toBe(false);
     });
 
     it('handles non-existent status directory gracefully', () => {

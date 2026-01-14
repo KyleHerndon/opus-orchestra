@@ -16,13 +16,15 @@ import type { SystemAdapter, ConfigAdapter } from '../adapters';
 import type { Agent, PersistedAgent } from '../types/agent';
 import type { IWorktreeManager } from '../managers/WorktreeManager';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import * as os from 'node:os';
 import { getTestSystemAdapter } from './fixtures/testRepo';
 
+// Get shared system adapter for consistent path handling
+const systemAdapter = getTestSystemAdapter();
+
 // Create temp directory for tests
 function createTempDir(prefix: string): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  return fs.mkdtempSync(systemAdapter.joinPath(os.tmpdir(), prefix));
 }
 
 function cleanupTempDir(dir: string): void {
@@ -129,7 +131,7 @@ describe('Logger Robustness', () => {
   });
 
   it('should handle non-existent log directory', () => {
-    const nonExistentPath = path.join(tempDir, 'nonexistent', 'deep', 'path');
+    const nonExistentPath = systemAdapter.joinPath(tempDir, 'nonexistent', 'deep', 'path');
 
     // Should not throw - should create directory or handle gracefully
     expect(() => {
@@ -204,7 +206,7 @@ describe('GitService Robustness', () => {
   });
 
   it('should handle non-existent directory', async () => {
-    const nonExistent = path.join(tempDir, 'does-not-exist');
+    const nonExistent = systemAdapter.joinPath(tempDir, 'does-not-exist');
 
     const baseBranch = await gitService.getBaseBranch(nonExistent);
 
@@ -253,7 +255,7 @@ describe('StatusService Robustness', () => {
   });
 
   it('should handle empty status directory', () => {
-    const statusDir = path.join(tempDir, '.opus-orchestra', 'status');
+    const statusDir = systemAdapter.joinPath(tempDir, '.opus-orchestra', 'status');
     fs.mkdirSync(statusDir, { recursive: true });
 
     const status = statusService.checkStatus(tempDir);
@@ -262,9 +264,9 @@ describe('StatusService Robustness', () => {
   });
 
   it('should handle corrupted status file', () => {
-    const statusDir = path.join(tempDir, '.opus-orchestra', 'status');
+    const statusDir = systemAdapter.joinPath(tempDir, '.opus-orchestra', 'status');
     fs.mkdirSync(statusDir, { recursive: true });
-    fs.writeFileSync(path.join(statusDir, 'status.txt'), 'invalid json {{{');
+    fs.writeFileSync(systemAdapter.joinPath(statusDir, 'status.txt'), 'invalid json {{{');
 
     const status = statusService.checkStatus(tempDir);
 
@@ -273,10 +275,10 @@ describe('StatusService Robustness', () => {
   });
 
   it('should handle status file with unexpected format', () => {
-    const statusDir = path.join(tempDir, '.opus-orchestra', 'status');
+    const statusDir = systemAdapter.joinPath(tempDir, '.opus-orchestra', 'status');
     fs.mkdirSync(statusDir, { recursive: true });
     fs.writeFileSync(
-      path.join(statusDir, 'status.json'),
+      systemAdapter.joinPath(statusDir, 'status.json'),
       JSON.stringify({ unexpected: 'format', no: 'status field' })
     );
 
@@ -321,7 +323,7 @@ describe('WorktreeManager Robustness', () => {
 
   it('should handle worktreeExists for non-existent path', () => {
     const result = worktreeManager.worktreeExists(
-      path.join(tempDir, 'nonexistent')
+      systemAdapter.joinPath(tempDir, 'nonexistent')
     );
 
     expect(result).toBe(false);
@@ -341,14 +343,14 @@ describe('WorktreeManager Robustness', () => {
 
   it('should handle scanWorktreesForAgents on non-existent directory', () => {
     const agents = worktreeManager.scanWorktreesForAgents(
-      path.join(tempDir, 'nonexistent')
+      systemAdapter.joinPath(tempDir, 'nonexistent')
     );
 
     expect(agents).toEqual([]);
   });
 
   it('should handle saveAgentMetadata with minimal data', () => {
-    const agentDir = path.join(tempDir, '.worktrees', 'claude-test');
+    const agentDir = systemAdapter.joinPath(tempDir, '.worktrees', 'claude-test');
     fs.mkdirSync(agentDir, { recursive: true });
 
     const agent: Agent = {
@@ -367,13 +369,13 @@ describe('WorktreeManager Robustness', () => {
     }).not.toThrow();
 
     // Verify file was created
-    const metadataPath = path.join(agentDir, '.opus-orchestra', 'agent.json');
+    const metadataPath = systemAdapter.joinPath(agentDir, '.opus-orchestra', 'agent.json');
     expect(fs.existsSync(metadataPath)).toBe(true);
   });
 
   it('should handle loadAgentMetadata for non-existent worktree', () => {
     const result = worktreeManager.loadAgentMetadata(
-      path.join(tempDir, 'nonexistent')
+      systemAdapter.joinPath(tempDir, 'nonexistent')
     );
 
     expect(result).toBeNull();
@@ -504,11 +506,11 @@ describe('NodeSystemAdapter Robustness', () => {
   it('should handle exists for various paths', () => {
     // Check that temp dir exists (cross-platform)
     expect(adapter.exists(tempDir)).toBe(true);
-    expect(adapter.exists(path.join(tempDir, 'nonexistent', 'path', '12345'))).toBe(false);
+    expect(adapter.exists(systemAdapter.joinPath(tempDir, 'nonexistent', 'path', '12345'))).toBe(false);
   });
 
   it('should handle mkdir for nested paths', () => {
-    const deepPath = path.join(tempDir, 'a', 'b', 'c', 'd', 'e');
+    const deepPath = systemAdapter.joinPath(tempDir, 'a', 'b', 'c', 'd', 'e');
 
     expect(() => {
       adapter.mkdir(deepPath);

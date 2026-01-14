@@ -3,7 +3,6 @@
  */
 
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import * as os from 'node:os';
 import { NodeSystemAdapter } from '../../adapters/NodeSystemAdapter';
 import type { SystemAdapter } from '../../adapters/SystemAdapter';
@@ -58,7 +57,7 @@ function getTemplateRepo(): string {
   }
 
   const adapter = getSharedAdapter();
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opus-core-template-'));
+  const tempDir = fs.mkdtempSync(adapter.joinPath(os.tmpdir(), 'opus-core-template-'));
 
   // Initialize git repo (only done once)
   adapter.execSync('git init', tempDir);
@@ -66,9 +65,9 @@ function getTemplateRepo(): string {
   adapter.execSync('git config user.name "Test User"', tempDir);
 
   // Create initial structure
-  fs.writeFileSync(path.join(tempDir, 'README.md'), '# Test Repo\n');
-  fs.mkdirSync(path.join(tempDir, 'src'), { recursive: true });
-  fs.writeFileSync(path.join(tempDir, 'src', 'index.ts'), 'export const hello = "world";\n');
+  fs.writeFileSync(adapter.joinPath(tempDir, 'README.md'), '# Test Repo\n');
+  fs.mkdirSync(adapter.joinPath(tempDir, 'src'), { recursive: true });
+  fs.writeFileSync(adapter.joinPath(tempDir, 'src', 'index.ts'), 'export const hello = "world";\n');
 
   // Initial commit
   adapter.execSync('git add -A', tempDir);
@@ -91,7 +90,7 @@ function getTemplateRepo(): string {
 export function createTestRepo(prefix = 'opus-core-test-'): TestRepo {
   const adapter = getSharedAdapter();
   const template = getTemplateRepo();
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const tempDir = fs.mkdtempSync(adapter.joinPath(os.tmpdir(), prefix));
 
   // Remove empty dir created by mkdtemp, then copy template
   fs.rmSync(tempDir, { recursive: true });
@@ -116,10 +115,11 @@ export function createTestRepoWithConfig(
   prefix = 'opus-core-test-',
   config: Record<string, unknown> = {}
 ): TestRepo {
+  const adapter = getSharedAdapter();
   const repo = createTestRepo(prefix);
 
   // Create config directory
-  const configDir = path.join(repo.path, '.opus-orchestra');
+  const configDir = adapter.joinPath(repo.path, '.opus-orchestra');
   fs.mkdirSync(configDir, { recursive: true });
 
   // Write config file
@@ -133,7 +133,7 @@ export function createTestRepoWithConfig(
     ...config,
   };
   fs.writeFileSync(
-    path.join(configDir, 'config.json'),
+    adapter.joinPath(configDir, 'config.json'),
     JSON.stringify(defaultConfig, null, 2)
   );
 
@@ -148,10 +148,10 @@ export function createWorktree(
   branchName: string
 ): string {
   const adapter = getSharedAdapter();
-  const worktreeDir = path.join(repoPath, '.worktrees');
+  const worktreeDir = adapter.joinPath(repoPath, '.worktrees');
   fs.mkdirSync(worktreeDir, { recursive: true });
 
-  const worktreePath = path.join(worktreeDir, branchName);
+  const worktreePath = adapter.joinPath(worktreeDir, branchName);
   const terminalWorktreePath = adapter.convertPath(worktreePath, 'terminal');
 
   adapter.execSync(`git worktree add -b "${branchName}" "${terminalWorktreePath}"`, repoPath);
@@ -169,7 +169,7 @@ export function addAndCommit(
   message: string
 ): void {
   const adapter = getSharedAdapter();
-  fs.writeFileSync(path.join(repoPath, filename), content);
+  fs.writeFileSync(adapter.joinPath(repoPath, filename), content);
   adapter.execSync('git add -A', repoPath);
   adapter.execSync(`git commit -m "${message}"`, repoPath);
 }
@@ -182,8 +182,11 @@ export function makeUncommittedChange(
   filename: string,
   content: string
 ): void {
-  const filePath = path.join(repoPath, filename);
-  const dir = path.dirname(filePath);
+  const adapter = getSharedAdapter();
+  const filePath = adapter.joinPath(repoPath, filename);
+  // Get parent directory by finding last slash
+  const lastSlash = filePath.lastIndexOf('/');
+  const dir = lastSlash > 0 ? filePath.substring(0, lastSlash) : filePath;
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -194,7 +197,8 @@ export function makeUncommittedChange(
  * Create a temporary directory for testing.
  */
 export function createTempDir(prefix = 'opus-core-test-'): TestRepo {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const adapter = getSharedAdapter();
+  const tempDir = fs.mkdtempSync(adapter.joinPath(os.tmpdir(), prefix));
 
   return {
     path: tempDir,

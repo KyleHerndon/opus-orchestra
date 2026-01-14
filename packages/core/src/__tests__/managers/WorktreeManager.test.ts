@@ -6,7 +6,6 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { WorktreeManager } from '../../managers/WorktreeManager';
 import { ConfigAdapter } from '../../adapters/ConfigAdapter';
 import { SystemAdapter } from '../../adapters/SystemAdapter';
@@ -72,12 +71,12 @@ describe('WorktreeManager', () => {
 
   describe('worktreeExists', () => {
     it('returns false when worktree does not exist', () => {
-      const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
+      const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
       expect(manager.worktreeExists(worktreePath)).toBe(false);
     });
 
     it('returns true when worktree exists', () => {
-      const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
+      const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
       fs.mkdirSync(worktreePath, { recursive: true });
 
       expect(manager.worktreeExists(worktreePath)).toBe(true);
@@ -87,7 +86,7 @@ describe('WorktreeManager', () => {
   describe('getWorktreePath', () => {
     it('returns correct worktree path for agent name', () => {
       const worktreePath = manager.getWorktreePath(testRepo.path, 'alpha');
-      expect(worktreePath).toBe(path.join(testRepo.path, '.worktrees', 'claude-alpha'));
+      expect(worktreePath).toBe(system.joinPath(testRepo.path, '.worktrees', 'claude-alpha'));
     });
 
     it('respects custom worktree directory config', () => {
@@ -95,22 +94,22 @@ describe('WorktreeManager', () => {
       manager = new WorktreeManager(system, config);
 
       const worktreePath = manager.getWorktreePath(testRepo.path, 'bravo');
-      expect(worktreePath).toBe(path.join(testRepo.path, 'custom-worktrees', 'claude-bravo'));
+      expect(worktreePath).toBe(system.joinPath(testRepo.path, 'custom-worktrees', 'claude-bravo'));
     });
   });
 
   describe('createWorktree', () => {
     it('creates a git worktree', () => {
-      const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
+      const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
 
       manager.createWorktree(testRepo.path, worktreePath, 'claude-alpha', 'main');
 
       expect(fs.existsSync(worktreePath)).toBe(true);
-      expect(fs.existsSync(path.join(worktreePath, '.git'))).toBe(true);
+      expect(fs.existsSync(system.joinPath(worktreePath, '.git'))).toBe(true);
     });
 
     it('creates worktree with new branch from base', () => {
-      const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-bravo');
+      const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'claude-bravo');
 
       manager.createWorktree(testRepo.path, worktreePath, 'claude-bravo', 'main');
 
@@ -121,7 +120,7 @@ describe('WorktreeManager', () => {
 
   describe('removeWorktree', () => {
     it('removes an existing worktree', () => {
-      const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
+      const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
 
       // Create worktree first
       manager.createWorktree(testRepo.path, worktreePath, 'claude-alpha', 'main');
@@ -134,7 +133,7 @@ describe('WorktreeManager', () => {
     });
 
     it('handles already-removed worktree gracefully', () => {
-      const worktreePath = path.join(testRepo.path, '.worktrees', 'nonexistent');
+      const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'nonexistent');
 
       // Should not throw
       expect(() => {
@@ -145,7 +144,7 @@ describe('WorktreeManager', () => {
 
   describe('saveAgentMetadata', () => {
     it('saves agent metadata to JSON file', () => {
-      const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
+      const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
       fs.mkdirSync(worktreePath, { recursive: true });
 
       const agent = {
@@ -167,7 +166,7 @@ describe('WorktreeManager', () => {
 
       manager.saveAgentMetadata(agent);
 
-      const metadataPath = path.join(worktreePath, '.opus-orchestra', 'agent.json');
+      const metadataPath = system.joinPath(worktreePath, '.opus-orchestra', 'agent.json');
       expect(fs.existsSync(metadataPath)).toBe(true);
 
       const savedData = JSON.parse(fs.readFileSync(metadataPath, 'utf-8'));
@@ -180,8 +179,8 @@ describe('WorktreeManager', () => {
 
   describe('loadAgentMetadata', () => {
     it('loads agent metadata from JSON file', () => {
-      const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
-      const metadataDir = path.join(worktreePath, '.opus-orchestra');
+      const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
+      const metadataDir = system.joinPath(worktreePath, '.opus-orchestra');
       fs.mkdirSync(metadataDir, { recursive: true });
 
       const metadata = {
@@ -194,7 +193,7 @@ describe('WorktreeManager', () => {
         taskFile: 'feature.md',
       };
       fs.writeFileSync(
-        path.join(metadataDir, 'agent.json'),
+        system.joinPath(metadataDir, 'agent.json'),
         JSON.stringify(metadata)
       );
 
@@ -208,16 +207,16 @@ describe('WorktreeManager', () => {
     });
 
     it('returns null when metadata file does not exist', () => {
-      const worktreePath = path.join(testRepo.path, '.worktrees', 'nonexistent');
+      const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'nonexistent');
       const result = manager.loadAgentMetadata(worktreePath);
       expect(result).toBeNull();
     });
 
     it('returns null when metadata file is invalid JSON', () => {
-      const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
-      const metadataDir = path.join(worktreePath, '.opus-orchestra');
+      const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
+      const metadataDir = system.joinPath(worktreePath, '.opus-orchestra');
       fs.mkdirSync(metadataDir, { recursive: true });
-      fs.writeFileSync(path.join(metadataDir, 'agent.json'), 'not valid json');
+      fs.writeFileSync(system.joinPath(metadataDir, 'agent.json'), 'not valid json');
 
       const result = manager.loadAgentMetadata(worktreePath);
       expect(result).toBeNull();
@@ -227,14 +226,14 @@ describe('WorktreeManager', () => {
   describe('scanWorktreesForAgents', () => {
     it('finds agents with metadata in worktrees directory', () => {
       // Create worktrees with metadata
-      const alphaPath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
-      const bravoPath = path.join(testRepo.path, '.worktrees', 'claude-bravo');
+      const alphaPath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
+      const bravoPath = system.joinPath(testRepo.path, '.worktrees', 'claude-bravo');
 
-      fs.mkdirSync(path.join(alphaPath, '.opus-orchestra'), { recursive: true });
-      fs.mkdirSync(path.join(bravoPath, '.opus-orchestra'), { recursive: true });
+      fs.mkdirSync(system.joinPath(alphaPath, '.opus-orchestra'), { recursive: true });
+      fs.mkdirSync(system.joinPath(bravoPath, '.opus-orchestra'), { recursive: true });
 
       fs.writeFileSync(
-        path.join(alphaPath, '.opus-orchestra', 'agent.json'),
+        system.joinPath(alphaPath, '.opus-orchestra', 'agent.json'),
         JSON.stringify({
           id: 1,
           name: 'alpha',
@@ -246,7 +245,7 @@ describe('WorktreeManager', () => {
       );
 
       fs.writeFileSync(
-        path.join(bravoPath, '.opus-orchestra', 'agent.json'),
+        system.joinPath(bravoPath, '.opus-orchestra', 'agent.json'),
         JSON.stringify({
           id: 2,
           name: 'bravo',
@@ -264,7 +263,7 @@ describe('WorktreeManager', () => {
     });
 
     it('ignores directories without agent metadata', () => {
-      const worktreePath = path.join(testRepo.path, '.worktrees', 'claude-alpha');
+      const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
       fs.mkdirSync(worktreePath, { recursive: true });
       // No agent.json file
 
@@ -273,10 +272,10 @@ describe('WorktreeManager', () => {
     });
 
     it('ignores non-agent directories', () => {
-      const randomDir = path.join(testRepo.path, '.worktrees', 'random-dir');
-      fs.mkdirSync(path.join(randomDir, '.opus-orchestra'), { recursive: true });
+      const randomDir = system.joinPath(testRepo.path, '.worktrees', 'random-dir');
+      fs.mkdirSync(system.joinPath(randomDir, '.opus-orchestra'), { recursive: true });
       fs.writeFileSync(
-        path.join(randomDir, '.opus-orchestra', 'agent.json'),
+        system.joinPath(randomDir, '.opus-orchestra', 'agent.json'),
         JSON.stringify({ id: 1, name: 'test' })
       );
 
