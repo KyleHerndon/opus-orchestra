@@ -86,7 +86,12 @@ describe('WorktreeManager', () => {
   describe('getWorktreePath', () => {
     it('returns correct worktree path for agent name', () => {
       const worktreePath = manager.getWorktreePath(testRepo.path, 'alpha');
-      expect(worktreePath).toBe(system.joinPath(testRepo.path, '.worktrees', 'claude-alpha'));
+      // WorktreeManager returns paths in terminal format for git operations
+      const expectedPath = system.convertPath(
+        system.joinPath(testRepo.path, '.worktrees', 'claude-alpha'),
+        'terminal'
+      );
+      expect(worktreePath).toBe(expectedPath);
     });
 
     it('respects custom worktree directory config', () => {
@@ -94,50 +99,66 @@ describe('WorktreeManager', () => {
       manager = new WorktreeManager(system, config);
 
       const worktreePath = manager.getWorktreePath(testRepo.path, 'bravo');
-      expect(worktreePath).toBe(system.joinPath(testRepo.path, 'custom-worktrees', 'claude-bravo'));
+      // WorktreeManager returns paths in terminal format for git operations
+      const expectedPath = system.convertPath(
+        system.joinPath(testRepo.path, 'custom-worktrees', 'claude-bravo'),
+        'terminal'
+      );
+      expect(worktreePath).toBe(expectedPath);
     });
   });
 
   describe('createWorktree', () => {
     it('creates a git worktree', () => {
-      const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
+      // nodeFs path for fs operations
+      const worktreeNodePath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
+      // terminal path for git commands
+      const worktreeTerminalPath = system.convertPath(worktreeNodePath, 'terminal');
 
-      manager.createWorktree(testRepo.path, worktreePath, 'claude-alpha', 'main');
+      manager.createWorktree(testRepo.path, worktreeTerminalPath, 'claude-alpha', 'main');
 
-      expect(fs.existsSync(worktreePath)).toBe(true);
-      expect(fs.existsSync(system.joinPath(worktreePath, '.git'))).toBe(true);
+      expect(fs.existsSync(worktreeNodePath)).toBe(true);
+      expect(fs.existsSync(system.joinPath(worktreeNodePath, '.git'))).toBe(true);
     });
 
     it('creates worktree with new branch from base', () => {
-      const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'claude-bravo');
+      // nodeFs path for fs operations
+      const worktreeNodePath = system.joinPath(testRepo.path, '.worktrees', 'claude-bravo');
+      // terminal path for git commands
+      const worktreeTerminalPath = system.convertPath(worktreeNodePath, 'terminal');
 
-      manager.createWorktree(testRepo.path, worktreePath, 'claude-bravo', 'main');
+      manager.createWorktree(testRepo.path, worktreeTerminalPath, 'claude-bravo', 'main');
 
       // Verify the branch exists
-      expect(fs.existsSync(worktreePath)).toBe(true);
+      expect(fs.existsSync(worktreeNodePath)).toBe(true);
     });
   });
 
   describe('removeWorktree', () => {
     it('removes an existing worktree', () => {
-      const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
+      // nodeFs path for fs operations
+      const worktreeNodePath = system.joinPath(testRepo.path, '.worktrees', 'claude-alpha');
+      // terminal path for git commands
+      const worktreeTerminalPath = system.convertPath(worktreeNodePath, 'terminal');
 
       // Create worktree first
-      manager.createWorktree(testRepo.path, worktreePath, 'claude-alpha', 'main');
-      expect(fs.existsSync(worktreePath)).toBe(true);
+      manager.createWorktree(testRepo.path, worktreeTerminalPath, 'claude-alpha', 'main');
+      expect(fs.existsSync(worktreeNodePath)).toBe(true);
 
       // Remove it
-      manager.removeWorktree(testRepo.path, worktreePath, 'claude-alpha');
+      manager.removeWorktree(testRepo.path, worktreeTerminalPath, 'claude-alpha');
 
-      expect(fs.existsSync(worktreePath)).toBe(false);
+      expect(fs.existsSync(worktreeNodePath)).toBe(false);
     });
 
     it('handles already-removed worktree gracefully', () => {
-      const worktreePath = system.joinPath(testRepo.path, '.worktrees', 'nonexistent');
+      // nodeFs path - but we're testing non-existent, so format doesn't matter much
+      const worktreeNodePath = system.joinPath(testRepo.path, '.worktrees', 'nonexistent');
+      const worktreeTerminalPath = system.convertPath(worktreeNodePath, 'terminal');
 
       // Should not throw
       expect(() => {
-        manager.removeWorktree(testRepo.path, worktreePath, 'nonexistent');
+        manager.removeWorktree(testRepo.path, worktreeTerminalPath, 'nonexistent');
       }).not.toThrow();
     });
   });

@@ -6,6 +6,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
  */
 import { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
+import { VERSION_INFO } from '../../version.js';
 // Mock settings for development
 const SETTINGS = [
     {
@@ -81,7 +82,7 @@ export function SettingsView({ onBack }) {
         }
     });
     const selectedSetting = SETTINGS[selectedIndex];
-    return (_jsxs(Box, { flexDirection: "column", children: [_jsxs(Box, { borderStyle: "single", borderColor: "blue", paddingX: 1, children: [_jsx(Text, { bold: true, color: "blue", children: "Settings" }), _jsx(Text, { children: " " }), _jsx(Text, { dimColor: true, children: "| Configuration options" })] }), _jsx(Box, { flexDirection: "column", paddingY: 1, children: SETTINGS.map((setting, index) => (_jsx(SettingRow, { setting: setting, selected: index === selectedIndex }, setting.key))) }), selectedSetting?.description && (_jsx(Box, { paddingX: 1, marginBottom: 1, children: _jsxs(Text, { dimColor: true, children: ["\u2139 ", selectedSetting.description] }) })), _jsxs(Box, { borderStyle: "single", borderColor: "gray", paddingX: 1, children: [_jsx(Text, { color: "cyan", children: "[\u2191\u2193]" }), _jsx(Text, { dimColor: true, children: " Navigate " }), _jsx(Text, { color: "cyan", children: "[Enter]" }), _jsx(Text, { dimColor: true, children: " Toggle " }), _jsx(Text, { color: "cyan", children: "[1/Esc]" }), _jsx(Text, { dimColor: true, children: " Back" })] })] }));
+    return (_jsxs(Box, { flexDirection: "column", children: [_jsxs(Box, { borderStyle: "single", borderColor: "blue", paddingX: 1, children: [_jsx(Text, { bold: true, color: "blue", children: "Settings" }), _jsx(Text, { children: " " }), _jsx(Text, { dimColor: true, children: "| Configuration options" })] }), _jsx(Box, { flexDirection: "column", paddingY: 1, children: SETTINGS.map((setting, index) => (_jsx(SettingRow, { setting: setting, selected: index === selectedIndex }, setting.key))) }), selectedSetting?.description && (_jsx(Box, { paddingX: 1, marginBottom: 1, children: _jsxs(Text, { dimColor: true, children: ["\u2139 ", selectedSetting.description] }) })), _jsxs(Box, { paddingX: 1, marginTop: 1, children: [_jsx(Text, { dimColor: true, children: "Build: " }), _jsx(Text, { color: "yellow", children: VERSION_INFO.version }), _jsxs(Text, { dimColor: true, children: [" (", VERSION_INFO.branch, ") "] }), _jsxs(Text, { dimColor: true, children: ["| ", new Date(VERSION_INFO.timestamp).toLocaleString()] })] }), _jsxs(Box, { borderStyle: "single", borderColor: "gray", paddingX: 1, children: [_jsx(Text, { color: "cyan", children: "[\u2191\u2193]" }), _jsx(Text, { dimColor: true, children: " Navigate " }), _jsx(Text, { color: "cyan", children: "[Enter]" }), _jsx(Text, { dimColor: true, children: " Toggle " }), _jsx(Text, { color: "cyan", children: "[1/Esc]" }), _jsx(Text, { dimColor: true, children: " Back" })] })] }));
 }
 function SettingRow({ setting, selected }) {
     const formatValue = (value) => {

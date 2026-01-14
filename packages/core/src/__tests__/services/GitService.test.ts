@@ -108,10 +108,9 @@ describe('GitService', () => {
       const newContent = 'export const goodbye = "world";\nexport const foo = "bar";\n';
       fs.writeFileSync(system.joinPath(worktreePath, 'src', 'index.ts'), newContent);
 
-      // Stage and commit the changes
-      const { execSync } = await import('node:child_process');
-      execSync('git add -A', { cwd: worktreePath, stdio: 'pipe' });
-      execSync('git commit -m "Modify index"', { cwd: worktreePath, stdio: 'pipe' });
+      // Stage and commit the changes using SystemAdapter for cross-platform compatibility
+      system.execSync('git add -A', worktreePath);
+      system.execSync('git commit -m "Modify index"', worktreePath);
 
       const stats = await git.getDiffStats(worktreePath, 'main');
 
@@ -135,10 +134,9 @@ describe('GitService', () => {
       makeUncommittedChange(worktreePath, 'new-file.ts', 'content');
       makeUncommittedChange(worktreePath, 'src/utils.ts', 'utils');
 
-      // Stage and commit
-      const { execSync } = await import('node:child_process');
-      execSync('git add -A', { cwd: worktreePath, stdio: 'pipe' });
-      execSync('git commit -m "Add files"', { cwd: worktreePath, stdio: 'pipe' });
+      // Stage and commit using SystemAdapter for cross-platform compatibility
+      system.execSync('git add -A', worktreePath);
+      system.execSync('git commit -m "Add files"', worktreePath);
 
       const files = await git.getChangedFiles(worktreePath, 'main');
 
@@ -210,22 +208,17 @@ describe('GitService', () => {
       const worktreePath = createWorktree(testRepo.path, 'claude-hotel');
 
       // Remove worktree first (can't delete checked out branch)
-      const { execSync } = await import('node:child_process');
-      execSync(`git worktree remove "${worktreePath}" --force`, {
-        cwd: testRepo.path,
-        stdio: 'pipe',
-      });
+      // Use terminal-format path for git command
+      const worktreeTerminalPath = system.convertPath(worktreePath, 'terminal');
+      system.execSync(`git worktree remove "${worktreeTerminalPath}" --force`, testRepo.path);
 
       // Now delete the branch
       await git.deleteBranch(testRepo.path, 'claude-hotel');
 
-      // Verify branch is gone
+      // Verify branch is gone using SystemAdapter
       let branchExists = true;
       try {
-        execSync('git rev-parse --verify claude-hotel', {
-          cwd: testRepo.path,
-          stdio: 'pipe',
-        });
+        system.execSync('git rev-parse --verify claude-hotel', testRepo.path);
       } catch {
         branchExists = false;
       }
