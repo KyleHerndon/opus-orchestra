@@ -39,6 +39,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup WSL (Windows only)
+        if: runner.os == 'Windows'
+        uses: Vampire/setup-wsl@v4
+        with:
+          distribution: Ubuntu-24.04
+
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
