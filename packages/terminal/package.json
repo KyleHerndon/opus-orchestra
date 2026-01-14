@@ -1,6 +1,6 @@
 {
   "name": "@opus-orchestra/terminal",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Terminal UI for Opus Orchestra - manage Claude Code agents from the command line",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

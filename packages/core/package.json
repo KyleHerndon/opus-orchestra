@@ -1,6 +1,6 @@
 {
   "name": "@opus-orchestra/core",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Core logic for Opus Orchestra - platform-agnostic agent management",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
