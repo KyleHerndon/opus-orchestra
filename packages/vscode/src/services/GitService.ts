@@ -10,7 +10,7 @@
  */
 
 import { GitService, IGitService, NodeSystemAdapter } from '@opus-orchestra/core';
-import { getConfig } from './ConfigService';
+import { getConfigService } from './ConfigService';
 
 /**
  * Singleton instance (fallback when ServiceContainer not available)
@@ -36,7 +36,7 @@ export function getGitService(): IGitService {
 
     // Fall back to local singleton with NodeSystemAdapter
     if (!gitServiceInstance) {
-        const terminalType = getConfig<string>('terminalType') ?? 'bash';
+        const terminalType = getConfigService().terminalType ?? 'bash';
         const system = new NodeSystemAdapter(terminalType as 'bash' | 'wsl' | 'powershell' | 'cmd' | 'gitbash');
         gitServiceInstance = new GitService(system);
     }
