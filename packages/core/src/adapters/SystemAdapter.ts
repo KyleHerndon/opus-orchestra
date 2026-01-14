@@ -66,6 +66,16 @@ export interface SystemAdapter {
    */
   getWslDistro(): string;
 
+  /**
+   * Get a temporary directory path appropriate for the current environment.
+   * On Unix: /tmp
+   * On Windows with WSL terminal: /tmp (via WSL)
+   * On Windows native: os.tmpdir()
+   *
+   * @returns Temp directory path (in nodeFs format for file operations)
+   */
+  getTempDirectory(): string;
+
   // ========== Path Operations ==========
 
   /**

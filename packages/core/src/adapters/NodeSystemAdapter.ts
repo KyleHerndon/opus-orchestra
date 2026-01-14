@@ -226,6 +226,24 @@ export class NodeSystemAdapter implements SystemAdapter {
     return this.cachedWslDistro;
   }
 
+  getTempDirectory(): string {
+    const platform = this.getPlatform();
+
+    // On Linux/macOS, use /tmp directly
+    if (platform !== 'win32') {
+      return '/tmp';
+    }
+
+    // On Windows, use WSL's /tmp for wsl/bash terminal types
+    // since commands will be executed through WSL
+    if (this.terminalType === 'wsl' || this.terminalType === 'bash') {
+      return '/tmp';
+    }
+
+    // For native Windows terminals (powershell/cmd), use OS temp dir
+    return os.tmpdir();
+  }
+
   // ========== Path Operations ==========
 
   convertPath(inputPath: string, context: PathContext): string {

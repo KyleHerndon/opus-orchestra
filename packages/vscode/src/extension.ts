@@ -308,11 +308,13 @@ export function activate(context: vscode.ExtensionContext) {
             });
             terminal.show();
 
-            // Detect platform and run appropriate script
-            if (process.platform === 'win32') {
-                terminal.sendText('powershell -ExecutionPolicy Bypass -File scripts/setup.ps1');
-            } else {
+            // Use terminal type from config to determine which script to run
+            // WSL/bash terminals run shell scripts, native Windows terminals run PowerShell
+            const terminalType = container.config.get('terminalType') as string;
+            if (terminalType === 'wsl' || terminalType === 'bash' || terminalType === 'gitbash') {
                 terminal.sendText('./scripts/setup.sh');
+            } else {
+                terminal.sendText('powershell -ExecutionPolicy Bypass -File scripts/setup.ps1');
             }
         })
     );

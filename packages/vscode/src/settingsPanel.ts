@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import { execSync } from 'child_process';
 import { getConfigService } from './services';
+import { getContainer } from './ServiceContainer';
 import { agentPath } from './pathUtils';
 
 // Get extension version from package.json
@@ -133,7 +133,7 @@ export class SettingsPanel {
     private _isValidGitRepo(repoPath: string): boolean {
         try {
             const fsPath = agentPath(repoPath).forNodeFs();
-            execSync('git rev-parse --git-dir', { cwd: fsPath, stdio: 'pipe' });
+            getContainer().system.execSync('git rev-parse --git-dir', fsPath);
             return true;
         } catch {
             return false;

@@ -72,7 +72,7 @@ export class DockerAdapter implements ContainerAdapter {
 
   async isAvailable(): Promise<boolean> {
     try {
-      this.system.execSync('docker info', '/tmp');
+      this.system.execSync('docker info', this.system.getTempDirectory());
       return true;
     } catch {
       return false;
@@ -206,19 +206,19 @@ export class DockerAdapter implements ContainerAdapter {
     this.logger?.debug(`Docker command: docker ${args.join(' ')}`);
 
     // Execute docker run
-    const output = await this.system.exec(`docker ${args.join(' ')}`, '/tmp');
+    const output = await this.system.exec(`docker ${args.join(' ')}`, this.system.getTempDirectory());
     const containerId = output.trim();
     this.logger?.debug(`Created container: ${containerId}`);
     return containerId;
   }
 
   async exec(containerId: string, command: string): Promise<string> {
-    return this.system.exec(`docker exec ${containerId} ${command}`, '/tmp');
+    return this.system.exec(`docker exec ${containerId} ${command}`, this.system.getTempDirectory());
   }
 
   async destroy(containerId: string): Promise<void> {
     try {
-      this.system.execSilent(`docker rm -f ${containerId}`, '/tmp');
+      this.system.execSilent(`docker rm -f ${containerId}`, this.system.getTempDirectory());
       this.logger?.debug(`Destroyed container: ${containerId}`);
     } catch (e) {
       this.logger?.debug(`Failed to destroy container ${containerId}: ${e}`);
@@ -229,7 +229,7 @@ export class DockerAdapter implements ContainerAdapter {
     try {
       const output = this.system.execSync(
         `docker stats ${containerId} --no-stream --format "{{.MemUsage}},{{.CPUPerc}}"`,
-        '/tmp'
+        this.system.getTempDirectory()
       );
 
       // Parse "100MiB / 4GiB,5.00%"
@@ -307,7 +307,7 @@ export class DockerAdapter implements ContainerAdapter {
       // Find containers with the worktree label
       const output = this.system.execSync(
         `docker ps -aq --filter "label=opus-orchestra.worktree-path=${worktreePath}"`,
-        '/tmp'
+        this.system.getTempDirectory()
       );
 
       const containerIds = output.trim().split('\n').filter(id => id);

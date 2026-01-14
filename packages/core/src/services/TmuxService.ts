@@ -12,13 +12,6 @@ import { SystemAdapter } from '../adapters/SystemAdapter';
 import { ILogger } from './Logger';
 
 /**
- * Default working directory for tmux commands that don't need a specific cwd.
- * We use /tmp because tmux commands like has-session, kill-session, list-sessions,
- * and send-keys operate on the tmux server, not the filesystem.
- */
-const TMUX_DEFAULT_CWD = '/tmp';
-
-/**
  * Tmux service interface
  */
 export interface ITmuxService {
@@ -58,6 +51,15 @@ export class TmuxService implements ITmuxService {
   }
 
   /**
+   * Get the default working directory for tmux commands that don't need a specific cwd.
+   * Tmux commands like has-session, kill-session, list-sessions, and send-keys
+   * operate on the tmux server, not the filesystem, so any writable dir works.
+   */
+  private getDefaultCwd(): string {
+    return this.system.getTempDirectory();
+  }
+
+  /**
    * Check if tmux is installed and available.
    * Result is cached after first check.
    */
@@ -67,7 +69,7 @@ export class TmuxService implements ITmuxService {
     }
 
     try {
-      this.system.execSync('tmux -V', TMUX_DEFAULT_CWD);
+      this.system.execSync('tmux -V', this.getDefaultCwd());
       this.tmuxAvailable = true;
       this.logger?.debug('tmux is available');
     } catch {
@@ -114,7 +116,7 @@ export class TmuxService implements ITmuxService {
     }
 
     try {
-      this.system.execSync(`tmux has-session -t "${sessionName}" 2>/dev/null`, TMUX_DEFAULT_CWD);
+      this.system.execSync(`tmux has-session -t "${sessionName}" 2>/dev/null`, this.getDefaultCwd());
       return true;
     } catch {
       // Session doesn't exist (exit code 1 from has-session)
@@ -130,7 +132,7 @@ export class TmuxService implements ITmuxService {
     try {
       this.system.execSync(
         `docker exec ${containerId} tmux has-session -t "${sessionName}" 2>/dev/null`,
-        TMUX_DEFAULT_CWD
+        this.getDefaultCwd()
       );
       return true;
     } catch {
@@ -151,7 +153,7 @@ export class TmuxService implements ITmuxService {
     }
 
     try {
-      this.system.execSilent(`tmux kill-session -t "${sessionName}" 2>/dev/null`, TMUX_DEFAULT_CWD);
+      this.system.execSilent(`tmux kill-session -t "${sessionName}" 2>/dev/null`, this.getDefaultCwd());
       this.logger?.info(`Killed tmux session: ${sessionName}`);
     } catch {
       // Session may not exist - this is expected during cleanup
@@ -168,7 +170,7 @@ export class TmuxService implements ITmuxService {
       // Use timeout to prevent hanging if container doesn't exist or isn't running
       this.system.execSilent(
         `timeout 2 docker exec ${containerId} tmux kill-session -t "${sessionName}" 2>/dev/null || true`,
-        TMUX_DEFAULT_CWD
+        this.getDefaultCwd()
       );
       this.logger?.info(`Killed container tmux session: ${sessionName} in ${containerId}`);
     } catch {
@@ -190,7 +192,7 @@ export class TmuxService implements ITmuxService {
     try {
       const output = this.system.execSync(
         'tmux list-sessions -F "#{session_name}" 2>/dev/null',
-        TMUX_DEFAULT_CWD
+        this.getDefaultCwd()
       );
       return output
         .split('\n')
@@ -275,7 +277,7 @@ export class TmuxService implements ITmuxService {
       const enterKey = pressEnter ? ' Enter' : '';
       this.system.execSync(
         `tmux send-keys -t "${sessionName}" '${escapedText}'${enterKey}`,
-        TMUX_DEFAULT_CWD
+        this.getDefaultCwd()
       );
       this.logger?.debug(`Sent text to tmux session: ${sessionName}`);
     } catch (error) {
