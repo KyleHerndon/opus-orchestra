@@ -4,7 +4,7 @@
 import React from 'react';
 interface HelpBarProps {
     /** Current view for context-specific shortcuts */
-    view?: 'agents' | 'diff' | 'settings' | 'help';
+    view?: 'agents' | 'diff' | 'settings' | 'log' | 'help';
 }
 export declare function HelpBar({ view }: HelpBarProps): React.ReactElement;
 export {};

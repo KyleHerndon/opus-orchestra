@@ -13,6 +13,12 @@
     }
 
     function handleRespond() {
+        // Send Escape to cancel the permission prompt, then focus terminal
+        vscode.postMessage({
+            command: 'sendKey',
+            agentId,
+            key: 'Escape',
+        });
         vscode.postMessage({
             command: 'focus',
             agentId,

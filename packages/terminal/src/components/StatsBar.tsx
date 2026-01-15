@@ -5,6 +5,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import type { DashboardStats } from '../types.js';
+import { VERSION_INFO } from '../generated/version.js';
 
 interface StatsBarProps {
   stats: DashboardStats;
@@ -14,6 +15,7 @@ export function StatsBar({ stats }: StatsBarProps): React.ReactElement {
   return (
     <Box borderStyle="single" borderColor="blue" paddingX={1}>
       <Text bold color="blue">Opus Orchestra</Text>
+      <Text dimColor> {VERSION_INFO.version}</Text>
       <Text> </Text>
       <Text dimColor>|</Text>
       <Text> </Text>

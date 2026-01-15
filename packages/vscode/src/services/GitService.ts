@@ -25,7 +25,7 @@ export function getGitService(): IGitService {
     // Try to use ServiceContainer's gitService first (it's the canonical instance)
     try {
         // Dynamic import to avoid circular dependency
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
         const { isContainerInitialized, getContainer } = require('../ServiceContainer');
         if (isContainerInitialized()) {
             return getContainer().gitService;

@@ -42,5 +42,5 @@ export interface DashboardStats {
 /**
  * View types for the app
  */
-export type ViewType = 'agents' | 'diff' | 'settings' | 'help';
+export type ViewType = 'agents' | 'diff' | 'settings' | 'log' | 'help';
 //# sourceMappingURL=types.d.ts.map

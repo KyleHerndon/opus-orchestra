@@ -29,6 +29,8 @@ export interface ITmuxService {
   createOrAttachSession(sessionName: string, cwd: string): void;
   createDetachedSession(sessionName: string, cwd: string): void;
   sendToSession(sessionName: string, text: string, pressEnter?: boolean): void;
+  /** Send raw keystrokes (unquoted) for interactive prompts. Keys: 1, Escape, Enter, etc. */
+  sendRawKeys(sessionName: string, keys: string): void;
 
   // Helper for oo alias
   getOoAliasCommand(claudeCommand: string, sessionId: string): string;
@@ -265,7 +267,7 @@ export class TmuxService implements ITmuxService {
   }
 
   /**
-   * Send text to a tmux session.
+   * Send text to a tmux session (quoted, for typing text).
    * @param sessionName - The tmux session name
    * @param text - The text to send
    * @param pressEnter - Whether to press Enter after the text (default: true)
@@ -282,6 +284,25 @@ export class TmuxService implements ITmuxService {
       this.logger?.debug(`Sent text to tmux session: ${sessionName}`);
     } catch (error) {
       this.logger?.error({ err: error instanceof Error ? error : undefined }, `Failed to send text to tmux session: ${sessionName}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Send raw keystrokes to a tmux session (unquoted, for interactive prompts).
+   * Keys are sent as tmux key names: 1, 2, 3, Enter, Escape, Tab, etc.
+   * @param sessionName - The tmux session name
+   * @param keys - Space-separated key names (e.g., "1", "Escape", "y Enter")
+   */
+  sendRawKeys(sessionName: string, keys: string): void {
+    try {
+      this.system.execSync(
+        `tmux send-keys -t "${sessionName}" ${keys}`,
+        this.getDefaultCwd()
+      );
+      this.logger?.debug(`Sent raw keys to tmux session ${sessionName}: ${keys}`);
+    } catch (error) {
+      this.logger?.error({ err: error instanceof Error ? error : undefined }, `Failed to send raw keys to tmux session: ${sessionName}`);
       throw error;
     }
   }

@@ -9,14 +9,21 @@ import { Box, Text, useApp, useInput } from 'ink';
 import { AgentListView } from './views/AgentListView.js';
 import { DiffView } from './views/DiffView.js';
 import { SettingsView } from './views/SettingsView.js';
+import { LogView } from './views/LogView.js';
 import { HelpBar } from './HelpBar.js';
 import { ConfirmDialog } from './ConfirmDialog.js';
 import { CreateAgentDialog } from './CreateAgentDialog.js';
 import { useAgents } from '../hooks/useAgents.js';
-export function App({ onFocusAgent }) {
+import { useLogStream } from '../hooks/useLogStream.js';
+import { isContainerInitialized, getContainer } from '../services/ServiceContainer.js';
+export function App({ onFocusAgent, onQuit, waitForResume }) {
     const { exit } = useApp();
+    // Suspended state - when true, render nothing while tmux has the terminal
+    const [suspended, setSuspended] = useState(false);
     // Agent state from hook
     const { agents, stats, loading, error, approveAgent, rejectAgent, deleteAgent, createAgents, focusAgent, } = useAgents();
+    // Last log entry for dashboard display
+    const lastLogEntry = useLogStream();
     // View state
     const [view, setView] = useState('agents');
     // Selection state - use ID instead of index to handle deletions correctly
@@ -30,8 +37,12 @@ export function App({ onFocusAgent }) {
     // Navigation helpers - update ID, not index
     const selectNext = useCallback(() => {
         const currentIdx = agents.findIndex((a) => a.id === selectedId);
-        if (currentIdx === -1)
-            return; // Selected agent not found, do nothing
+        if (currentIdx === -1) {
+            if (isContainerInitialized()) {
+                getContainer().logger?.error(`selectNext: selected agent ${selectedId} not found in agents list`);
+            }
+            return;
+        }
         const nextIdx = Math.min(currentIdx + 1, agents.length - 1);
         if (agents[nextIdx]) {
             setSelectedId(agents[nextIdx].id);
@@ -39,8 +50,12 @@ export function App({ onFocusAgent }) {
     }, [agents, selectedId]);
     const selectPrev = useCallback(() => {
         const currentIdx = agents.findIndex((a) => a.id === selectedId);
-        if (currentIdx === -1)
-            return; // Selected agent not found, do nothing
+        if (currentIdx === -1) {
+            if (isContainerInitialized()) {
+                getContainer().logger?.error(`selectPrev: selected agent ${selectedId} not found in agents list`);
+            }
+            return;
+        }
         const prevIdx = Math.max(currentIdx - 1, 0);
         if (agents[prevIdx]) {
             setSelectedId(agents[prevIdx].id);
@@ -82,10 +97,20 @@ export function App({ onFocusAgent }) {
             rejectAgent(selectedAgent.id);
         }
     }, [selectedAgent, rejectAgent]);
-    const handleFocus = useCallback(() => {
+    const handleFocus = useCallback(async () => {
         if (selectedAgent) {
-            if (onFocusAgent) {
-                // Use callback to let CLI handle tmux attachment
+            if (onFocusAgent && waitForResume) {
+                // Signal CLI that we want to focus this agent
+                onFocusAgent(selectedAgent.name);
+                // Suspend rendering while tmux has the terminal
+                setSuspended(true);
+                // Wait for tmux to detach (CLI will resolve this)
+                await waitForResume();
+                // Resume rendering
+                setSuspended(false);
+            }
+            else if (onFocusAgent) {
+                // Legacy: exit and let CLI handle (for backward compatibility)
                 onFocusAgent(selectedAgent.name);
                 exit();
             }
@@ -94,12 +119,8 @@ export function App({ onFocusAgent }) {
                 focusAgent(selectedAgent.id);
             }
         }
-    }, [selectedAgent, focusAgent, onFocusAgent, exit]);
+    }, [selectedAgent, focusAgent, onFocusAgent, waitForResume, exit]);
     // Debug: log when onFocusAgent changes
-    useEffect(() => {
-        // eslint-disable-next-line no-console
-        console.log('onFocusAgent prop:', onFocusAgent ? 'present' : 'missing');
-    }, [onFocusAgent]);
     const handleDeleteConfirm = useCallback(() => {
         if (selectedAgent) {
             deleteAgent(selectedAgent.id);
@@ -118,6 +139,9 @@ export function App({ onFocusAgent }) {
         }
         // Global: Quit
         if (input === 'q') {
+            if (onQuit) {
+                onQuit();
+            }
             exit();
             return;
         }
@@ -137,6 +161,10 @@ export function App({ onFocusAgent }) {
         }
         if (input === '3' || input === 's') {
             setView('settings');
+            return;
+        }
+        if (input === '4' || input === 'l') {
+            setView('log');
             return;
         }
         // Agent list navigation (only in agents view)
@@ -187,9 +215,14 @@ export function App({ onFocusAgent }) {
     if (error) {
         return (_jsx(Box, { flexDirection: "column", padding: 1, children: _jsxs(Text, { color: "red", bold: true, children: ["Error: ", error] }) }));
     }
-    return (_jsxs(Box, { flexDirection: "column", children: [dialog === 'delete' && selectedAgent && (_jsx(ConfirmDialog, { message: `Delete agent "${selectedAgent.name}"? This will remove the worktree and all changes.`, confirmLabel: "Delete", cancelLabel: "Cancel", onConfirm: handleDeleteConfirm, onCancel: () => setDialog('none') })), dialog === 'create' && (_jsx(CreateAgentDialog, { onConfirm: handleCreateConfirm, onCancel: () => setDialog('none') })), dialog === 'none' && (_jsxs(_Fragment, { children: [_jsxs(Box, { flexDirection: "column", minHeight: 10, children: [view === 'agents' && (_jsx(AgentListView, { agents: agents, stats: stats, selectedIndex: selectedIndex, expandedIds: expandedIds, onApprove: handleApprove, onReject: handleReject })), view === 'diff' && (_jsx(DiffView, { agent: selectedAgent ?? undefined, onBack: () => setView('agents') })), view === 'settings' && (_jsx(SettingsView, { onBack: () => setView('agents') })), view === 'help' && _jsx(HelpView, {})] }), loading && (_jsx(Box, { children: _jsx(Text, { color: "cyan", children: "Loading..." }) })), _jsx(HelpBar, { view: view })] }))] }));
+    // When suspended (tmux has terminal), render nothing
+    // The component stays mounted, state preserved, polling continues
+    if (suspended) {
+        return null;
+    }
+    return (_jsxs(Box, { flexDirection: "column", children: [dialog === 'delete' && selectedAgent && (_jsx(ConfirmDialog, { message: `Delete agent "${selectedAgent.name}"? This will remove the worktree and all changes.`, confirmLabel: "Delete", cancelLabel: "Cancel", onConfirm: handleDeleteConfirm, onCancel: () => setDialog('none') })), dialog === 'create' && (_jsx(CreateAgentDialog, { onConfirm: handleCreateConfirm, onCancel: () => setDialog('none') })), dialog === 'none' && (_jsxs(_Fragment, { children: [_jsxs(Box, { flexDirection: "column", minHeight: 10, children: [view === 'agents' && (_jsx(AgentListView, { agents: agents, stats: stats, selectedIndex: selectedIndex, expandedIds: expandedIds, onApprove: handleApprove, onReject: handleReject })), view === 'diff' && (_jsx(DiffView, { agent: selectedAgent ?? undefined, onBack: () => setView('agents') })), view === 'settings' && (_jsx(SettingsView, { onBack: () => setView('agents') })), view === 'log' && (_jsx(LogView, { onBack: () => setView('agents') })), view === 'help' && _jsx(HelpView, {})] }), loading && (_jsx(Box, { children: _jsx(Text, { color: "cyan", children: "Loading..." }) })), lastLogEntry && view === 'agents' && (_jsxs(Box, { paddingX: 1, marginBottom: 1, children: [_jsxs(Text, { color: lastLogEntry.level === 'error' ? 'red' : 'yellow', children: ["[", lastLogEntry.level.toUpperCase(), "]"] }), _jsxs(Text, { children: [" ", lastLogEntry.message, " "] }), _jsx(Text, { dimColor: true, children: "(press 'l' for full log)" })] })), _jsx(HelpBar, { view: view })] }))] }));
 }
 function HelpView() {
-    return (_jsxs(Box, { flexDirection: "column", padding: 1, children: [_jsx(Text, { color: "yellow", bold: true, children: "Keyboard Shortcuts" }), _jsx(Text, { children: " " }), _jsxs(Box, { flexDirection: "column", children: [_jsx(Text, { children: _jsx(Text, { color: "cyan", bold: true, children: "Navigation" }) }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "\u2191/\u2193" }), "     Navigate between agents"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "Enter" }), "   Focus selected agent (attach tmux)"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "e" }), "       Expand/collapse selected agent"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "E" }), "       Expand/collapse all agents"] }), _jsx(Text, { children: " " }), _jsx(Text, { children: _jsx(Text, { color: "cyan", bold: true, children: "Actions" }) }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "a" }), "       Approve pending action"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "r" }), "       Reject pending action"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "c" }), "       Create new agent"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "x" }), "       Delete selected agent"] }), _jsx(Text, { children: " " }), _jsx(Text, { children: _jsx(Text, { color: "cyan", bold: true, children: "Views" }) }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "d" }), " / ", _jsx(Text, { color: "cyan", children: "2" }), "   Switch to diff view"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "s" }), " / ", _jsx(Text, { color: "cyan", children: "3" }), "   Switch to settings view"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "1" }), " / ", _jsx(Text, { color: "cyan", children: "Esc" }), " Return to agent list"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "?" }), "       Toggle this help"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "q" }), "       Quit"] })] })] }));
+    return (_jsxs(Box, { flexDirection: "column", padding: 1, children: [_jsx(Text, { color: "yellow", bold: true, children: "Keyboard Shortcuts" }), _jsx(Text, { children: " " }), _jsxs(Box, { flexDirection: "column", children: [_jsx(Text, { children: _jsx(Text, { color: "cyan", bold: true, children: "Navigation" }) }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "\u2191/\u2193" }), "     Navigate between agents"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "Enter" }), "   Focus selected agent (attach tmux)"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "e" }), "       Expand/collapse selected agent"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "E" }), "       Expand/collapse all agents"] }), _jsx(Text, { children: " " }), _jsx(Text, { children: _jsx(Text, { color: "cyan", bold: true, children: "Actions" }) }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "a" }), "       Approve pending action"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "r" }), "       Reject pending action"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "c" }), "       Create new agent"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "x" }), "       Delete selected agent"] }), _jsx(Text, { children: " " }), _jsx(Text, { children: _jsx(Text, { color: "cyan", bold: true, children: "Views" }) }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "d" }), " / ", _jsx(Text, { color: "cyan", children: "2" }), "   Switch to diff view"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "s" }), " / ", _jsx(Text, { color: "cyan", children: "3" }), "   Switch to settings view"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "l" }), " / ", _jsx(Text, { color: "cyan", children: "4" }), "   Switch to log view"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "1" }), " / ", _jsx(Text, { color: "cyan", children: "Esc" }), " Return to agent list"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "?" }), "       Toggle this help"] }), _jsxs(Text, { children: ["  ", _jsx(Text, { color: "cyan", children: "q" }), "       Quit"] })] })] }));
 }
 //# sourceMappingURL=App.js.map

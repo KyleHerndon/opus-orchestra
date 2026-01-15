@@ -10,7 +10,7 @@ ServiceContainer as CoreServiceContainer,
 // Adapters
 NodeSystemAdapter, 
 // Services (for creating TmuxService before core)
-TmuxService, createLogger, } from '@opus-orchestra/core';
+TmuxService, createLoggerWithStreams, LogStream, } from '@opus-orchestra/core';
 import { FileStorageAdapter } from '../adapters/FileStorageAdapter.js';
 import { FileConfigAdapter } from '../adapters/FileConfigAdapter.js';
 import { TerminalUIAdapter } from '../adapters/TerminalUIAdapter.js';
@@ -29,6 +29,8 @@ export class ServiceContainer {
     _core;
     // Terminal-specific adapters (for dispose)
     _fileConfig;
+    // Log stream for UI display (captures error/warn)
+    _uiLogStream;
     // Expose all core services via getters for compatibility
     get system() { return this._core.system; }
     get storage() { return this._core.storage; }
@@ -45,7 +47,10 @@ export class ServiceContainer {
     get statusTracker() { return this._core.statusTracker; }
     get persistence() { return this._core.persistence; }
     get containerManager() { return this._core.containerManager; }
+    get agentFactory() { return this._core.agentFactory; }
     get containerRegistry() { return this._core.containerRegistry; }
+    /** Log stream that captures error/warn for UI display */
+    get uiLogStream() { return this._uiLogStream; }
     constructor(workingDirectory) {
         // 1. Create terminal-specific adapters
         this._fileConfig = new FileConfigAdapter(workingDirectory);
@@ -56,11 +61,17 @@ export class ServiceContainer {
         // 2. Create TmuxService early (needed by TmuxTerminalAdapter)
         // We create our own logger here for TmuxService since core hasn't been created yet
         const logDir = `${workingDirectory}/.opus-orchestra`;
-        const earlyLogger = createLogger(logDir, this._fileConfig.get('logLevel'));
+        // Create UI log stream that captures error/warn for dashboard display
+        this._uiLogStream = new LogStream(['error', 'warn']);
+        const earlyLogger = createLoggerWithStreams(logDir, this._fileConfig.get('logLevel'), [this._uiLogStream]);
         const tmuxService = new TmuxService(system, this._fileConfig.get('tmuxSessionPrefix'), earlyLogger);
         // 3. Create terminal adapter with TmuxService
         const terminal = new TmuxTerminalAdapter(system, tmuxService);
-        // 4. Create core container with terminal adapters
+        // 4. Compute todosDirectory using system adapter
+        // TodoService needs correct path for WSL support - ~/.claude/todos
+        const homeDir = system.getHomeDirectory();
+        const todosDir = system.joinPath(homeDir, '.claude', 'todos');
+        // 5. Create core container with terminal adapters
         this._core = new CoreServiceContainer({
             workingDirectory,
             adapters: {
@@ -72,6 +83,7 @@ export class ServiceContainer {
             },
             services: {
                 repoPath: workingDirectory,
+                todosDirectory: todosDir,
             },
         });
     }
