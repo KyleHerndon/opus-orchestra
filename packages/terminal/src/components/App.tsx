@@ -23,10 +23,17 @@ type DialogType = 'none' | 'delete' | 'create';
 export interface AppProps {
   /** Callback when user wants to focus an agent's tmux session */
   onFocusAgent?: (agentName: string) => void;
+  /** Callback when user wants to quit */
+  onQuit?: () => void;
+  /** Promise to await when suspended (resolves when tmux detaches) */
+  waitForResume?: () => Promise<void>;
 }
 
-export function App({ onFocusAgent }: AppProps): React.ReactElement {
+export function App({ onFocusAgent, onQuit, waitForResume }: AppProps): React.ReactElement | null {
   const { exit } = useApp();
+
+  // Suspended state - when true, render nothing while tmux has the terminal
+  const [suspended, setSuspended] = useState(false);
 
   // Agent state from hook
   const {
@@ -124,10 +131,19 @@ export function App({ onFocusAgent }: AppProps): React.ReactElement {
     }
   }, [selectedAgent, rejectAgent]);
 
-  const handleFocus = useCallback(() => {
+  const handleFocus = useCallback(async () => {
     if (selectedAgent) {
-      if (onFocusAgent) {
-        // Use callback to let CLI handle tmux attachment
+      if (onFocusAgent && waitForResume) {
+        // Signal CLI that we want to focus this agent
+        onFocusAgent(selectedAgent.name);
+        // Suspend rendering while tmux has the terminal
+        setSuspended(true);
+        // Wait for tmux to detach (CLI will resolve this)
+        await waitForResume();
+        // Resume rendering
+        setSuspended(false);
+      } else if (onFocusAgent) {
+        // Legacy: exit and let CLI handle (for backward compatibility)
         onFocusAgent(selectedAgent.name);
         exit();
       } else {
@@ -135,7 +151,7 @@ export function App({ onFocusAgent }: AppProps): React.ReactElement {
         focusAgent(selectedAgent.id);
       }
     }
-  }, [selectedAgent, focusAgent, onFocusAgent, exit]);
+  }, [selectedAgent, focusAgent, onFocusAgent, waitForResume, exit]);
 
   // Debug: log when onFocusAgent changes
 
@@ -160,6 +176,9 @@ export function App({ onFocusAgent }: AppProps): React.ReactElement {
 
     // Global: Quit
     if (input === 'q') {
+      if (onQuit) {
+        onQuit();
+      }
       exit();
       return;
     }
@@ -234,6 +253,12 @@ export function App({ onFocusAgent }: AppProps): React.ReactElement {
         <Text color="red" bold>Error: {error}</Text>
       </Box>
     );
+  }
+
+  // When suspended (tmux has terminal), render nothing
+  // The component stays mounted, state preserved, polling continues
+  if (suspended) {
+    return null;
   }
 
   return (

@@ -35,6 +35,8 @@ import {
   ContainerManager,
   IContainerManager,
   IContainerConfigProvider,
+  AgentFactory,
+  IAgentFactory,
 } from '../managers';
 import { ContainerRegistry, UnisolatedAdapter, DockerAdapter } from '../containers';
 
@@ -132,6 +134,7 @@ export class ServiceContainer {
   public readonly statusTracker: IAgentStatusTracker;
   public readonly persistence: IAgentPersistence;
   public readonly containerManager: IContainerManager;
+  public readonly agentFactory: IAgentFactory;
 
   // Container registry
   public readonly containerRegistry: ContainerRegistry;
@@ -181,6 +184,12 @@ export class ServiceContainer {
     this.worktreeManager = new WorktreeManager(
       this.system,
       this.config,
+      this.logger
+    );
+
+    this.agentFactory = new AgentFactory(
+      this.worktreeManager,
+      this.system,
       this.logger
     );
 

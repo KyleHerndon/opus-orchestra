@@ -7,7 +7,6 @@ import { render } from 'ink';
 import React from 'react';
 import chalk from 'chalk';
 import { spawnSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 import { App } from './components/App.js';
 import {
   initializeContainer,
@@ -15,8 +14,16 @@ import {
   isContainerInitialized,
   getContainer,
 } from './services/ServiceContainer.js';
-import { getAvailableNames } from '@opus-orchestra/core';
 import { output, outputError, clearScreen, captureOutput } from './io/CliOutput.js';
+
+/**
+ * Synchronous sleep - waits for the specified milliseconds.
+ * Used to allow shell initialization in tmux sessions before sending commands.
+ */
+function sleepSync(ms: number): void {
+  const seconds = ms / 1000;
+  spawnSync('sleep', [seconds.toString()]);
+}
 
 const program = new Command();
 
@@ -51,8 +58,49 @@ program
     disposeContainer();
   });
 
-interface DashboardState {
-  focusAgent: string | null;
+/**
+ * Dashboard controller - manages communication between CLI and React App.
+ * Allows the dashboard to signal focus requests and the CLI to signal resume.
+ */
+interface DashboardController {
+  // Called by App when user wants to focus an agent
+  requestFocus: (agentName: string) => void;
+  // Called by App when user quits
+  requestQuit: () => void;
+  // Promise that App awaits - resolves when tmux detaches and dashboard should resume
+  waitForResume: () => Promise<void>;
+  // Check if dashboard should quit
+  shouldQuit: () => boolean;
+}
+
+function createDashboardController(): DashboardController {
+  let focusedAgent: string | null = null;
+  let quitRequested = false;
+
+  return {
+    requestFocus: (agentName: string) => {
+      focusedAgent = agentName;
+    },
+    requestQuit: () => {
+      quitRequested = true;
+    },
+    waitForResume: () => {
+      return new Promise((resolve) => {
+        // Defer the blocking tmux attach to next tick
+        // This ensures React has rendered null (clearing Ink output) first
+        setImmediate(() => {
+          if (focusedAgent) {
+            const agent = focusedAgent;
+            focusedAgent = null;
+            // This blocks until user detaches from tmux
+            attachToAgentSession(agent);
+          }
+          resolve();
+        });
+      });
+    },
+    shouldQuit: () => quitRequested,
+  };
 }
 
 /**
@@ -86,12 +134,14 @@ function attachToAgentSession(agentName: string): void {
 
   // Set up oo alias only for newly created sessions
   if (!sessionExistedBefore) {
+    // Wait for shell to initialize in the new tmux session (VS Code uses 200ms)
+    sleepSync(200);
     const claudeCommand = container.config.get('claudeCommand') || 'claude';
     const sessionIdForAlias = agent.sessionId || agent.name;
     container.tmuxService.setupOoAlias(sessionName, claudeCommand, sessionIdForAlias);
   }
 
-  // Attach to the session
+  // Attach to the session (blocks until user detaches)
   spawnSync('tmux', ['attach-session', '-t', sessionName], {
     stdio: 'inherit',
   });
@@ -101,43 +151,23 @@ function attachToAgentSession(agentName: string): void {
 }
 
 /**
- * Run the dashboard in a loop, returning after tmux detach.
+ * Run the dashboard, keeping it mounted in background during tmux attach.
+ * The dashboard state (agents, polling, etc.) persists across focus/return cycles.
  */
 async function runDashboardLoop(): Promise<void> {
-  // State to track focus request from dashboard
-  const state: DashboardState = { focusAgent: null };
+  const controller = createDashboardController();
 
-  // eslint-disable-next-line no-constant-condition -- intentional infinite loop with break
-  while (true) {
-    // Reset focus state
-    state.focusAgent = null;
+  // Render dashboard once - it stays mounted for the entire session
+  const { waitUntilExit } = render(
+    React.createElement(App, {
+      onFocusAgent: (name: string) => controller.requestFocus(name),
+      onQuit: () => controller.requestQuit(),
+      waitForResume: () => controller.waitForResume(),
+    })
+  );
 
-    // Callback to capture focus request
-    const handleFocus = (name: string): void => {
-      state.focusAgent = name;
-    };
-
-    // Render dashboard
-    const { waitUntilExit } = render(
-      React.createElement(App, {
-        onFocusAgent: handleFocus,
-      })
-    );
-
-    // Wait for dashboard to exit
-    await waitUntilExit();
-
-    // If user focused an agent, attach to tmux
-    if (state.focusAgent !== null) {
-      const agentToFocus = state.focusAgent;
-      attachToAgentSession(agentToFocus);
-      // Loop back to dashboard
-      continue;
-    }
-
-    // User quit normally (pressed 'q')
-    break;
-  }
+  // Wait for the app to fully exit (only happens on quit, not focus)
+  await waitUntilExit();
 }
 
 // Status command: quick non-interactive status
@@ -252,105 +282,34 @@ agents
       }
 
       const repoPath = getEffectiveCwd();
-      const baseBranch = await container.gitService.getBaseBranch(repoPath);
-
-      // Get existing agent names from persistence and worktree directories
-      const existing = container.persistence.loadPersistedAgents();
-      const usedNames = new Set(existing.map((a) => a.name));
-
-      // Also check for existing worktree directories (orphaned worktrees)
-      for (const name of usedNames) {
-        const worktreePath = container.worktreeManager.getWorktreePath(repoPath, name);
-        if (container.worktreeManager.worktreeExists(worktreePath)) {
-          usedNames.add(name);
-        }
-      }
-
-      // Use name generator that supports unlimited names (alpha, bravo, ..., alpha-alpha, etc.)
-      const availableNames = getAvailableNames(usedNames, count);
-
-      if (availableNames.length < count) {
-        outputError(chalk.red(`Could only generate ${availableNames.length} agent names.`));
-        process.exit(1);
-      }
 
       output(chalk.blue(`Creating ${count} agent(s)...`));
 
-      // Generate starting ID (max existing ID + 1)
-      const maxExistingId = existing.length > 0
-        ? Math.max(...existing.map((a) => a.id || 0))
-        : 0;
+      // Use core AgentFactory for consistent agent creation
+      // This ensures hooks, metadata, and coordination files are set up correctly
+      const result = await container.agentFactory.createAgents(count, repoPath, {
+        containerConfigName: options.container || 'unisolated',
+        // No terminal creation callback - CLI doesn't manage terminals directly
+        // Terminals are created when user focuses an agent
+      });
 
-      // Collect created agents for persistence
-      const createdAgents: Array<{
-        id: number;
-        name: string;
-        sessionId: string;
-        branch: string;
-        worktreePath: string;
-        repoPath: string;
-        taskFile: string | null;
-        containerConfigName: string;
-      }> = [];
-
-      for (let i = 0; i < count; i++) {
-        const name = availableNames[i];
-        const branch = `claude-${name}`;
-        const worktreePath = container.worktreeManager.getWorktreePath(repoPath, name);
-
-        output(`  Creating ${chalk.bold(name)}...`);
-
-        // Create worktree (skip if already exists)
-        if (!container.worktreeManager.worktreeExists(worktreePath)) {
-          container.worktreeManager.createWorktree(
-            repoPath,
-            worktreePath,
-            branch,
-            baseBranch
-          );
-        }
-
-        // Create agent data (matching PersistedAgent interface)
-        const agentData = {
-          id: maxExistingId + 1 + i,
-          name,
-          sessionId: randomUUID(),
-          branch,
-          worktreePath,
-          repoPath,
-          taskFile: null,
-          containerConfigName: options.container || 'unisolated',
-        };
-
-        createdAgents.push(agentData);
-
-        // Create full agent object for coordination files and metadata
-        const agentForSetup = {
-          ...agentData,
-          terminal: null,
-          status: 'idle' as const,
-          statusIcon: 'circle-outline' as const,
-          pendingApproval: null,
-          lastInteractionTime: new Date(),
-          diffStats: { insertions: 0, deletions: 0, filesChanged: 0 },
-          todos: [],
-        };
-
-        // Copy coordination files (hooks, commands, scripts) from core
-        container.worktreeManager.copyCoordinationFiles(agentForSetup);
-
-        // Save agent metadata to worktree (.opus-orchestra/agent.json)
-        // This enables restoration and scanning of worktrees
-        container.worktreeManager.saveAgentMetadata(agentForSetup);
-
-        output(chalk.green(`  ✓ ${name} created (${branch})`));
+      // Report created agents
+      for (const agent of result.created) {
+        output(chalk.green(`  ✓ ${agent.name} created (${agent.branch})`));
       }
 
-      // Agent metadata is already saved to worktree via saveAgentMetadata()
-      // No central storage is used - worktree metadata is the source of truth
+      // Report skipped (already existed)
+      if (result.skipped > 0) {
+        output(chalk.yellow(`  Skipped ${result.skipped} existing worktree(s)`));
+      }
+
+      // Report errors
+      for (const error of result.errors) {
+        outputError(chalk.red(`  ✗ ${error.name}: ${error.error}`));
+      }
 
       output();
-      output(chalk.green(`Created ${count} agent(s).`));
+      output(chalk.green(`Created ${result.created.length} agent(s).`));
       output(chalk.dim('Run `opus-orchestra` to manage agents interactively.'));
     } catch (err) {
       outputError(chalk.red('Failed to create agents:'), err);
@@ -395,6 +354,8 @@ agents
 
       // Set up oo alias only for newly created sessions
       if (!sessionExistedBefore) {
+        // Wait for shell to initialize in the new tmux session (VS Code uses 200ms)
+        sleepSync(200);
         const claudeCommand = container.config.get('claudeCommand') || 'claude';
         const sessionIdForAlias = agent.sessionId || agent.name;
         container.tmuxService.setupOoAlias(sessionName, claudeCommand, sessionIdForAlias);

@@ -8,6 +8,7 @@ import {
     IAgentStatusTracker,
     IAgentPersistence,
     IContainerManager,
+    IAgentFactory,
     TerminalAdapter,
     TerminalHandle,
 } from '@opus-orchestra/core';
@@ -62,6 +63,10 @@ export class AgentManager {
 
     private get containerManager(): IContainerManager {
         return getContainer().containerManager;
+    }
+
+    private get agentFactory(): IAgentFactory {
+        return getContainer().agentFactory;
     }
 
     private get terminalAdapter(): TerminalAdapter {
@@ -253,18 +258,6 @@ export class AgentManager {
         // Use provided config name or get default for this repo
         const configName = containerConfigName || this.getDefaultContainerConfig(targetRepo);
 
-        const baseBranch = this.execCommand('git branch --show-current', targetRepo).trim();
-
-        const existingIds = new Set<number>();
-        for (const agent of this.agents.values()) {
-            if (agent.repoPath === targetRepo) {
-                existingIds.add(agent.id);
-            }
-        }
-
-        let createdCount = 0;
-        let restoredCount = 0;
-
         // Start operation tracking for event-driven UI updates
         const commandHandler = getCommandHandler();
         const operation = commandHandler.startOperation('createAgents', `Creating ${count} agent(s)...`);
@@ -275,129 +268,60 @@ export class AgentManager {
                 title: 'Creating agent worktrees',
                 cancellable: false
             }, async (progress) => {
-                let nextId = 1;
-                while (createdCount + restoredCount < count) {
-                    // Find next available ID
-                    while (existingIds.has(nextId)) {
-                        nextId++;
-                    }
+                progress.report({ message: 'Creating agents...' });
 
-                    const agentName = this.getAgentName(nextId);  // Display name (word-based)
-                    const currentProgress = createdCount + restoredCount + 1;
+                // Use core AgentFactory for agent creation
+                const result = await this.agentFactory.createAgents(count, targetRepo, {
+                    containerConfigName: configName,
+                    extensionPath: this.extensionPath,
 
-                    // Report progress via both VS Code notification and EventBus
-                    progress.report({ message: `Creating agent ${agentName}...`, increment: (100 / count) });
-                    commandHandler.reportProgress(operation, currentProgress, count, `Creating agent ${agentName}...`);
+                    // Terminal creation callback (VS Code specific)
+                    onCreateTerminal: (agent) => {
+                        this.createTerminalForAgent(agent);
+                    },
 
-                const branchName = `claude-${agentName}`;
-                const worktreePath = this.worktreeManager.getWorktreePath(targetRepo, agentName);
-
-                try {
-                    if (this.worktreeManager.worktreeExists(worktreePath)) {
-                        const existingMetadata = this.worktreeManager.loadAgentMetadata(worktreePath);
-
-                        if (existingMetadata) {
-                            this.debugLog(`Restoring existing agent from worktree: ${agentName}`);
-
-                            const agent: Agent = {
-                                id: existingMetadata.id || nextId,
-                                name: existingMetadata.name || agentName,
-                                sessionId: existingMetadata.sessionId || this.persistence.generateSessionId(),
-                                branch: existingMetadata.branch || branchName,
-                                worktreePath,
-                                repoPath: targetRepo,
-                                taskFile: existingMetadata.taskFile || null,
-                                terminal: null,
-                                status: 'idle',
-                                statusIcon: 'circle-outline',
-                                pendingApproval: null,
-                                lastInteractionTime: new Date(),
-                                diffStats: { insertions: 0, deletions: 0, filesChanged: 0 },
-                                todos: [],
-                                containerConfigName: existingMetadata.containerConfigName || configName,
-                                sessionStarted: existingMetadata.sessionStarted,
-                            };
-
-                            this.agents.set(agent.id, agent);
-                            existingIds.add(agent.id);
-                            restoredCount++;
-
-                            this.createTerminalForAgent(agent);
-                            getEventBus().emit('agent:created', { agent });
-
-                            nextId++;
-                            continue;
-                        }
-                    } else {
-                        this.worktreeManager.createWorktree(targetRepo, worktreePath, branchName, baseBranch);
-                    }
-
-                    const agent: Agent = {
-                        id: nextId,
-                        name: agentName,
-                        sessionId: this.persistence.generateSessionId(),
-                        branch: branchName,
-                        worktreePath,
-                        repoPath: targetRepo,
-                        taskFile: null,
-                        terminal: null,
-                        status: 'idle',
-                        statusIcon: 'circle-outline',
-                        pendingApproval: null,
-                        lastInteractionTime: new Date(),
-                        diffStats: { insertions: 0, deletions: 0, filesChanged: 0 },
-                        todos: [],
-                        containerConfigName: configName
-                    };
-
-                    this.agents.set(nextId, agent);
-                    existingIds.add(nextId);
-                    createdCount++;
-
-                    this.worktreeManager.copyCoordinationFiles(agent, this.extensionPath);
-                    this.worktreeManager.saveAgentMetadata(agent);
-
-                    // Create container if not unisolated
-                    if (configName !== 'unisolated') {
+                    // Container creation callback (VS Code specific)
+                    onCreateContainer: async (agent, cfgName) => {
                         try {
-                            const containerInfo = await this.containerManager.createContainer(
-                                configName,
-                                worktreePath,
-                                nextId,
-                                targetRepo,
-                                agent.sessionId  // Pass session ID for auto-starting Claude
+                            return await this.containerManager.createContainer(
+                                cfgName,
+                                agent.worktreePath,
+                                agent.id,
+                                agent.repoPath,
+                                agent.sessionId
                             );
-                            agent.containerInfo = containerInfo;
                         } catch (containerError) {
                             vscode.window.showWarningMessage(
-                                `Failed to create container for agent ${agentName}: ${containerError}. Running unisolated.`
+                                `Failed to create container for agent ${agent.name}: ${containerError}. Running unisolated.`
                             );
-                            agent.containerConfigName = 'unisolated';
+                            return undefined;
                         }
-                    }
+                    },
+                });
 
-                    this.createTerminalForAgent(agent);
+                // Add created agents to our map and emit events
+                for (const agent of result.created) {
+                    this.agents.set(agent.id, agent);
                     getEventBus().emit('agent:created', { agent });
-
-                } catch (error) {
-                    vscode.window.showErrorMessage(`Failed to create agent ${nextId}: ${error}`);
                 }
 
-                    nextId++;
+                // Report errors
+                for (const error of result.errors) {
+                    vscode.window.showErrorMessage(`Failed to create agent ${error.name}: ${error.error}`);
                 }
+
+                // Persist agents to storage
+                this.persistence.saveAgents(this.agents);
+
+                // Build completion message
+                const configInfo = configName !== 'unisolated' ? ` (${configName})` : '';
+                const skippedInfo = result.skipped > 0 ? `, skipped ${result.skipped} existing` : '';
+                const message = `Created ${result.created.length} agent worktrees${skippedInfo}${configInfo}`;
+
+                // Complete operation successfully
+                commandHandler.completeOperation(operation, message);
+                vscode.window.showInformationMessage(message);
             });
-
-            // Persist agents to storage (both VS Code state and worktree metadata)
-            this.persistence.saveAgents(this.agents);
-
-            const configInfo = configName !== 'unisolated' ? ` (${configName})` : '';
-            const message = restoredCount > 0
-                ? `Created ${createdCount} new, restored ${restoredCount} existing agent worktrees${configInfo}`
-                : `Created ${createdCount} agent worktrees${configInfo}`;
-
-            // Complete operation successfully
-            commandHandler.completeOperation(operation, message);
-            vscode.window.showInformationMessage(message);
         } catch (error) {
             // Fail operation if something went wrong
             commandHandler.failOperation(operation, String(error));

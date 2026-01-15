@@ -6,10 +6,17 @@ import { render } from 'ink';
 import React from 'react';
 import chalk from 'chalk';
 import { spawnSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 import { App } from './components/App.js';
 import { initializeContainer, disposeContainer, isContainerInitialized, getContainer, } from './services/ServiceContainer.js';
-import { getAvailableNames } from '@opus-orchestra/core';
+import { output, outputError, clearScreen, captureOutput } from './io/CliOutput.js';
+/**
+ * Synchronous sleep - waits for the specified milliseconds.
+ * Used to allow shell initialization in tmux sessions before sending commands.
+ */
+function sleepSync(ms) {
+    const seconds = ms / 1000;
+    spawnSync('sleep', [seconds.toString()]);
+}
 const program = new Command();
 program
     .name('opus-orchestra')
@@ -38,6 +45,34 @@ program
     await runDashboardLoop();
     disposeContainer();
 });
+function createDashboardController() {
+    let focusedAgent = null;
+    let quitRequested = false;
+    return {
+        requestFocus: (agentName) => {
+            focusedAgent = agentName;
+        },
+        requestQuit: () => {
+            quitRequested = true;
+        },
+        waitForResume: () => {
+            return new Promise((resolve) => {
+                // Defer the blocking tmux attach to next tick
+                // This ensures React has rendered null (clearing Ink output) first
+                setImmediate(() => {
+                    if (focusedAgent) {
+                        const agent = focusedAgent;
+                        focusedAgent = null;
+                        // This blocks until user detaches from tmux
+                        attachToAgentSession(agent);
+                    }
+                    resolve();
+                });
+            });
+        },
+        shouldQuit: () => quitRequested,
+    };
+}
 /**
  * Attach to a tmux session for an agent.
  * Creates the session if it doesn't exist and sets up the oo alias.
@@ -49,15 +84,13 @@ function attachToAgentSession(agentName) {
     const agents = container.persistence.loadPersistedAgents();
     const agent = agents.find((a) => a.name === agentName);
     if (!agent) {
-        console.error(chalk.red(`Agent "${agentName}" not found in storage.`));
+        container.logger?.error(`Agent "${agentName}" not found in storage`);
         return;
     }
     // Use sessionId-based naming for stability across renames
     const sessionName = container.tmuxService.getAgentSessionName(agent);
-    // Clear screen and show hint
-    console.clear();
-    console.log(chalk.blue(`Attaching to ${agentName}...`));
-    console.log(chalk.dim('(Press Ctrl+B, D to detach and return to dashboard)\n'));
+    // Clear screen before attaching to tmux
+    clearScreen();
     // Use atomic create-or-attach: createDetachedSession uses -A -d flags
     // which creates the session if it doesn't exist, or does nothing if it does.
     // This eliminates the race condition between checking and creating.
@@ -65,47 +98,33 @@ function attachToAgentSession(agentName) {
     container.tmuxService.createDetachedSession(sessionName, agent.worktreePath);
     // Set up oo alias only for newly created sessions
     if (!sessionExistedBefore) {
+        // Wait for shell to initialize in the new tmux session (VS Code uses 200ms)
+        sleepSync(200);
         const claudeCommand = container.config.get('claudeCommand') || 'claude';
         const sessionIdForAlias = agent.sessionId || agent.name;
         container.tmuxService.setupOoAlias(sessionName, claudeCommand, sessionIdForAlias);
     }
-    // Attach to the session
+    // Attach to the session (blocks until user detaches)
     spawnSync('tmux', ['attach-session', '-t', sessionName], {
         stdio: 'inherit',
     });
     // Clear screen before returning to dashboard
-    console.clear();
+    clearScreen();
 }
 /**
- * Run the dashboard in a loop, returning after tmux detach.
+ * Run the dashboard, keeping it mounted in background during tmux attach.
+ * The dashboard state (agents, polling, etc.) persists across focus/return cycles.
  */
 async function runDashboardLoop() {
-    // State to track focus request from dashboard
-    const state = { focusAgent: null };
-    // eslint-disable-next-line no-constant-condition -- intentional infinite loop with break
-    while (true) {
-        // Reset focus state
-        state.focusAgent = null;
-        // Callback to capture focus request
-        const handleFocus = (name) => {
-            state.focusAgent = name;
-        };
-        // Render dashboard
-        const { waitUntilExit } = render(React.createElement(App, {
-            onFocusAgent: handleFocus,
-        }));
-        // Wait for dashboard to exit
-        await waitUntilExit();
-        // If user focused an agent, attach to tmux
-        if (state.focusAgent !== null) {
-            const agentToFocus = state.focusAgent;
-            attachToAgentSession(agentToFocus);
-            // Loop back to dashboard
-            continue;
-        }
-        // User quit normally (pressed 'q')
-        break;
-    }
+    const controller = createDashboardController();
+    // Render dashboard once - it stays mounted for the entire session
+    const { waitUntilExit } = render(React.createElement(App, {
+        onFocusAgent: (name) => controller.requestFocus(name),
+        onQuit: () => controller.requestQuit(),
+        waitForResume: () => controller.waitForResume(),
+    }));
+    // Wait for the app to fully exit (only happens on quit, not focus)
+    await waitUntilExit();
 }
 // Status command: quick non-interactive status
 program
@@ -117,13 +136,13 @@ program
     try {
         const agents = container.persistence.loadPersistedAgents();
         if (agents.length === 0) {
-            console.log(chalk.yellow('No agents found.'));
-            console.log(chalk.dim('Run `opus-orchestra agents create` to create agents.'));
+            output(chalk.yellow('No agents found.'));
+            output(chalk.dim('Run `opus-orchestra agents create` to create agents.'));
             return;
         }
-        console.log(chalk.bold.blue('Opus Orchestra Status'));
-        console.log(chalk.dim('─'.repeat(40)));
-        console.log(`${chalk.cyan('Agents:')} ${agents.length}`);
+        output(chalk.bold.blue('Opus Orchestra Status'));
+        output(chalk.dim('─'.repeat(40)));
+        output(`${chalk.cyan('Agents:')} ${agents.length}`);
         // Count sessions
         let activeSessions = 0;
         for (const agent of agents) {
@@ -132,17 +151,17 @@ program
                 activeSessions++;
             }
         }
-        console.log(`${chalk.cyan('Active tmux sessions:')} ${activeSessions}`);
-        console.log(chalk.dim('─'.repeat(40)));
+        output(`${chalk.cyan('Active tmux sessions:')} ${activeSessions}`);
+        output(chalk.dim('─'.repeat(40)));
         // List agents briefly
         for (const agent of agents) {
             const sessionName = container.tmuxService.getAgentSessionName(agent);
             const hasSession = container.tmuxService.sessionExists(sessionName);
             const status = hasSession ? chalk.green('●') : chalk.dim('○');
-            console.log(`  ${status} ${chalk.bold(agent.name)} (${agent.branch})`);
+            output(`  ${status} ${chalk.bold(agent.name)} (${agent.branch})`);
         }
-        console.log();
-        console.log(chalk.dim('Run `opus-orchestra` for interactive dashboard.'));
+        output();
+        output(chalk.dim('Run `opus-orchestra` for interactive dashboard.'));
     }
     finally {
         disposeContainer();
@@ -160,26 +179,26 @@ agents
     try {
         const agentList = container.persistence.loadPersistedAgents();
         if (agentList.length === 0) {
-            console.log(chalk.yellow('No agents found.'));
+            output(chalk.yellow('No agents found.'));
             return;
         }
-        console.log(chalk.bold.blue('Agents'));
-        console.log();
+        output(chalk.bold.blue('Agents'));
+        output();
         for (const agent of agentList) {
             const sessionName = container.tmuxService.getAgentSessionName(agent);
             const hasSession = container.tmuxService.sessionExists(sessionName);
             const status = hasSession ? chalk.green('active') : chalk.dim('inactive');
-            console.log(`${chalk.bold(agent.name)} ${chalk.dim(`(${status})`)}`);
+            output(`${chalk.bold(agent.name)} ${chalk.dim(`(${status})`)}`);
             if (options.verbose) {
-                console.log(`  ${chalk.dim('Branch:')} ${agent.branch}`);
-                console.log(`  ${chalk.dim('Path:')} ${agent.worktreePath}`);
-                console.log(`  ${chalk.dim('Container:')} ${agent.containerConfigName || 'unisolated'}`);
-                console.log();
+                output(`  ${chalk.dim('Branch:')} ${agent.branch}`);
+                output(`  ${chalk.dim('Path:')} ${agent.worktreePath}`);
+                output(`  ${chalk.dim('Container:')} ${agent.containerConfigName || 'unisolated'}`);
+                output();
             }
         }
         if (!options.verbose) {
-            console.log();
-            console.log(chalk.dim('Use --verbose for more details.'));
+            output();
+            output(chalk.dim('Use --verbose for more details.'));
         }
     }
     finally {
@@ -199,81 +218,36 @@ agents
         // while Number('5abc') returns NaN - we want strict validation
         const count = Number(countStr);
         if (!Number.isInteger(count) || count < 1 || count > 100) {
-            console.error(chalk.red('Count must be a whole number between 1 and 100.'));
+            outputError(chalk.red('Count must be a whole number between 1 and 100.'));
             process.exit(1);
         }
         const repoPath = getEffectiveCwd();
-        const baseBranch = await container.gitService.getBaseBranch(repoPath);
-        // Get existing agent names from persistence and worktree directories
-        const existing = container.persistence.loadPersistedAgents();
-        const usedNames = new Set(existing.map((a) => a.name));
-        // Also check for existing worktree directories (orphaned worktrees)
-        for (const name of usedNames) {
-            const worktreePath = container.worktreeManager.getWorktreePath(repoPath, name);
-            if (container.worktreeManager.worktreeExists(worktreePath)) {
-                usedNames.add(name);
-            }
+        output(chalk.blue(`Creating ${count} agent(s)...`));
+        // Use core AgentFactory for consistent agent creation
+        // This ensures hooks, metadata, and coordination files are set up correctly
+        const result = await container.agentFactory.createAgents(count, repoPath, {
+            containerConfigName: options.container || 'unisolated',
+            // No terminal creation callback - CLI doesn't manage terminals directly
+            // Terminals are created when user focuses an agent
+        });
+        // Report created agents
+        for (const agent of result.created) {
+            output(chalk.green(`  ✓ ${agent.name} created (${agent.branch})`));
         }
-        // Use name generator that supports unlimited names (alpha, bravo, ..., alpha-alpha, etc.)
-        const availableNames = getAvailableNames(usedNames, count);
-        if (availableNames.length < count) {
-            console.error(chalk.red(`Could only generate ${availableNames.length} agent names.`));
-            process.exit(1);
+        // Report skipped (already existed)
+        if (result.skipped > 0) {
+            output(chalk.yellow(`  Skipped ${result.skipped} existing worktree(s)`));
         }
-        console.log(chalk.blue(`Creating ${count} agent(s)...`));
-        // Generate starting ID (max existing ID + 1)
-        const maxExistingId = existing.length > 0
-            ? Math.max(...existing.map((a) => a.id || 0))
-            : 0;
-        // Collect created agents for persistence
-        const createdAgents = [];
-        for (let i = 0; i < count; i++) {
-            const name = availableNames[i];
-            const branch = `claude-${name}`;
-            const worktreePath = container.worktreeManager.getWorktreePath(repoPath, name);
-            console.log(`  Creating ${chalk.bold(name)}...`);
-            // Create worktree (skip if already exists)
-            if (!container.worktreeManager.worktreeExists(worktreePath)) {
-                container.worktreeManager.createWorktree(repoPath, worktreePath, branch, baseBranch);
-            }
-            // Create agent data (matching PersistedAgent interface)
-            const agentData = {
-                id: maxExistingId + 1 + i,
-                name,
-                sessionId: randomUUID(),
-                branch,
-                worktreePath,
-                repoPath,
-                taskFile: null,
-                containerConfigName: options.container || 'unisolated',
-            };
-            createdAgents.push(agentData);
-            // Create full agent object for coordination files and metadata
-            const agentForSetup = {
-                ...agentData,
-                terminal: null,
-                status: 'idle',
-                statusIcon: 'circle-outline',
-                pendingApproval: null,
-                lastInteractionTime: new Date(),
-                diffStats: { insertions: 0, deletions: 0, filesChanged: 0 },
-                todos: [],
-            };
-            // Copy coordination files (hooks, commands, scripts) from core
-            container.worktreeManager.copyCoordinationFiles(agentForSetup);
-            // Save agent metadata to worktree (.opus-orchestra/agent.json)
-            // This enables restoration and scanning of worktrees
-            container.worktreeManager.saveAgentMetadata(agentForSetup);
-            console.log(chalk.green(`  ✓ ${name} created (${branch})`));
+        // Report errors
+        for (const error of result.errors) {
+            outputError(chalk.red(`  ✗ ${error.name}: ${error.error}`));
         }
-        // Agent metadata is already saved to worktree via saveAgentMetadata()
-        // No central storage is used - worktree metadata is the source of truth
-        console.log();
-        console.log(chalk.green(`Created ${count} agent(s).`));
-        console.log(chalk.dim('Run `opus-orchestra` to manage agents interactively.'));
+        output();
+        output(chalk.green(`Created ${result.created.length} agent(s).`));
+        output(chalk.dim('Run `opus-orchestra` to manage agents interactively.'));
     }
     catch (err) {
-        console.error(chalk.red('Failed to create agents:'), err);
+        outputError(chalk.red('Failed to create agents:'), err);
         process.exit(1);
     }
     finally {
@@ -291,10 +265,10 @@ agents
         const agentList = container.persistence.loadPersistedAgents();
         const agent = agentList.find((a) => a.name === name);
         if (!agent) {
-            console.error(chalk.red(`Agent "${name}" not found.`));
-            console.log(chalk.dim('Available agents:'));
+            outputError(chalk.red(`Agent "${name}" not found.`));
+            output(chalk.dim('Available agents:'));
             for (const a of agentList) {
-                console.log(`  - ${a.name}`);
+                output(`  - ${a.name}`);
             }
             process.exit(1);
         }
@@ -302,19 +276,21 @@ agents
         // Use atomic create-or-attach to avoid race conditions
         const sessionExistedBefore = container.tmuxService.sessionExists(sessionName);
         if (!sessionExistedBefore) {
-            console.log(chalk.yellow(`No active tmux session for "${name}".`));
-            console.log(chalk.dim('Starting a new session...'));
+            output(chalk.yellow(`No active tmux session for "${name}".`));
+            output(chalk.dim('Starting a new session...'));
         }
         // Create session if needed (atomic operation with -A -d flags)
         container.tmuxService.createDetachedSession(sessionName, agent.worktreePath);
         // Set up oo alias only for newly created sessions
         if (!sessionExistedBefore) {
+            // Wait for shell to initialize in the new tmux session (VS Code uses 200ms)
+            sleepSync(200);
             const claudeCommand = container.config.get('claudeCommand') || 'claude';
             const sessionIdForAlias = agent.sessionId || agent.name;
             container.tmuxService.setupOoAlias(sessionName, claudeCommand, sessionIdForAlias);
         }
-        console.log(chalk.blue(`Attaching to ${name}...`));
-        console.log(chalk.dim('(Press Ctrl+B, D to detach and return)'));
+        output(chalk.blue(`Attaching to ${name}...`));
+        output(chalk.dim('(Press Ctrl+B, D to detach and return)'));
         // In test mode, skip actual tmux attach
         if (testCwd !== null) {
             disposeContainer();
@@ -327,8 +303,8 @@ agents
         });
         child.on('error', (err) => {
             // Spawn itself failed (e.g., tmux not found)
-            console.error(chalk.red(`Failed to spawn tmux: ${err.message}`));
-            console.error(chalk.dim('Make sure tmux is installed and available in PATH.'));
+            outputError(chalk.red(`Failed to spawn tmux: ${err.message}`));
+            outputError(chalk.dim('Make sure tmux is installed and available in PATH.'));
             disposeContainer();
             process.exit(1);
         });
@@ -343,7 +319,7 @@ agents
         });
     }
     catch (err) {
-        console.error(chalk.red('Failed to focus agent:'), err);
+        outputError(chalk.red('Failed to focus agent:'), err);
         disposeContainer();
         process.exit(1);
     }
@@ -360,12 +336,12 @@ agents
         const agentList = container.persistence.loadPersistedAgents();
         const agent = agentList.find((a) => a.name === name);
         if (!agent) {
-            console.error(chalk.red(`Agent "${name}" not found.`));
+            outputError(chalk.red(`Agent "${name}" not found.`));
             process.exit(1);
         }
         if (!options.force) {
-            console.log(chalk.yellow(`This will delete agent "${name}" and its worktree.`));
-            console.log(chalk.dim('Use --force to skip this warning.'));
+            output(chalk.yellow(`This will delete agent "${name}" and its worktree.`));
+            output(chalk.dim('Use --force to skip this warning.'));
             // Simple confirmation using readline
             const readline = await import('node:readline');
             const rl = readline.createInterface({
@@ -377,21 +353,21 @@ agents
             });
             rl.close();
             if (answer.toLowerCase() !== 'y') {
-                console.log('Cancelled.');
+                output('Cancelled.');
                 process.exit(0);
             }
         }
-        console.log(chalk.blue(`Deleting ${name}...`));
+        output(chalk.blue(`Deleting ${name}...`));
         // Kill tmux session if exists (use consistent session naming)
         const sessionName = container.tmuxService.getAgentSessionName(agent);
         container.tmuxService.killSession(sessionName);
         // Remove worktree (agent metadata is stored there, so this removes all state)
         container.worktreeManager.removeWorktree(agent.repoPath, agent.worktreePath, agent.branch);
         // No central storage to update - worktree deletion removes all agent state
-        console.log(chalk.green(`✓ Agent "${name}" deleted.`));
+        output(chalk.green(`✓ Agent "${name}" deleted.`));
     }
     catch (err) {
-        console.error(chalk.red('Failed to delete agent:'), err);
+        outputError(chalk.red('Failed to delete agent:'), err);
         process.exit(1);
     }
     finally {
@@ -408,16 +384,16 @@ config
     const container = getContainer();
     try {
         const allConfig = container.config.getAll();
-        console.log(chalk.bold.blue('Configuration'));
-        console.log();
+        output(chalk.bold.blue('Configuration'));
+        output();
         for (const [key, value] of Object.entries(allConfig)) {
             const formattedValue = typeof value === 'boolean'
                 ? (value ? chalk.green('true') : chalk.red('false'))
                 : chalk.cyan(String(value));
-            console.log(`  ${chalk.dim(key + ':')} ${formattedValue}`);
+            output(`  ${chalk.dim(key + ':')} ${formattedValue}`);
         }
-        console.log();
-        console.log(chalk.dim('Use `opus-orchestra config set <key> <value>` to change values.'));
+        output();
+        output(chalk.dim('Use `opus-orchestra config set <key> <value>` to change values.'));
     }
     finally {
         disposeContainer();
@@ -434,10 +410,10 @@ config
     try {
         const allConfig = container.config.getAll();
         if (!(key in allConfig)) {
-            console.error(chalk.red(`Unknown configuration key: ${key}`));
-            console.log(chalk.dim('Available keys:'));
+            outputError(chalk.red(`Unknown configuration key: ${key}`));
+            output(chalk.dim('Available keys:'));
             for (const k of Object.keys(allConfig)) {
-                console.log(`  - ${k}`);
+                output(`  - ${k}`);
             }
             process.exit(1);
         }
@@ -450,7 +426,7 @@ config
         else if (typeof currentValue === 'number') {
             parsedValue = parseInt(value, 10);
             if (isNaN(parsedValue)) {
-                console.error(chalk.red(`Invalid number: ${value}`));
+                outputError(chalk.red(`Invalid number: ${value}`));
                 process.exit(1);
             }
         }
@@ -458,10 +434,10 @@ config
             parsedValue = value;
         }
         await container.config.update(key, parsedValue);
-        console.log(chalk.green(`✓ Set ${key} = ${parsedValue}`));
+        output(chalk.green(`✓ Set ${key} = ${parsedValue}`));
     }
     catch (err) {
-        console.error(chalk.red('Failed to set config:'), err);
+        outputError(chalk.red('Failed to set config:'), err);
         process.exit(1);
     }
     finally {
@@ -488,11 +464,8 @@ export async function runCommand(args, cwd) {
     const originalArgv = process.argv;
     const stdout = [];
     const stderr = [];
-    // Capture console output
-    const originalLog = console.log;
-    const originalError = console.error;
-    console.log = (...logArgs) => stdout.push(logArgs.map(String).join(' '));
-    console.error = (...logArgs) => stderr.push(logArgs.map(String).join(' '));
+    // Capture CLI output via CliOutput module
+    const restoreOutput = captureOutput((msg) => stdout.push(msg), (msg) => stderr.push(msg));
     // Capture Commander's configured output (for --help, --version)
     program.configureOutput({
         writeOut: (str) => stdout.push(str.trimEnd()),
@@ -519,8 +492,7 @@ export async function runCommand(args, cwd) {
         }
     }
     finally {
-        console.log = originalLog;
-        console.error = originalError;
+        restoreOutput();
         process.argv = originalArgv;
         testCwd = null;
         disposeContainer();

@@ -199,8 +199,15 @@ export function useAgents(): UseAgentsResult {
 
   const stats = calculateStats(agents);
 
-  // Initialize - load agents from ServiceContainer or use mock data
+  // Track agents in a ref for polling access without causing effect re-runs
+  const agentsRef = useRef<TerminalAgent[]>([]);
+  agentsRef.current = agents;
+
+  // Single initialization effect - loads agents THEN starts polling
+  // This ensures file watchers are set up with correct paths
   useEffect(() => {
+    let cleanupFn: (() => void) | undefined;
+
     async function initialize() {
       setLoading(true);
       setError(null);
@@ -255,7 +262,12 @@ export function useAgents(): UseAgentsResult {
             }
           }
 
+          // Update agents ref BEFORE setting state (so polling has access immediately)
+          agentsRef.current = terminalAgents;
           setAgents(terminalAgents);
+
+          // Now set up polling - agents are loaded and ready
+          cleanupFn = setupPolling(container, agentsRef, setAgents);
         } else {
           // Use mock data for development
           setAgents(MOCK_AGENTS);
@@ -269,30 +281,31 @@ export function useAgents(): UseAgentsResult {
     }
 
     initialize();
+
+    // Cleanup on unmount
+    return () => {
+      if (cleanupFn) {
+        cleanupFn();
+      }
+    };
   }, []);
 
-  // Track agents in a ref for polling access without causing effect re-runs
-  const agentsRef = useRef<TerminalAgent[]>([]);
-  agentsRef.current = agents;
-
-  // Core polling effect - uses AgentStatusTracker for all polling
-  // Polling logic is shared between terminal and VSCode via core
-  // IMPORTANT: Empty dependency array - runs once on mount, cleanup on unmount
-  // Uses agentsRef to access current agents without causing re-subscription
-  useEffect(() => {
-    if (!containerRef.current) {
-      return;
-    }
-
-    const container = containerRef.current;
-
+  /**
+   * Set up status polling and event subscriptions.
+   * Called AFTER agents are loaded to ensure file watchers have correct paths.
+   */
+  function setupPolling(
+    container: ServiceContainer,
+    agentsRefLocal: React.MutableRefObject<TerminalAgent[]>,
+    setAgentsLocal: React.Dispatch<React.SetStateAction<TerminalAgent[]>>
+  ): () => void {
     // Create a Map<number, Agent> from current agents for core's polling
     const agentsMapRef = { current: new Map<number, Agent>() };
 
     // Function to update the agents map from current agentsRef
     const updateAgentsMap = () => {
       agentsMapRef.current.clear();
-      for (const agent of agentsRef.current) {
+      for (const agent of agentsRefLocal.current) {
         // sessionId should always exist after migration - don't generate new ones
         if (!agent.sessionId) {
           container.logger?.warn(`Agent ${agent.name} missing sessionId - skipping`);
@@ -322,7 +335,7 @@ export function useAgents(): UseAgentsResult {
 
     // Event handlers - use setAgents functional updates for latest state
     const handleStatusChanged = ({ agent }: { agent: Agent }) => {
-      setAgents((prev) =>
+      setAgentsLocal((prev) =>
         prev.map((a) =>
           a.id === agent.id
             ? {
@@ -337,7 +350,7 @@ export function useAgents(): UseAgentsResult {
     };
 
     const handleTodosChanged = ({ agent }: { agent: Agent }) => {
-      setAgents((prev) =>
+      setAgentsLocal((prev) =>
         prev.map((a) =>
           a.id === agent.id
             ? { ...a, todos: agent.todos }
@@ -347,7 +360,7 @@ export function useAgents(): UseAgentsResult {
     };
 
     const handleDiffStatsChanged = ({ agent }: { agent: Agent }) => {
-      setAgents((prev) =>
+      setAgentsLocal((prev) =>
         prev.map((a) =>
           a.id === agent.id
             ? { ...a, diffStats: ok(agent.diffStats) }
@@ -356,17 +369,14 @@ export function useAgents(): UseAgentsResult {
       );
     };
 
-    // Subscribe to events (once)
+    // Subscribe to events
     container.eventBus.on('agent:statusChanged', handleStatusChanged);
     container.eventBus.on('agent:todosChanged', handleTodosChanged);
     container.eventBus.on('agent:diffStatsChanged', handleDiffStatsChanged);
 
     // Callback to apply agent updates from the status tracker
-    // Updates both the ref map and React state
     const handleAgentUpdate = (agentId: number, updatedAgent: Agent) => {
-      // Update the ref map
       agentsMapRef.current.set(agentId, updatedAgent);
-      // Note: React state is updated via event handlers above
     };
 
     // Start core polling with a getter that reads from agentsRef
@@ -383,14 +393,14 @@ export function useAgents(): UseAgentsResult {
       }
     );
 
-    // Cleanup on unmount - stop polling and unsubscribe from all events
+    // Return cleanup function
     return () => {
       container.statusTracker.stopPolling();
       container.eventBus.off('agent:statusChanged', handleStatusChanged);
       container.eventBus.off('agent:todosChanged', handleTodosChanged);
       container.eventBus.off('agent:diffStatsChanged', handleDiffStatsChanged);
     };
-  }, []); // Empty deps - run once on mount, cleanup on unmount
+  }
 
   const refreshAgents = useCallback(async () => {
     if (!containerRef.current) {
@@ -531,93 +541,43 @@ export function useAgents(): UseAgentsResult {
     try {
       if (containerRef.current) {
         const container = containerRef.current;
-        const newAgents: TerminalAgent[] = [];
 
-        // Get available names using generator that supports unlimited names (alpha-alpha, etc.)
-        const usedNames = new Set(agentsRef.current.map((a) => a.name));
-        const availableNames = getAvailableNames(usedNames, count);
+        // Use core AgentFactory for agent creation
+        const result = await container.agentFactory.createAgents(count, targetRepo, {
+          containerConfigName: 'unisolated',
 
-        // Get base branch
-        const baseBranch = await container.gitService.getBaseBranch(targetRepo);
+          // Terminal creation callback
+          onCreateTerminal: (agent) => {
+            if (terminalAdapterRef.current) {
+              terminalAdapterRef.current.createTerminal({
+                name: agent.name,
+                sessionId: agent.sessionId,
+                cwd: agent.worktreePath,
+              });
+            }
+          },
+        });
 
-        for (let i = 0; i < count && i < availableNames.length; i++) {
-          const name = availableNames[i];
-          const branch = `claude-${name}`;
-          const worktreePath = container.worktreeManager.getWorktreePath(
-            targetRepo,
-            name
-          );
-
-          // Check if worktree already exists
-          if (!container.worktreeManager.worktreeExists(worktreePath)) {
-            // Create worktree (4 args: repoPath, worktreePath, branchName, baseBranch)
-            container.worktreeManager.createWorktree(
-              targetRepo,
-              worktreePath,
-              branch,
-              baseBranch
-            );
-          }
-
-          // Generate ID and sessionId (use safe helper to handle edge cases)
-          const nextId = getMaxAgentId(agentsRef.current) + 1 + i;
-          const sessionId = randomUUID();
-
-          const newAgent: TerminalAgent = {
-            id: nextId,
-            name,
-            sessionId,
-            status: 'idle',
-            repoPath: targetRepo,
-            branch,
-            diffStats: ok({ insertions: 0, deletions: 0, filesChanged: 0 }),
-            containerConfigName: 'unisolated',
-            todos: [],
-            lastInteractionTime: new Date(),
-          };
-
-          newAgents.push(newAgent);
-
-          // Create terminal (this creates the tmux session)
-          // Pass sessionId for stable session naming across renames
-          if (terminalAdapterRef.current) {
-            terminalAdapterRef.current.createTerminal({
-              name,
-              sessionId,
-              cwd: worktreePath,
-            });
-          }
-        }
-
-        // ARCHITECTURE: Worktree-only persistence - save agent metadata to
-        // worktree directory. No central storage is used for agent data.
-        for (const a of newAgents) {
-          const agentForSetup = {
-            id: a.id,
-            name: a.name,
-            sessionId: a.sessionId!,
-            branch: a.branch,
-            worktreePath: container.worktreeManager.getWorktreePath(targetRepo, a.name),
-            repoPath: a.repoPath,
-            taskFile: null,
-            containerConfigName: a.containerConfigName,
-            terminal: null,
-            status: 'idle' as const,
-            statusIcon: 'circle-outline' as const,
-            pendingApproval: null,
-            lastInteractionTime: new Date(),
-            diffStats: { insertions: 0, deletions: 0, filesChanged: 0 },
-            todos: [],
-          };
-
-          // Copy coordination files (hooks, commands, scripts) from core
-          container.worktreeManager.copyCoordinationFiles(agentForSetup);
-
-          // Save agent metadata to worktree (.opus-orchestra/agent.json)
-          container.worktreeManager.saveAgentMetadata(agentForSetup);
-        }
+        // Convert core Agent to TerminalAgent
+        const newAgents: TerminalAgent[] = result.created.map((agent) => ({
+          id: agent.id,
+          name: agent.name,
+          sessionId: agent.sessionId,
+          status: 'idle' as const,
+          repoPath: agent.repoPath,
+          branch: agent.branch,
+          diffStats: ok({ insertions: 0, deletions: 0, filesChanged: 0 }),
+          containerConfigName: agent.containerConfigName,
+          todos: [],
+          lastInteractionTime: new Date(),
+        }));
 
         setAgents((prev) => [...prev, ...newAgents]);
+
+        // Log any errors
+        for (const error of result.errors) {
+          container.logger.error(`Failed to create agent ${error.name}: ${error.error}`);
+        }
       } else {
         // Mock create - use name generator that supports unlimited names
         const usedNames = new Set(agentsRef.current.map((a) => a.name));

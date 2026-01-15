@@ -4,7 +4,7 @@
  * Thin wrapper around core ServiceContainer that provides
  * terminal-specific adapters (file-based storage, tmux terminal).
  */
-import { ConfigAdapter, StorageAdapter, UIAdapter, TerminalAdapter, ILogger, IEventBus, IGitService, IStatusService, ITmuxService, ITodoService, IWorktreeManager, IAgentStatusTracker, IAgentPersistence, IContainerManager, ContainerRegistry } from '@opus-orchestra/core';
+import { LogStream, ConfigAdapter, StorageAdapter, UIAdapter, TerminalAdapter, ILogger, IEventBus, IGitService, IStatusService, ITmuxService, ITodoService, IWorktreeManager, IAgentStatusTracker, IAgentPersistence, IContainerManager, IAgentFactory, ContainerRegistry } from '@opus-orchestra/core';
 /**
  * Terminal-specific ServiceContainer.
  *
@@ -17,6 +17,7 @@ import { ConfigAdapter, StorageAdapter, UIAdapter, TerminalAdapter, ILogger, IEv
 export declare class ServiceContainer {
     private _core;
     private _fileConfig;
+    private _uiLogStream;
     get system(): import("@opus-orchestra/core").SystemAdapter;
     get storage(): StorageAdapter;
     get config(): ConfigAdapter;
@@ -32,7 +33,10 @@ export declare class ServiceContainer {
     get statusTracker(): IAgentStatusTracker;
     get persistence(): IAgentPersistence;
     get containerManager(): IContainerManager;
+    get agentFactory(): IAgentFactory;
     get containerRegistry(): ContainerRegistry;
+    /** Log stream that captures error/warn for UI display */
+    get uiLogStream(): LogStream;
     constructor(workingDirectory: string);
     /**
      * Check if the container has been disposed

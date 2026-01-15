@@ -32,3 +32,11 @@ export {
   IContainerConfigProvider,
   ContainerConfigRef,
 } from './ContainerManager';
+
+// AgentFactory
+export {
+  AgentFactory,
+  IAgentFactory,
+  AgentCreationResult,
+  AgentCreationOptions,
+} from './AgentFactory';

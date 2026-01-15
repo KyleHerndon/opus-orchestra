@@ -33,6 +33,7 @@ import {
   IAgentStatusTracker,
   IAgentPersistence,
   IContainerManager,
+  IAgentFactory,
   ContainerRegistry,
 } from '@opus-orchestra/core';
 
@@ -95,6 +96,7 @@ export class ServiceContainer {
   get statusTracker(): IAgentStatusTracker { return this._core.statusTracker; }
   get persistence(): IAgentPersistence { return this._core.persistence; }
   get containerManager(): IContainerManager { return this._core.containerManager; }
+  get agentFactory(): IAgentFactory { return this._core.agentFactory; }
   get containerRegistry(): ContainerRegistry { return this._core.containerRegistry; }
 
   constructor(extensionPath: string) {
