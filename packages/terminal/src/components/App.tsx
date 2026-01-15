@@ -9,10 +9,13 @@ import { Box, Text, useApp, useInput } from 'ink';
 import { AgentListView } from './views/AgentListView.js';
 import { DiffView } from './views/DiffView.js';
 import { SettingsView } from './views/SettingsView.js';
+import { LogView } from './views/LogView.js';
 import { HelpBar } from './HelpBar.js';
 import { ConfirmDialog } from './ConfirmDialog.js';
 import { CreateAgentDialog } from './CreateAgentDialog.js';
 import { useAgents } from '../hooks/useAgents.js';
+import { useLogStream } from '../hooks/useLogStream.js';
+import { isContainerInitialized, getContainer } from '../services/ServiceContainer.js';
 import type { ViewType } from '../types.js';
 
 type DialogType = 'none' | 'delete' | 'create';
@@ -38,6 +41,9 @@ export function App({ onFocusAgent }: AppProps): React.ReactElement {
     focusAgent,
   } = useAgents();
 
+  // Last log entry for dashboard display
+  const lastLogEntry = useLogStream();
+
   // View state
   const [view, setView] = useState<ViewType>('agents');
 
@@ -55,7 +61,12 @@ export function App({ onFocusAgent }: AppProps): React.ReactElement {
   // Navigation helpers - update ID, not index
   const selectNext = useCallback(() => {
     const currentIdx = agents.findIndex((a) => a.id === selectedId);
-    if (currentIdx === -1) return; // Selected agent not found, do nothing
+    if (currentIdx === -1) {
+      if (isContainerInitialized()) {
+        getContainer().logger?.error(`selectNext: selected agent ${selectedId} not found in agents list`);
+      }
+      return;
+    }
     const nextIdx = Math.min(currentIdx + 1, agents.length - 1);
     if (agents[nextIdx]) {
       setSelectedId(agents[nextIdx].id);
@@ -64,7 +75,12 @@ export function App({ onFocusAgent }: AppProps): React.ReactElement {
 
   const selectPrev = useCallback(() => {
     const currentIdx = agents.findIndex((a) => a.id === selectedId);
-    if (currentIdx === -1) return; // Selected agent not found, do nothing
+    if (currentIdx === -1) {
+      if (isContainerInitialized()) {
+        getContainer().logger?.error(`selectPrev: selected agent ${selectedId} not found in agents list`);
+      }
+      return;
+    }
     const prevIdx = Math.max(currentIdx - 1, 0);
     if (agents[prevIdx]) {
       setSelectedId(agents[prevIdx].id);
@@ -122,10 +138,6 @@ export function App({ onFocusAgent }: AppProps): React.ReactElement {
   }, [selectedAgent, focusAgent, onFocusAgent, exit]);
 
   // Debug: log when onFocusAgent changes
-  useEffect(() => {
-    // eslint-disable-next-line no-console
-    console.log('onFocusAgent prop:', onFocusAgent ? 'present' : 'missing');
-  }, [onFocusAgent]);
 
   const handleDeleteConfirm = useCallback(() => {
     if (selectedAgent) {
@@ -169,6 +181,10 @@ export function App({ onFocusAgent }: AppProps): React.ReactElement {
     }
     if (input === '3' || input === 's') {
       setView('settings');
+      return;
+    }
+    if (input === '4' || input === 'l') {
+      setView('log');
       return;
     }
 
@@ -263,6 +279,9 @@ export function App({ onFocusAgent }: AppProps): React.ReactElement {
             {view === 'settings' && (
               <SettingsView onBack={() => setView('agents')} />
             )}
+            {view === 'log' && (
+              <LogView onBack={() => setView('agents')} />
+            )}
             {view === 'help' && <HelpView />}
           </Box>
 
@@ -270,6 +289,17 @@ export function App({ onFocusAgent }: AppProps): React.ReactElement {
           {loading && (
             <Box>
               <Text color="cyan">Loading...</Text>
+            </Box>
+          )}
+
+          {/* Last log entry (error/warning) */}
+          {lastLogEntry && view === 'agents' && (
+            <Box paddingX={1} marginBottom={1}>
+              <Text color={lastLogEntry.level === 'error' ? 'red' : 'yellow'}>
+                [{lastLogEntry.level.toUpperCase()}]
+              </Text>
+              <Text> {lastLogEntry.message} </Text>
+              <Text dimColor>(press 'l' for full log)</Text>
             </Box>
           )}
 
@@ -302,6 +332,7 @@ function HelpView(): React.ReactElement {
         <Text><Text color="cyan" bold>Views</Text></Text>
         <Text>  <Text color="cyan">d</Text> / <Text color="cyan">2</Text>   Switch to diff view</Text>
         <Text>  <Text color="cyan">s</Text> / <Text color="cyan">3</Text>   Switch to settings view</Text>
+        <Text>  <Text color="cyan">l</Text> / <Text color="cyan">4</Text>   Switch to log view</Text>
         <Text>  <Text color="cyan">1</Text> / <Text color="cyan">Esc</Text> Return to agent list</Text>
         <Text>  <Text color="cyan">?</Text>       Toggle this help</Text>
         <Text>  <Text color="cyan">q</Text>       Quit</Text>

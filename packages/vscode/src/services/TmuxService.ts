@@ -16,7 +16,7 @@ export type { ITmuxService } from '@opus-orchestra/core';
  */
 export function getTmuxService() {
     // Import dynamically to avoid circular dependencies
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
     const { isContainerInitialized, getContainer } = require('../ServiceContainer');
 
     if (!isContainerInitialized()) {

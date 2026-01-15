@@ -16,6 +16,7 @@ import {
   getContainer,
 } from './services/ServiceContainer.js';
 import { getAvailableNames } from '@opus-orchestra/core';
+import { output, outputError, clearScreen, captureOutput } from './io/CliOutput.js';
 
 const program = new Command();
 
@@ -67,17 +68,15 @@ function attachToAgentSession(agentName: string): void {
   const agent = agents.find((a: { name: string }) => a.name === agentName);
 
   if (!agent) {
-    console.error(chalk.red(`Agent "${agentName}" not found in storage.`));
+    container.logger?.error(`Agent "${agentName}" not found in storage`);
     return;
   }
 
   // Use sessionId-based naming for stability across renames
   const sessionName = container.tmuxService.getAgentSessionName(agent);
 
-  // Clear screen and show hint
-  console.clear();
-  console.log(chalk.blue(`Attaching to ${agentName}...`));
-  console.log(chalk.dim('(Press Ctrl+B, D to detach and return to dashboard)\n'));
+  // Clear screen before attaching to tmux
+  clearScreen();
 
   // Use atomic create-or-attach: createDetachedSession uses -A -d flags
   // which creates the session if it doesn't exist, or does nothing if it does.
@@ -98,7 +97,7 @@ function attachToAgentSession(agentName: string): void {
   });
 
   // Clear screen before returning to dashboard
-  console.clear();
+  clearScreen();
 }
 
 /**
@@ -153,14 +152,14 @@ program
       const agents = container.persistence.loadPersistedAgents();
 
       if (agents.length === 0) {
-        console.log(chalk.yellow('No agents found.'));
-        console.log(chalk.dim('Run `opus-orchestra agents create` to create agents.'));
+        output(chalk.yellow('No agents found.'));
+        output(chalk.dim('Run `opus-orchestra agents create` to create agents.'));
         return;
       }
 
-      console.log(chalk.bold.blue('Opus Orchestra Status'));
-      console.log(chalk.dim('─'.repeat(40)));
-      console.log(`${chalk.cyan('Agents:')} ${agents.length}`);
+      output(chalk.bold.blue('Opus Orchestra Status'));
+      output(chalk.dim('─'.repeat(40)));
+      output(`${chalk.cyan('Agents:')} ${agents.length}`);
 
       // Count sessions
       let activeSessions = 0;
@@ -170,19 +169,19 @@ program
           activeSessions++;
         }
       }
-      console.log(`${chalk.cyan('Active tmux sessions:')} ${activeSessions}`);
-      console.log(chalk.dim('─'.repeat(40)));
+      output(`${chalk.cyan('Active tmux sessions:')} ${activeSessions}`);
+      output(chalk.dim('─'.repeat(40)));
 
       // List agents briefly
       for (const agent of agents) {
         const sessionName = container.tmuxService.getAgentSessionName(agent);
         const hasSession = container.tmuxService.sessionExists(sessionName);
         const status = hasSession ? chalk.green('●') : chalk.dim('○');
-        console.log(`  ${status} ${chalk.bold(agent.name)} (${agent.branch})`);
+        output(`  ${status} ${chalk.bold(agent.name)} (${agent.branch})`);
       }
 
-      console.log();
-      console.log(chalk.dim('Run `opus-orchestra` for interactive dashboard.'));
+      output();
+      output(chalk.dim('Run `opus-orchestra` for interactive dashboard.'));
     } finally {
       disposeContainer();
     }
@@ -203,31 +202,31 @@ agents
       const agentList = container.persistence.loadPersistedAgents();
 
       if (agentList.length === 0) {
-        console.log(chalk.yellow('No agents found.'));
+        output(chalk.yellow('No agents found.'));
         return;
       }
 
-      console.log(chalk.bold.blue('Agents'));
-      console.log();
+      output(chalk.bold.blue('Agents'));
+      output();
 
       for (const agent of agentList) {
         const sessionName = container.tmuxService.getAgentSessionName(agent);
         const hasSession = container.tmuxService.sessionExists(sessionName);
         const status = hasSession ? chalk.green('active') : chalk.dim('inactive');
 
-        console.log(`${chalk.bold(agent.name)} ${chalk.dim(`(${status})`)}`);
+        output(`${chalk.bold(agent.name)} ${chalk.dim(`(${status})`)}`);
 
         if (options.verbose) {
-          console.log(`  ${chalk.dim('Branch:')} ${agent.branch}`);
-          console.log(`  ${chalk.dim('Path:')} ${agent.worktreePath}`);
-          console.log(`  ${chalk.dim('Container:')} ${agent.containerConfigName || 'unisolated'}`);
-          console.log();
+          output(`  ${chalk.dim('Branch:')} ${agent.branch}`);
+          output(`  ${chalk.dim('Path:')} ${agent.worktreePath}`);
+          output(`  ${chalk.dim('Container:')} ${agent.containerConfigName || 'unisolated'}`);
+          output();
         }
       }
 
       if (!options.verbose) {
-        console.log();
-        console.log(chalk.dim('Use --verbose for more details.'));
+        output();
+        output(chalk.dim('Use --verbose for more details.'));
       }
     } finally {
       disposeContainer();
@@ -248,7 +247,7 @@ agents
       // while Number('5abc') returns NaN - we want strict validation
       const count = Number(countStr);
       if (!Number.isInteger(count) || count < 1 || count > 100) {
-        console.error(chalk.red('Count must be a whole number between 1 and 100.'));
+        outputError(chalk.red('Count must be a whole number between 1 and 100.'));
         process.exit(1);
       }
 
@@ -271,11 +270,11 @@ agents
       const availableNames = getAvailableNames(usedNames, count);
 
       if (availableNames.length < count) {
-        console.error(chalk.red(`Could only generate ${availableNames.length} agent names.`));
+        outputError(chalk.red(`Could only generate ${availableNames.length} agent names.`));
         process.exit(1);
       }
 
-      console.log(chalk.blue(`Creating ${count} agent(s)...`));
+      output(chalk.blue(`Creating ${count} agent(s)...`));
 
       // Generate starting ID (max existing ID + 1)
       const maxExistingId = existing.length > 0
@@ -299,7 +298,7 @@ agents
         const branch = `claude-${name}`;
         const worktreePath = container.worktreeManager.getWorktreePath(repoPath, name);
 
-        console.log(`  Creating ${chalk.bold(name)}...`);
+        output(`  Creating ${chalk.bold(name)}...`);
 
         // Create worktree (skip if already exists)
         if (!container.worktreeManager.worktreeExists(worktreePath)) {
@@ -344,17 +343,17 @@ agents
         // This enables restoration and scanning of worktrees
         container.worktreeManager.saveAgentMetadata(agentForSetup);
 
-        console.log(chalk.green(`  ✓ ${name} created (${branch})`));
+        output(chalk.green(`  ✓ ${name} created (${branch})`));
       }
 
       // Agent metadata is already saved to worktree via saveAgentMetadata()
       // No central storage is used - worktree metadata is the source of truth
 
-      console.log();
-      console.log(chalk.green(`Created ${count} agent(s).`));
-      console.log(chalk.dim('Run `opus-orchestra` to manage agents interactively.'));
+      output();
+      output(chalk.green(`Created ${count} agent(s).`));
+      output(chalk.dim('Run `opus-orchestra` to manage agents interactively.'));
     } catch (err) {
-      console.error(chalk.red('Failed to create agents:'), err);
+      outputError(chalk.red('Failed to create agents:'), err);
       process.exit(1);
     } finally {
       disposeContainer();
@@ -374,10 +373,10 @@ agents
       const agent = agentList.find((a) => a.name === name);
 
       if (!agent) {
-        console.error(chalk.red(`Agent "${name}" not found.`));
-        console.log(chalk.dim('Available agents:'));
+        outputError(chalk.red(`Agent "${name}" not found.`));
+        output(chalk.dim('Available agents:'));
         for (const a of agentList) {
-          console.log(`  - ${a.name}`);
+          output(`  - ${a.name}`);
         }
         process.exit(1);
       }
@@ -387,8 +386,8 @@ agents
       // Use atomic create-or-attach to avoid race conditions
       const sessionExistedBefore = container.tmuxService.sessionExists(sessionName);
       if (!sessionExistedBefore) {
-        console.log(chalk.yellow(`No active tmux session for "${name}".`));
-        console.log(chalk.dim('Starting a new session...'));
+        output(chalk.yellow(`No active tmux session for "${name}".`));
+        output(chalk.dim('Starting a new session...'));
       }
 
       // Create session if needed (atomic operation with -A -d flags)
@@ -401,8 +400,8 @@ agents
         container.tmuxService.setupOoAlias(sessionName, claudeCommand, sessionIdForAlias);
       }
 
-      console.log(chalk.blue(`Attaching to ${name}...`));
-      console.log(chalk.dim('(Press Ctrl+B, D to detach and return)'));
+      output(chalk.blue(`Attaching to ${name}...`));
+      output(chalk.dim('(Press Ctrl+B, D to detach and return)'));
 
       // In test mode, skip actual tmux attach
       if (testCwd !== null) {
@@ -418,8 +417,8 @@ agents
 
       child.on('error', (err) => {
         // Spawn itself failed (e.g., tmux not found)
-        console.error(chalk.red(`Failed to spawn tmux: ${err.message}`));
-        console.error(chalk.dim('Make sure tmux is installed and available in PATH.'));
+        outputError(chalk.red(`Failed to spawn tmux: ${err.message}`));
+        outputError(chalk.dim('Make sure tmux is installed and available in PATH.'));
         disposeContainer();
         process.exit(1);
       });
@@ -434,7 +433,7 @@ agents
         process.exit(code ?? 0);
       });
     } catch (err) {
-      console.error(chalk.red('Failed to focus agent:'), err);
+      outputError(chalk.red('Failed to focus agent:'), err);
       disposeContainer();
       process.exit(1);
     }
@@ -454,13 +453,13 @@ agents
       const agent = agentList.find((a) => a.name === name);
 
       if (!agent) {
-        console.error(chalk.red(`Agent "${name}" not found.`));
+        outputError(chalk.red(`Agent "${name}" not found.`));
         process.exit(1);
       }
 
       if (!options.force) {
-        console.log(chalk.yellow(`This will delete agent "${name}" and its worktree.`));
-        console.log(chalk.dim('Use --force to skip this warning.'));
+        output(chalk.yellow(`This will delete agent "${name}" and its worktree.`));
+        output(chalk.dim('Use --force to skip this warning.'));
 
         // Simple confirmation using readline
         const readline = await import('node:readline');
@@ -475,12 +474,12 @@ agents
         rl.close();
 
         if (answer.toLowerCase() !== 'y') {
-          console.log('Cancelled.');
+          output('Cancelled.');
           process.exit(0);
         }
       }
 
-      console.log(chalk.blue(`Deleting ${name}...`));
+      output(chalk.blue(`Deleting ${name}...`));
 
       // Kill tmux session if exists (use consistent session naming)
       const sessionName = container.tmuxService.getAgentSessionName(agent);
@@ -495,9 +494,9 @@ agents
 
       // No central storage to update - worktree deletion removes all agent state
 
-      console.log(chalk.green(`✓ Agent "${name}" deleted.`));
+      output(chalk.green(`✓ Agent "${name}" deleted.`));
     } catch (err) {
-      console.error(chalk.red('Failed to delete agent:'), err);
+      outputError(chalk.red('Failed to delete agent:'), err);
       process.exit(1);
     } finally {
       disposeContainer();
@@ -517,18 +516,18 @@ config
     try {
       const allConfig = container.config.getAll();
 
-      console.log(chalk.bold.blue('Configuration'));
-      console.log();
+      output(chalk.bold.blue('Configuration'));
+      output();
 
       for (const [key, value] of Object.entries(allConfig)) {
         const formattedValue = typeof value === 'boolean'
           ? (value ? chalk.green('true') : chalk.red('false'))
           : chalk.cyan(String(value));
-        console.log(`  ${chalk.dim(key + ':')} ${formattedValue}`);
+        output(`  ${chalk.dim(key + ':')} ${formattedValue}`);
       }
 
-      console.log();
-      console.log(chalk.dim('Use `opus-orchestra config set <key> <value>` to change values.'));
+      output();
+      output(chalk.dim('Use `opus-orchestra config set <key> <value>` to change values.'));
     } finally {
       disposeContainer();
     }
@@ -547,10 +546,10 @@ config
       const allConfig = container.config.getAll();
 
       if (!(key in allConfig)) {
-        console.error(chalk.red(`Unknown configuration key: ${key}`));
-        console.log(chalk.dim('Available keys:'));
+        outputError(chalk.red(`Unknown configuration key: ${key}`));
+        output(chalk.dim('Available keys:'));
         for (const k of Object.keys(allConfig)) {
-          console.log(`  - ${k}`);
+          output(`  - ${k}`);
         }
         process.exit(1);
       }
@@ -564,7 +563,7 @@ config
       } else if (typeof currentValue === 'number') {
         parsedValue = parseInt(value, 10);
         if (isNaN(parsedValue as number)) {
-          console.error(chalk.red(`Invalid number: ${value}`));
+          outputError(chalk.red(`Invalid number: ${value}`));
           process.exit(1);
         }
       } else {
@@ -572,9 +571,9 @@ config
       }
 
       await container.config.update(key as keyof typeof allConfig, parsedValue as never);
-      console.log(chalk.green(`✓ Set ${key} = ${parsedValue}`));
+      output(chalk.green(`✓ Set ${key} = ${parsedValue}`));
     } catch (err) {
-      console.error(chalk.red('Failed to set config:'), err);
+      outputError(chalk.red('Failed to set config:'), err);
       process.exit(1);
     } finally {
       disposeContainer();
@@ -611,11 +610,11 @@ export async function runCommand(args: string[], cwd?: string): Promise<CommandR
   const stdout: string[] = [];
   const stderr: string[] = [];
 
-  // Capture console output
-  const originalLog = console.log;
-  const originalError = console.error;
-  console.log = (...logArgs) => stdout.push(logArgs.map(String).join(' '));
-  console.error = (...logArgs) => stderr.push(logArgs.map(String).join(' '));
+  // Capture CLI output via CliOutput module
+  const restoreOutput = captureOutput(
+    (msg) => stdout.push(msg),
+    (msg) => stderr.push(msg)
+  );
 
   // Capture Commander's configured output (for --help, --version)
   program.configureOutput({
@@ -644,8 +643,7 @@ export async function runCommand(args: string[], cwd?: string): Promise<CommandR
       stderr.push(String(err));
     }
   } finally {
-    console.log = originalLog;
-    console.error = originalError;
+    restoreOutput();
     process.argv = originalArgv;
     testCwd = null;
     disposeContainer();

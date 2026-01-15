@@ -1,13 +1,13 @@
 /**
  * Auto-generated version info - DO NOT EDIT
- * Generated at: 2026-01-14T03:01:31.031Z
+ * Generated at: 2026-01-14T23:35:51.330Z
  */
 export const VERSION_INFO = {
-    commitHash: '0b7be04',
-    commitHashFull: '0b7be04a0c596dca77063ba4f4a063d5158bacc4',
+    commitHash: 'e709298',
+    commitHashFull: 'e709298cf31328e5fdd46d7acb5f405aab57f7cb',
     dirty: true,
-    branch: 'refactor/core-services-and-terminal-package',
-    timestamp: '2026-01-14T03:01:31.031Z',
-    version: '0b7be04-dirty',
+    branch: 'main',
+    timestamp: '2026-01-14T23:35:51.330Z',
+    version: 'e709298-dirty',
 };
 //# sourceMappingURL=version.js.map

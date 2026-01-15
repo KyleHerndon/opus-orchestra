@@ -10,7 +10,6 @@ import {
     IContainerManager,
     TerminalAdapter,
     TerminalHandle,
-    CreateTerminalOptions,
 } from '@opus-orchestra/core';
 import { VSCodeTerminalAdapter } from './adapters';
 
@@ -92,7 +91,7 @@ export class AgentManager {
         return getConfigService().worktreeDirectory;
     }
 
-    setContext(context: vscode.ExtensionContext): void {
+    setContext(_context: vscode.ExtensionContext): void {
         // Container manager is now initialized via ServiceContainer
         this.agents = this.restoreAgentsFromCore(this.getRepositoryPaths());
     }
@@ -937,9 +936,42 @@ export class AgentManager {
 
     sendToAgent(agentId: number, text: string): void {
         const agent = this.agents.get(agentId);
-        if (agent?.terminal) {
-            const hadPendingApproval = agent.pendingApproval !== null;
+        if (!agent) {
+            this.debugLog(`sendToAgent: agent ${agentId} not found`);
+            return;
+        }
+
+        const hadPendingApproval = agent.pendingApproval !== null;
+        let sent = false;
+
+        // Prefer direct tmux send-keys - most reliable for tmux sessions
+        if (getConfigService().useTmux) {
+            const container = getContainer();
+            const sessionName = container.tmuxService.getSessionName(agent.sessionId);
+
+            // Check if session exists before trying to send
+            if (container.tmuxService.sessionExists(sessionName)) {
+                try {
+                    // Use sendRawKeys for interactive prompts (unquoted keystrokes)
+                    container.tmuxService.sendRawKeys(sessionName, text);
+                    sent = true;
+                    this.debugLog(`sendToAgent: sent raw keys via tmux to session ${sessionName}: ${text}`);
+                } catch (error) {
+                    this.debugLog(`sendToAgent: failed to send via tmux: ${error}`);
+                }
+            } else {
+                this.debugLog(`sendToAgent: tmux session ${sessionName} does not exist`);
+            }
+        }
+
+        // Fall back to VS Code terminal if tmux didn't work
+        if (!sent && agent.terminal) {
             this.terminalAdapter.sendText(agent.terminal, text);
+            sent = true;
+            this.debugLog(`sendToAgent: sent via VS Code terminal`);
+        }
+
+        if (sent) {
             agent.pendingApproval = null;
             agent.status = 'working';
             agent.lastInteractionTime = new Date();
@@ -948,6 +980,8 @@ export class AgentManager {
             if (hadPendingApproval) {
                 getEventBus().emit('approval:resolved', { agentId });
             }
+        } else {
+            this.debugLog(`sendToAgent: no tmux session and no terminal for agent ${agentId}`);
         }
     }
 

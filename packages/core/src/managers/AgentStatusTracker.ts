@@ -641,7 +641,7 @@ export class AgentStatusTracker implements IAgentStatusTracker {
    * Handle status file watch events.
    * All updates go through refreshStatus which uses mutex.
    */
-  private handleStatusWatchEvent(event: FileWatchEvent): void {
+  private handleStatusWatchEvent(_event: FileWatchEvent): void {
     if (!this.getAgentsCallback) {
       return;
     }

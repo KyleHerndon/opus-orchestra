@@ -29,7 +29,7 @@ export class CommandService {
         // Try to use ServiceContainer's adapter
         try {
             // Dynamic import to avoid circular dependency
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
             const { isContainerInitialized, getContainer } = require('../ServiceContainer');
             if (isContainerInitialized()) {
                 const containerSystem = getContainer().system as SystemAdapter;

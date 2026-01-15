@@ -7,7 +7,7 @@ import { Box, Text } from 'ink';
 
 interface HelpBarProps {
   /** Current view for context-specific shortcuts */
-  view?: 'agents' | 'diff' | 'settings' | 'help';
+  view?: 'agents' | 'diff' | 'settings' | 'log' | 'help';
 }
 
 export function HelpBar({ view = 'agents' }: HelpBarProps): React.ReactElement {
@@ -51,6 +51,21 @@ export function HelpBar({ view = 'agents' }: HelpBarProps): React.ReactElement {
     );
   }
 
+  if (view === 'log') {
+    return (
+      <Box borderStyle="single" borderColor="gray" paddingX={1}>
+        <Text color="cyan">[↑↓]</Text>
+        <Text dimColor> Scroll </Text>
+        <Text color="cyan">[PgUp/PgDn]</Text>
+        <Text dimColor> Page </Text>
+        <Text color="cyan">[1]</Text>
+        <Text dimColor> Back </Text>
+        <Text color="cyan">[q]</Text>
+        <Text dimColor> Quit</Text>
+      </Box>
+    );
+  }
+
   // Default: agents view
   return (
     <Box borderStyle="single" borderColor="gray" paddingX={1} flexWrap="wrap">
@@ -72,6 +87,8 @@ export function HelpBar({ view = 'agents' }: HelpBarProps): React.ReactElement {
       <Text dimColor> Diff </Text>
       <Text color="cyan">[s]</Text>
       <Text dimColor> Settings </Text>
+      <Text color="cyan">[l]</Text>
+      <Text dimColor> Log </Text>
       <Text color="cyan">[?]</Text>
       <Text dimColor> Help </Text>
       <Text color="cyan">[q]</Text>

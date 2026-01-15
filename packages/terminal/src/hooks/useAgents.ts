@@ -126,8 +126,10 @@ function scanWorktreeDirectories(repoPath: string, worktreeDir: string, system: 
           continue;
         }
       } catch (err) {
-        // Log at debug level - stat failures are expected for inaccessible paths
-        console.debug?.(`[opus-orchestra] Could not stat worktree entry ${entryPath}: ${err instanceof Error ? err.message : String(err)}`);
+        // Stat failures are expected for inaccessible paths - log at debug level
+        if (isContainerInitialized()) {
+          getContainer().logger?.debug(`Could not stat worktree entry ${entryPath}: ${err instanceof Error ? err.message : String(err)}`);
+        }
         continue;
       }
 
@@ -150,7 +152,9 @@ function scanWorktreeDirectories(repoPath: string, worktreeDir: string, system: 
     }
   } catch (err) {
     // Log directory read errors - could indicate permission issues
-    console.warn?.(`[opus-orchestra] Could not scan worktrees directory ${worktreesPath}: ${err instanceof Error ? err.message : String(err)}`);
+    if (isContainerInitialized()) {
+      getContainer().logger?.warn(`Could not scan worktrees directory ${worktreesPath}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   return agents;
@@ -291,7 +295,7 @@ export function useAgents(): UseAgentsResult {
       for (const agent of agentsRef.current) {
         // sessionId should always exist after migration - don't generate new ones
         if (!agent.sessionId) {
-          console.warn(`[opus-orchestra] Agent ${agent.name} missing sessionId - skipping`);
+          container.logger?.warn(`Agent ${agent.name} missing sessionId - skipping`);
           continue;
         }
         // Convert TerminalAgent to Agent for core compatibility

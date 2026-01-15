@@ -1,14 +1,14 @@
 /**
  * Auto-generated version info - DO NOT EDIT
- * Generated at: 2026-01-14T03:01:31.031Z
+ * Generated at: 2026-01-14T23:35:51.330Z
  */
 export declare const VERSION_INFO: {
-    readonly commitHash: "0b7be04";
-    readonly commitHashFull: "0b7be04a0c596dca77063ba4f4a063d5158bacc4";
+    readonly commitHash: "e709298";
+    readonly commitHashFull: "e709298cf31328e5fdd46d7acb5f405aab57f7cb";
     readonly dirty: true;
-    readonly branch: "refactor/core-services-and-terminal-package";
-    readonly timestamp: "2026-01-14T03:01:31.031Z";
-    readonly version: "0b7be04-dirty";
+    readonly branch: "main";
+    readonly timestamp: "2026-01-14T23:35:51.330Z";
+    readonly version: "e709298-dirty";
 };
 export type VersionInfo = typeof VERSION_INFO;
 //# sourceMappingURL=version.d.ts.map

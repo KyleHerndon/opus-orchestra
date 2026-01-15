@@ -37,7 +37,7 @@ export function getLogger(): ILogger {
     // Try to use ServiceContainer's logger first (it's the canonical instance)
     try {
         // Dynamic import to avoid circular dependency
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
         const { isContainerInitialized, getContainer } = require('../ServiceContainer');
         if (isContainerInitialized()) {
             return getContainer().logger as ILogger;
@@ -59,7 +59,7 @@ export function getLogger(): ILogger {
 export function isLoggerInitialized(): boolean {
     // Check ServiceContainer first
     try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
         const { isContainerInitialized } = require('../ServiceContainer');
         if (isContainerInitialized()) {
             return true;

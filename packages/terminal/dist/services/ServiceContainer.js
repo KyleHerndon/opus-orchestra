@@ -60,7 +60,11 @@ export class ServiceContainer {
         const tmuxService = new TmuxService(system, this._fileConfig.get('tmuxSessionPrefix'), earlyLogger);
         // 3. Create terminal adapter with TmuxService
         const terminal = new TmuxTerminalAdapter(system, tmuxService);
-        // 4. Create core container with terminal adapters
+        // 4. Compute todosDirectory using system adapter
+        // TodoService needs correct path for WSL support - ~/.claude/todos
+        const homeDir = system.getHomeDirectory();
+        const todosDir = system.joinPath(homeDir, '.claude', 'todos');
+        // 5. Create core container with terminal adapters
         this._core = new CoreServiceContainer({
             workingDirectory,
             adapters: {
@@ -72,6 +76,7 @@ export class ServiceContainer {
             },
             services: {
                 repoPath: workingDirectory,
+                todosDirectory: todosDir,
             },
         });
     }

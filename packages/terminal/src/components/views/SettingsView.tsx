@@ -6,7 +6,7 @@
 
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { getVersionString, VERSION_INFO } from '../../version.js';
+import { VERSION_INFO } from '../../version.js';
 
 interface SettingItem {
   key: string;

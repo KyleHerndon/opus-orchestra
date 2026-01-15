@@ -8,7 +8,10 @@
 export {
   ILogger,
   LogLevel,
+  LogEntry,
+  LogStream,
   createLogger,
+  createLoggerWithStreams,
   createNullLogger,
 } from './Logger';
 
