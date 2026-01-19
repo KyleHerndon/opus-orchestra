@@ -97,6 +97,9 @@ export class ServiceContainer {
     // 3. Create terminal adapter with TmuxService
     const terminal = new TmuxTerminalAdapter(system, tmuxService);
 
+    // Calculate todos directory path
+    const todosDirectory = system.joinPath(system.getHomeDirectory(), '.claude', 'todos');
+
     // 4. Create core container with terminal adapters
     this._core = new CoreServiceContainer({
       workingDirectory,
@@ -109,6 +112,7 @@ export class ServiceContainer {
       },
       services: {
         repoPath: workingDirectory,
+        todosDirectory,
       },
     });
   }

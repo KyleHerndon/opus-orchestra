@@ -273,10 +273,10 @@ export function useAgents(): UseAgentsResult {
 
   // Core polling effect - uses AgentStatusTracker for all polling
   // Polling logic is shared between terminal and VSCode via core
-  // IMPORTANT: Empty dependency array - runs once on mount, cleanup on unmount
-  // Uses agentsRef to access current agents without causing re-subscription
+  // IMPORTANT: Depends on loading - must wait for agents to load before starting polling
+  // Otherwise file watcher is set up with empty paths and never watches anything
   useEffect(() => {
-    if (!containerRef.current) {
+    if (loading || !containerRef.current) {
       return;
     }
 
@@ -386,7 +386,7 @@ export function useAgents(): UseAgentsResult {
       container.eventBus.off('agent:todosChanged', handleTodosChanged);
       container.eventBus.off('agent:diffStatsChanged', handleDiffStatsChanged);
     };
-  }, []); // Empty deps - run once on mount, cleanup on unmount
+  }, [loading]); // Depend on loading - start polling after agents load
 
   const refreshAgents = useCallback(async () => {
     if (!containerRef.current) {
