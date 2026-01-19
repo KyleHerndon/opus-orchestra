@@ -13,8 +13,7 @@
     "plugin:@typescript-eslint/recommended"
   ],
   "rules": {
-    "no-console": "error",
-    "@typescript-eslint/naming-convention": [
+        "@typescript-eslint/naming-convention": [
       "warn",
       {
         "selector": "import",
@@ -48,6 +47,10 @@
     "no-restricted-syntax": [
       "error",
       {
+        "selector": "CallExpression[callee.object.name='console']",
+        "message": "Use the Pino logger instead of console.*. Inject ILogger via constructor and use this.logger?.debug/info/warn/error(). See Logger.ts for details."
+      },
+      {
         "selector": "CallExpression[callee.object.name='path'][callee.property.name='join']",
         "message": "Use SystemAdapter.joinPath() instead of path.join(). SystemAdapter uses forward slashes and handles cross-platform paths correctly."
       },
@@ -68,13 +71,67 @@
         "**/containers/**/*.ts",
         "**/pathUtils.ts",
         "**/SystemAdapter*.ts",
-        "**/TmuxControlWatcher.ts",
-        "**/fixtures/testRepo.ts",
-        "**/test/ui/testUtils.ts"
+        "**/TmuxControlWatcher.ts"
       ],
       "rules": {
         "no-restricted-imports": "off",
         "no-restricted-syntax": "off"
+      }
+    },
+    {
+      "files": [
+        "**/__tests__/**/*.ts",
+        "**/test/**/*.ts",
+        "**/*.test.ts"
+      ],
+      "rules": {
+        "no-restricted-syntax": [
+          "error",
+          {
+            "selector": "CallExpression[callee.object.name='path'][callee.property.name='join']",
+            "message": "Use SystemAdapter.joinPath() instead of path.join()."
+          },
+          {
+            "selector": "CallExpression[callee.object.name='os'][callee.property.name='homedir']",
+            "message": "Use getHomeDir() from pathUtils instead of os.homedir()."
+          },
+          {
+            "selector": "MemberExpression[object.name='process'][property.name='platform']",
+            "message": "Use SystemAdapter to abstract platform differences."
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "**/testUtils.ts",
+        "**/fixtures/testRepo.ts"
+      ],
+      "rules": {
+        "no-restricted-imports": "off",
+        "no-restricted-syntax": "off"
+      }
+    },
+    {
+      "files": [
+        "**/io/CliOutput.ts"
+      ],
+      "rules": {
+        "no-restricted-syntax": [
+          "error",
+          {
+            "selector": "CallExpression[callee.object.name='path'][callee.property.name='join']",
+            "message": "Use SystemAdapter.joinPath() instead of path.join()."
+          },
+          {
+            "selector": "CallExpression[callee.object.name='os'][callee.property.name='homedir']",
+            "message": "Use getHomeDir() from pathUtils instead of os.homedir()."
+          },
+          {
+            "selector": "MemberExpression[object.name='process'][property.name='platform']",
+            "message": "Use SystemAdapter to abstract platform differences."
+          }
+        ]
       }
     }
   ],

@@ -96,17 +96,7 @@ export async function withTimeout<T>(
   return new Promise<TimeoutResult<T>>((resolve, reject) => {
     let settled = false;
 
-    // Set up abort listener
-    const abortHandler = (): void => {
-      if (!settled) {
-        settled = true;
-        if (timeoutId) {clearTimeout(timeoutId);}
-        reject(new CancelledError(operationName));
-      }
-    };
-    signal?.addEventListener('abort', abortHandler, { once: true });
-
-    // Set up timeout
+    // Set up timeout first so we can reference timeoutId in abortHandler
     const timeoutId = setTimeout(() => {
       if (!settled) {
         settled = true;
@@ -114,6 +104,16 @@ export async function withTimeout<T>(
         reject(new TimeoutError(operationName, timeout));
       }
     }, timeout);
+
+    // Set up abort listener
+    const abortHandler = (): void => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timeoutId);
+        reject(new CancelledError(operationName));
+      }
+    };
+    signal?.addEventListener('abort', abortHandler, { once: true });
 
     // Run the operation
     promise

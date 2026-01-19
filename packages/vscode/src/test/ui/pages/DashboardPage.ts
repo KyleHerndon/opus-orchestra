@@ -187,7 +187,7 @@ export class DashboardPage {
      */
     parseTimeToSeconds(timeStr: string): number {
         const match = timeStr.match(/^(\d+)([smhd])$/);
-        if (!match) {return 0;}
+        if (!match) { return 0; }
         const value = parseInt(match[1], 10);
         const unit = match[2];
         switch (unit) {
