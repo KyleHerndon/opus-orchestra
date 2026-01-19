@@ -138,16 +138,6 @@ export function cleanupTestRepo(): void {
 
 /**
  * Get Windows path from WSL path (for test configuration)
+ * Re-exports toWindowsPath from pathUtils which uses wslpath
  */
-export function toWindowsPath(wslPath: string): string {
-    if (wslPath.startsWith('/mnt/')) {
-        // /mnt/c/... -> C:/...
-        return wslPath.replace(/^\/mnt\/([a-z])\//, '$1:/');
-    }
-    if (wslPath.startsWith('/tmp/')) {
-        // WSL /tmp -> Windows temp via environment
-        const winTemp = process.env.TEMP || process.env.TMP || 'C:/Temp';
-        return wslPath.replace('/tmp/', winTemp.replace(/\\/g, '/') + '/');
-    }
-    return wslPath;
-}
+export { toWindowsPath } from '../../pathUtils';

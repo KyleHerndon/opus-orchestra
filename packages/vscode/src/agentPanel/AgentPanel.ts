@@ -9,7 +9,6 @@ import * as vscode from 'vscode';
 import { AgentManager } from '../agentManager';
 import {
     getTodoService,
-    TodoItem,
     getEventBus,
     getPersistenceService,
     getContainerConfigService,
@@ -25,7 +24,7 @@ import {
     TodoItemUpdate,
     agentToUpdate,
 } from './types';
-import { VERSION_INFO } from '../version';
+import { VERSION_INFO } from '../generated/version';
 
 export class AgentPanel {
     public static currentPanel: AgentPanel | undefined;
@@ -75,7 +74,10 @@ export class AgentPanel {
     }
 
     public static show(agentManager: AgentManager) {
-        const extensionUri = vscode.extensions.getExtension('kyleherndon.opus-orchestra')?.extensionUri
+        // Try both possible publisher IDs (vsce uses 'undefined_publisher' when no publisher is set,
+        // but package.json may have a placeholder like 'your-publisher-id')
+        const extensionUri = vscode.extensions.getExtension('undefined_publisher.opus-orchestra')?.extensionUri
+            || vscode.extensions.getExtension('your-publisher-id.opus-orchestra')?.extensionUri
             || vscode.Uri.file(__dirname);
 
         if (AgentPanel.currentPanel) {
@@ -122,66 +124,43 @@ export class AgentPanel {
         // Always add unisolated option
         groups.push({
             label: '',
-            options: [{ value: 'unisolated', label: 'Unisolated' }],
+            options: [{ value: 'unisolated', label: 'Unisolated (No Container)' }],
         });
 
-        // Group configs by source and type
+        // Group configs by source
         const repoConfigs = this._availableConfigs.filter(c => c.source === 'repo');
         const userConfigs = this._availableConfigs.filter(c => c.source === 'user');
 
-        // Helper to add groups by type within a source
-        const addGroupsByType = (configs: DiscoveredConfig[], sourceLabel: string) => {
-            const dockerConfigs = configs.filter(c => c.configRef.type === 'docker');
-            const chvConfigs = configs.filter(c => c.configRef.type === 'cloud-hypervisor');
-            const otherConfigs = configs.filter(c =>
-                c.configRef.type !== 'docker' && c.configRef.type !== 'cloud-hypervisor'
-            );
-
-            if (dockerConfigs.length > 0) {
-                groups.push({
-                    label: `${sourceLabel} - Docker`,
-                    options: dockerConfigs.map(c => ({
-                        value: c.prefixedName,
-                        label: this._getConfigLabel(c),
-                    })),
-                });
-            }
-
-            if (chvConfigs.length > 0) {
-                groups.push({
-                    label: `${sourceLabel} - Cloud Hypervisor`,
-                    options: chvConfigs.map(c => ({
-                        value: c.prefixedName,
-                        label: this._getConfigLabel(c),
-                    })),
-                });
-            }
-
-            if (otherConfigs.length > 0) {
-                groups.push({
-                    label: sourceLabel,
-                    options: otherConfigs.map(c => ({
-                        value: c.prefixedName,
-                        label: this._getConfigLabel(c),
-                    })),
-                });
-            }
-        };
-
         if (repoConfigs.length > 0) {
-            addGroupsByType(repoConfigs, 'Repository');
+            groups.push({
+                label: 'Repository',
+                options: repoConfigs.map(c => ({
+                    value: c.prefixedName,
+                    label: this._getConfigLabel(c),
+                })),
+            });
         }
 
         if (userConfigs.length > 0) {
-            addGroupsByType(userConfigs, 'User');
+            groups.push({
+                label: 'User',
+                options: userConfigs.map(c => ({
+                    value: c.prefixedName,
+                    label: this._getConfigLabel(c),
+                })),
+            });
         }
 
         return groups;
     }
 
     private _getConfigLabel(config: DiscoveredConfig): string {
+        const type = config.configRef.type;
+        const typeIcon = type === 'docker' ? '🐳'
+            : type === 'cloud-hypervisor' ? '☁️'
+            : '📦';
         const displayName = config.prefixedName.replace(/^(repo:|user:)/, '');
-        return displayName;
+        return `${typeIcon} ${displayName}`;
     }
 
     private _getTodoItems(sessionId: string): TodoItemUpdate[] {
@@ -189,7 +168,7 @@ export class AgentPanel {
         if (!items) {
             return [];
         }
-        return items.map((item: TodoItem) => ({
+        return items.map(item => ({
             status: item.status,
             content: item.content,
             activeForm: item.activeForm,

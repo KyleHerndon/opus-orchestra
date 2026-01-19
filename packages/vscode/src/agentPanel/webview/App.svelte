@@ -1,10 +1,7 @@
 <script lang="ts">
-    import { agents, loading, uiScale, versionInfo } from './stores';
+    import { loading, uiScale, versionInfo } from './stores';
     import Dashboard from './components/Dashboard.svelte';
-    import EmptyState from './components/EmptyState.svelte';
     import LoadingIndicator from './components/LoadingIndicator.svelte';
-
-    $: hasAgents = $agents.size > 0;
 </script>
 
 <div class="app" style="--ui-scale: {$uiScale};">
@@ -16,11 +13,7 @@
         />
     {/if}
 
-    {#if hasAgents}
-        <Dashboard />
-    {:else}
-        <EmptyState />
-    {/if}
+    <Dashboard />
 
     <footer class="version-footer">
         <span class="version-label">Build:</span>

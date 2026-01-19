@@ -58,7 +58,20 @@ describe('Claude Agents Dashboard', function () {
     });
 
     describe('Dashboard Elements', function () {
-        before(async () => await page.open());
+        before(async function () {
+            try {
+                await page.open();
+            } catch (err) {
+                // Capture screenshot on failure
+                const screenshot = await driver.takeScreenshot();
+                const fs = require('fs');
+                const path = require('path');
+                const screenshotDir = path.join(__dirname, '..', '..', '..', 'test-screenshots');
+                fs.mkdirSync(screenshotDir, { recursive: true });
+                fs.writeFileSync(path.join(screenshotDir, `dashboard-open-failure-${Date.now()}.png`), screenshot, 'base64');
+                throw err;
+            }
+        });
         after(async () => await page.close());
 
         // Re-ensure we're in the frame before each test since VS Code may switch focus
@@ -69,17 +82,18 @@ describe('Claude Agents Dashboard', function () {
         });
 
         it('should display header', async function () {
-            // Header text depends on state: "Opus Orchestra Dashboard" (with agents) or "No Agents Created" (empty)
+            // Header is always "Opus Orchestra Dashboard" now
             const headerText = await page.getHeaderText();
-            expect(['Opus Orchestra Dashboard', 'No Agents Created']).to.include(headerText);
+            expect(headerText).to.equal('Opus Orchestra Dashboard');
         });
 
-        it('should show empty state with creation controls when no agents', async function () {
+        it('should show create-agents-card with creation controls when no agents', async function () {
             const cards = await page.getAgentCards();
             if (cards.length > 0) {
                 this.skip(); // Properly skip if agents exist
             }
 
+            // Should have create-agents-card instead of full-page empty state
             expect(await page.hasEmptyState()).to.be.true;
 
             const countInput = await page.getAgentCountInput();
