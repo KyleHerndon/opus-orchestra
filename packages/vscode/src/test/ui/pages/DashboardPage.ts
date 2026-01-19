@@ -43,16 +43,19 @@ export class DashboardPage {
             }, 15000, 'Dashboard tab did not appear');
         }
 
+        // Give VS Code time to initialize the webview
+        await this.driver.sleep(2000);
+
         this.webview = new WebView();
         await this.webview.switchToFrame();
         this.inFrame = true;
 
-        // Wait for either stats-bar (agents exist) or empty-state (no agents)
+        // Wait for stats-bar (always shown now) or repo-section
         await this.driver.wait(async () => {
             const statsBar = await this.driver.findElements(By.css('.stats-bar'));
-            const emptyState = await this.driver.findElements(By.css('.empty-state'));
-            return statsBar.length > 0 || emptyState.length > 0;
-        }, 10000, 'Dashboard content did not load (no .stats-bar or .empty-state found)');
+            const repoSection = await this.driver.findElements(By.css('.repo-section'));
+            return statsBar.length > 0 || repoSection.length > 0;
+        }, 10000, 'Dashboard content did not load');
     }
 
     async close(): Promise<void> {
@@ -99,17 +102,14 @@ export class DashboardPage {
     }
 
     async hasEmptyState(): Promise<boolean> {
-        const elements = await this.driver.findElements(By.css('.empty-state'));
+        // Now we check for create-agents-card instead of the old full-page empty-state
+        const elements = await this.driver.findElements(By.css('.create-agents-card'));
         return elements.length > 0;
     }
 
     async getHeader(): Promise<WebElement> {
-        // Try stats-title first (when agents exist), then empty-state h2
-        const statsTitle = await this.driver.findElements(By.css('.stats-title'));
-        if (statsTitle.length > 0) {
-            return statsTitle[0];
-        }
-        return this.driver.findElement(By.css('.empty-state h2'));
+        // Stats title is always shown now (no more full-page empty state)
+        return this.driver.findElement(By.css('.stats-title'));
     }
 
     async getHeaderText(): Promise<string> {
@@ -118,12 +118,14 @@ export class DashboardPage {
     }
 
     async getAgentCountInput(): Promise<WebElement | null> {
-        const inputs = await this.driver.findElements(By.id('agent-count'));
+        // Now uses count-{repoIndex} pattern in RepoSection
+        const inputs = await this.driver.findElements(By.css('.count-input'));
         return inputs[0] || null;
     }
 
     async getContainerConfigSelect(): Promise<WebElement | null> {
-        const selects = await this.driver.findElements(By.id('isolation-tier-select'));
+        // Now uses container-{repoIndex} pattern in RepoSection's create-agents-card
+        const selects = await this.driver.findElements(By.css('.create-agents-card .tier-select'));
         return selects[0] || null;
     }
 
@@ -206,7 +208,8 @@ export class DashboardPage {
             await countInput.sendKeys(count.toString());
         }
 
-        const createBtn = await this.driver.findElement(By.css('button[data-action="createAgents"]'));
+        // Click the create button in the create-agents-card
+        const createBtn = await this.driver.findElement(By.css('.create-agents-card .btn-primary'));
         await createBtn.click();
 
         // Handle frame switching during creation
@@ -239,7 +242,7 @@ export class DashboardPage {
             By.css(`select[data-action="changeContainerConfig"][data-agent-id="${agentId}"]`)
         );
         const options = await select.findElements(By.css('option'));
-        return Promise.all(options.map(o => o.getAttribute('value')));
+        return Promise.all(options.map((o: WebElement) => o.getAttribute('value')));
     }
 
     async getCurrentContainerConfig(agentId: string): Promise<string> {

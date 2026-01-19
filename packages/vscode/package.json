@@ -439,7 +439,8 @@
     "clean": "rm -rf out"
   },
   "dependencies": {
-    "@opus-orchestra/core": "*"
+    "@opus-orchestra/core": "*",
+    "@vscode/vsce": "^3.7.1"
   },
   "devDependencies": {
     "@types/chai": "^5.2.3",

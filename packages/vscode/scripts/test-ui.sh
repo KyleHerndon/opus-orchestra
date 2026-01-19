@@ -44,17 +44,46 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
+# Detect Windows username (may differ from WSL username)
+if command -v cmd.exe &> /dev/null; then
+    WIN_USER=$(cmd.exe /c "echo %USERNAME%" 2>/dev/null | tr -d '\r')
+fi
+if [ -z "$WIN_USER" ] || [ "$WIN_USER" = "%USERNAME%" ]; then
+    # Fallback: find a user directory that has .vscode
+    for dir in /mnt/c/Users/*/; do
+        if [ -d "${dir}.vscode/extensions" ]; then
+            WIN_USER=$(basename "$dir")
+            break
+        fi
+    done
+fi
+
 # Test configuration
 # IMPORTANT: If you change this path, also update test-settings.json repositoryPaths!
-TEST_REPO_WSL="/mnt/c/Users/Kyle/Documents/claude-agents-test-repo"
-TEST_REPO_WIN="C:\\Users\\Kyle\\Documents\\claude-agents-test-repo"
-TEST_REPO_CACHE="/mnt/c/Users/Kyle/Documents/.claude-agents-test-repo-cache"
-TEST_EXTENSIONS_DIR=".vscode-test/test-extensions"
+TEST_REPO_WSL="/mnt/c/Users/${WIN_USER}/Documents/claude-agents-test-repo"
+TEST_REPO_WIN="C:\\Users\\${WIN_USER}\\Documents\\claude-agents-test-repo"
+TEST_REPO_CACHE="/mnt/c/Users/${WIN_USER}/Documents/.claude-agents-test-repo-cache"
+WIN_NODE_DIR="/mnt/c/Users/${WIN_USER}/nodejs"
+# Store vscode-test files on Windows filesystem to avoid UNC path issues with webview service workers
+VSCODE_TEST_DIR="/mnt/c/Users/${WIN_USER}/.vscode-test-opus"
+VSCODE_TEST_DIR_WIN="C:\\Users\\${WIN_USER}\\.vscode-test-opus"
+TEST_EXTENSIONS_DIR="${VSCODE_TEST_DIR}/test-extensions"
+TEST_EXTENSIONS_DIR_WIN="${VSCODE_TEST_DIR_WIN}\\test-extensions"
 TEST_SETTINGS_FILE="test-settings.json"
 
-# Convert WSL path to Windows path
+# Convert path to Windows format using wslpath
 wsl_to_windows() {
-    echo "$1" | sed 's|^/mnt/\([a-z]\)/|\U\1:/|'
+    wslpath -w "$1"
+}
+
+# Convert path to Unix format using wslpath
+windows_to_wsl() {
+    wslpath -u "$1"
+}
+
+# Convert path to Windows format with forward slashes
+wsl_to_mixed() {
+    wslpath -m "$1"
 }
 
 # Check if running in WSL
@@ -64,15 +93,46 @@ is_wsl() {
 
 # Check if Node.js is available on Windows
 check_windows_node() {
+    "$WIN_NODE_DIR/node.exe" --version &> /dev/null 2>&1 || \
     "/mnt/c/Program Files/nodejs/node.exe" --version &> /dev/null 2>&1
 }
 
+# Get Windows Node.js version
+get_windows_node_version() {
+    "$WIN_NODE_DIR/node.exe" --version 2>/dev/null || \
+    "/mnt/c/Program Files/nodejs/node.exe" --version 2>/dev/null
+}
+
+# Install Node.js for Windows if not present
+install_windows_node() {
+    if check_windows_node; then
+        return 0
+    fi
+
+    echo "Installing Node.js for Windows..."
+    local NODE_VERSION="v20.19.0"
+    local NODE_ZIP="/tmp/node-win.zip"
+
+    curl -L -o "$NODE_ZIP" "https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-win-x64.zip" 2>&1 | tail -2
+    mkdir -p "$WIN_NODE_DIR"
+    unzip -o "$NODE_ZIP" -d /tmp/node-extract > /dev/null
+    cp -r /tmp/node-extract/node-${NODE_VERSION}-win-x64/* "$WIN_NODE_DIR/"
+    rm -rf /tmp/node-extract "$NODE_ZIP"
+
+    if check_windows_node; then
+        echo "Node.js installed successfully: $(get_windows_node_version)"
+    else
+        echo "ERROR: Failed to install Node.js"
+        exit 1
+    fi
+}
+
 # Run a command on Windows via cmd.exe
-# Uses .cmd versions of npm/npx to avoid PowerShell issues
+# Uses pushd to handle UNC paths (maps temporary drive letter)
 run_win_cmd() {
-    local win_path=$(wsl_to_windows "$PROJECT_DIR")
-    # Replace forward slashes in remaining args for Windows compatibility
-    cmd.exe /c "cd /d $win_path && $*"
+    local win_path=$(wslpath -w "$PROJECT_DIR")
+    local win_node_path=$(wslpath -w "$WIN_NODE_DIR")
+    cmd.exe /c "set PATH=${win_node_path};%PATH% && pushd ${win_path} && $* && popd"
 }
 
 # Create cached test repo template (run once)
@@ -167,23 +227,22 @@ reset_test_repo() {
 # Run setup (download VS Code + ChromeDriver + create test repo)
 run_setup() {
     if is_wsl; then
-        if ! check_windows_node; then
-            echo "ERROR: Node.js not found on Windows"
-            echo "  Install Node.js on Windows to run UI tests"
-            exit 1
-        fi
+        install_windows_node
 
         echo "WSL detected - running setup via Windows cmd.exe..."
+
+        # Ensure the test directory exists on Windows
+        mkdir -p "$VSCODE_TEST_DIR"
 
         # Use npm.cmd explicitly to avoid PowerShell issues
         echo "Installing npm dependencies..."
         run_win_cmd "npm.cmd install"
 
         echo "Downloading VS Code..."
-        run_win_cmd "npx.cmd extest get-vscode --storage .vscode-test"
+        run_win_cmd "npx.cmd extest get-vscode --storage $VSCODE_TEST_DIR_WIN"
 
         echo "Downloading ChromeDriver..."
-        run_win_cmd "npx.cmd extest get-chromedriver --storage .vscode-test"
+        run_win_cmd "npx.cmd extest get-chromedriver --storage $VSCODE_TEST_DIR_WIN"
     else
         npm install
         npx extest get-vscode --storage .vscode-test
@@ -205,15 +264,17 @@ run_tests() {
     reset_test_repo
 
     if is_wsl; then
-        if ! check_windows_node; then
-            echo "ERROR: Node.js not found on Windows"
-            exit 1
-        fi
+        install_windows_node
+
+        # Ensure the test directory exists on Windows
+        mkdir -p "$VSCODE_TEST_DIR"
+        mkdir -p "$TEST_EXTENSIONS_DIR"
 
         echo "Running UI tests with:"
         echo "  - Extension isolation (clean extensions directory)"
         echo "  - Test settings: $TEST_SETTINGS_FILE"
         echo "  - Test repository: $TEST_REPO_WIN"
+        echo "  - VS Code storage: $VSCODE_TEST_DIR_WIN"
         echo ""
 
         # Ensure dependencies are installed
@@ -245,11 +306,11 @@ run_tests() {
 
         # Install Remote-WSL extension (needed for WSL terminal support)
         echo "Installing Remote-WSL extension..."
-        run_win_cmd "npx.cmd extest install-from-marketplace ms-vscode-remote.remote-wsl --storage .vscode-test --extensions_dir $TEST_EXTENSIONS_DIR" 2>/dev/null || true
+        run_win_cmd "npx.cmd extest install-from-marketplace ms-vscode-remote.remote-wsl --storage $VSCODE_TEST_DIR_WIN --extensions_dir $TEST_EXTENSIONS_DIR_WIN" 2>/dev/null || true
 
         # Run tests (not setup-and-run, since we already set up and installed)
         echo "Running tests..."
-        run_win_cmd "npx.cmd extest run-tests out/test/ui/dashboard.test.js --mocha_config .mocharc.json --storage .vscode-test --extensions_dir $TEST_EXTENSIONS_DIR --code_settings $TEST_SETTINGS_FILE --open_resource \"$TEST_REPO_WIN\"" || test_exit_code=$?
+        run_win_cmd "npx.cmd extest run-tests out/test/ui/dashboard.test.js --mocha_config .mocharc.json --storage $VSCODE_TEST_DIR_WIN --extensions_dir $TEST_EXTENSIONS_DIR_WIN --code_settings $TEST_SETTINGS_FILE --open_resource $TEST_REPO_WIN" || test_exit_code=$?
 
         exit $test_exit_code
     else
@@ -258,7 +319,7 @@ run_tests() {
         npx extest setup-and-run ./out/test/ui/*.test.js \
             --mocha_config .mocharc.json \
             --storage .vscode-test \
-            --extensions_dir "$TEST_EXTENSIONS_DIR" \
+            --extensions_dir ".vscode-test/test-extensions" \
             --code_settings "$TEST_SETTINGS_FILE" \
             --open_resource "$TEST_REPO_WIN"
     fi
@@ -267,15 +328,13 @@ run_tests() {
 # Check environment
 run_check() {
     echo "Checking UI test environment..."
+    echo "  Windows user: $WIN_USER"
     if is_wsl; then
         echo "  Platform: WSL"
         if check_windows_node; then
-            local node_ver=$("/mnt/c/Program Files/nodejs/node.exe" --version 2>/dev/null)
-            echo "  Windows Node.js: $node_ver ✓"
+            echo "  Windows Node.js: $(get_windows_node_version) ✓"
         else
-            echo "  Windows Node.js: not found ✗"
-            echo "    Install Node.js on Windows to run UI tests"
-            exit 1
+            echo "  Windows Node.js: not found (will be installed on setup/run)"
         fi
     else
         echo "  Platform: Native (Linux/macOS/Windows)"
@@ -286,6 +345,12 @@ run_check() {
         echo "  Test repo cache: $TEST_REPO_CACHE ✓"
     else
         echo "  Test repo cache: not found (will be created on setup/run)"
+    fi
+
+    if [[ -d "$VSCODE_TEST_DIR" ]]; then
+        echo "  VS Code test dir: $VSCODE_TEST_DIR ✓"
+    else
+        echo "  VS Code test dir: not found (will be created on setup/run)"
     fi
 
     if [[ -f "$PROJECT_DIR/$TEST_SETTINGS_FILE" ]]; then
