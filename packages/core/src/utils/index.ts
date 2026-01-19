@@ -60,3 +60,27 @@ export {
   todosEqual,
 } from './agentUpdates';
 export type { AgentUpdate } from './agentUpdates';
+
+// Print utilities for intentional user-facing output
+export {
+  print,
+  printError,
+  printRaw,
+  clearScreen,
+  capturePrintOutput,
+} from './print';
+
+// Global logging
+export {
+  log,
+  setGlobalLogger,
+  clearGlobalLogger,
+  isLoggerAttached,
+} from './log';
+
+// Console override
+export {
+  overrideConsole,
+  restoreConsole,
+  isConsoleOverridden,
+} from './consoleOverride';

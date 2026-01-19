@@ -25,11 +25,10 @@ describe('TerminalUIAdapter', () => {
     it('should log info message with blue icon', async () => {
       await adapter.showInfo('Test info message');
 
-      expect(consoleSpy).toHaveBeenCalled();
-      // console.log is called with (icon, message) as separate args
-      const args = consoleSpy.mock.calls[0];
-      const fullMessage = args.join(' ');
-      expect(fullMessage).toContain('Test info message');
+      expect(stdoutSpy).toHaveBeenCalled();
+      // print() writes to stdout with a trailing newline
+      const output = stdoutSpy.mock.calls.map(c => c[0] as string).join('');
+      expect(output).toContain('Test info message');
     });
 
     it('should return undefined when no items provided', async () => {
@@ -42,10 +41,9 @@ describe('TerminalUIAdapter', () => {
     it('should log warning message with yellow icon', async () => {
       await adapter.showWarning('Test warning message');
 
-      expect(consoleSpy).toHaveBeenCalled();
-      const args = consoleSpy.mock.calls[0];
-      const fullMessage = args.join(' ');
-      expect(fullMessage).toContain('Test warning message');
+      expect(stdoutSpy).toHaveBeenCalled();
+      const output = stdoutSpy.mock.calls.map(c => c[0] as string).join('');
+      expect(output).toContain('Test warning message');
     });
 
     it('should return undefined when no items provided', async () => {
@@ -58,10 +56,9 @@ describe('TerminalUIAdapter', () => {
     it('should log error message with red icon', async () => {
       await adapter.showError('Test error message');
 
-      expect(consoleSpy).toHaveBeenCalled();
-      const args = consoleSpy.mock.calls[0];
-      const fullMessage = args.join(' ');
-      expect(fullMessage).toContain('Test error message');
+      expect(stdoutSpy).toHaveBeenCalled();
+      const output = stdoutSpy.mock.calls.map(c => c[0] as string).join('');
+      expect(output).toContain('Test error message');
     });
 
     it('should return undefined when no items provided', async () => {
@@ -74,9 +71,9 @@ describe('TerminalUIAdapter', () => {
     it('should log status message', () => {
       const dispose = adapter.setStatusMessage('Status message');
 
-      expect(consoleSpy).toHaveBeenCalled();
-      const call = consoleSpy.mock.calls[0][0] as string;
-      expect(call).toContain('Status message');
+      expect(stdoutSpy).toHaveBeenCalled();
+      const output = stdoutSpy.mock.calls.map(c => c[0] as string).join('');
+      expect(output).toContain('Status message');
       expect(typeof dispose).toBe('function');
     });
 

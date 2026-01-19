@@ -121,12 +121,6 @@ export function App({ onFocusAgent }: AppProps): React.ReactElement {
     }
   }, [selectedAgent, focusAgent, onFocusAgent, exit]);
 
-  // Debug: log when onFocusAgent changes
-  useEffect(() => {
-    // eslint-disable-next-line no-console
-    console.log('onFocusAgent prop:', onFocusAgent ? 'present' : 'missing');
-  }, [onFocusAgent]);
-
   const handleDeleteConfirm = useCallback(() => {
     if (selectedAgent) {
       deleteAgent(selectedAgent.id);

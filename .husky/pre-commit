@@ -1,0 +1,5 @@
+# Auto-fix console.log → log.debug before linting
+./scripts/fix-console-log.sh
+
+# Run lint-staged for eslint --fix and other fixes
+npx lint-staged

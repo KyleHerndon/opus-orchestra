@@ -19,6 +19,8 @@ import {
   TerminalAdapter,
 } from '../adapters';
 import { createLogger, ILogger } from './Logger';
+import { setGlobalLogger } from '../utils/log';
+import { overrideConsole } from '../utils/consoleOverride';
 import { EventBus } from './EventBus';
 import { IEventBus } from '../types/events';
 import { GitService, IGitService } from './GitService';
@@ -159,6 +161,10 @@ export class ServiceContainer {
     // Create logger first (needed by other services)
     const logDir = `${workingDirectory}/.opus-orchestra`;
     this.logger = createLogger(logDir, this.config.get('logLevel'));
+
+    // Set up global logging - enables `log.debug()` everywhere and redirects console.* to logger
+    setGlobalLogger(this.logger);
+    overrideConsole();
 
     // Create TmuxService early (terminal adapter may need it)
     this.tmuxService = new TmuxService(

@@ -13,14 +13,15 @@
 
 import chalk from 'chalk';
 import * as readline from 'node:readline';
-import type {
-  UIAdapter,
-  QuickPickItem,
-  QuickPickOptions,
-  InputOptions,
-  ProgressOptions,
-  ProgressReporter,
-  CancellationToken,
+import {
+  print,
+  type UIAdapter,
+  type QuickPickItem,
+  type QuickPickOptions,
+  type InputOptions,
+  type ProgressOptions,
+  type ProgressReporter,
+  type CancellationToken,
 } from '@opus-orchestra/core';
 
 export class TerminalUIAdapter implements UIAdapter {
@@ -28,7 +29,7 @@ export class TerminalUIAdapter implements UIAdapter {
    * Show an information message.
    */
   async showInfo(message: string, ...items: string[]): Promise<string | undefined> {
-    console.log(chalk.blue('ℹ'), message);
+    print(chalk.blue('ℹ'), message);
 
     if (items.length > 0) {
       return this.promptSelect(items);
@@ -41,7 +42,7 @@ export class TerminalUIAdapter implements UIAdapter {
    * Show a warning message.
    */
   async showWarning(message: string, ...items: string[]): Promise<string | undefined> {
-    console.log(chalk.yellow('⚠'), message);
+    print(chalk.yellow('⚠'), message);
 
     if (items.length > 0) {
       return this.promptSelect(items);
@@ -54,7 +55,7 @@ export class TerminalUIAdapter implements UIAdapter {
    * Show an error message.
    */
   async showError(message: string, ...items: string[]): Promise<string | undefined> {
-    console.log(chalk.red('✖'), message);
+    print(chalk.red('✖'), message);
 
     if (items.length > 0) {
       return this.promptSelect(items);
@@ -88,7 +89,7 @@ export class TerminalUIAdapter implements UIAdapter {
         if (options.validateInput) {
           const error = options.validateInput(answer);
           if (error) {
-            console.log(chalk.red(error));
+            print(chalk.red(error));
             resolve(undefined);
             return;
           }
@@ -107,11 +108,11 @@ export class TerminalUIAdapter implements UIAdapter {
     options?: QuickPickOptions
   ): Promise<string | string[] | undefined> {
     if (options?.title) {
-      console.log(chalk.bold(options.title));
+      print(chalk.bold(options.title));
     }
 
     if (options?.placeholder) {
-      console.log(chalk.dim(options.placeholder));
+      print(chalk.dim(options.placeholder));
     }
 
     // Show numbered list
@@ -119,7 +120,7 @@ export class TerminalUIAdapter implements UIAdapter {
       const num = chalk.cyan(`[${index + 1}]`);
       const label = item.label;
       const desc = item.description ? chalk.dim(` - ${item.description}`) : '';
-      console.log(`${num} ${label}${desc}`);
+      print(`${num} ${label}${desc}`);
     });
 
     const rl = readline.createInterface({
@@ -237,7 +238,7 @@ export class TerminalUIAdapter implements UIAdapter {
         cancelled = true;
         token.isCancellationRequested = true;
         cancellationCallbacks.forEach((cb) => cb());
-        console.log(chalk.yellow('\nCancelled'));
+        print(chalk.yellow('\nCancelled'));
       }
     };
 
@@ -263,7 +264,7 @@ export class TerminalUIAdapter implements UIAdapter {
    * Set status bar message (no-op for terminal, could use bottom bar).
    */
   setStatusMessage(message: string, _timeout?: number): () => void {
-    console.log(chalk.dim(`[Status] ${message}`));
+    print(chalk.dim(`[Status] ${message}`));
     return () => {};
   }
 

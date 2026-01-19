@@ -12,15 +12,14 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import type {
-  ConfigAdapter,
-  ExtensionConfig,
-  ConfigChangeCallback,
-} from '@opus-orchestra/core';
 import {
+  printError,
   DEFAULT_CONFIG,
   ExtensionConfigSchema,
   formatZodError,
+  type ConfigAdapter,
+  type ExtensionConfig,
+  type ConfigChangeCallback,
 } from '@opus-orchestra/core';
 
 export class FileConfigAdapter implements ConfigAdapter {
@@ -124,16 +123,16 @@ export class FileConfigAdapter implements ConfigAdapter {
         // Schema validation failed - log specific errors
         const validationErrors = formatZodError(parseResult.error);
         this.configError = `Invalid config at ${this.configPath}: ${validationErrors}`;
-        console.error(`[opus-orchestra] ${this.configError}`);
-        console.error('[opus-orchestra] Using default configuration. Fix the config file or delete it to use defaults.');
+        printError(`[opus-orchestra] ${this.configError}`);
+        printError('[opus-orchestra] Using default configuration. Fix the config file or delete it to use defaults.');
         this.configLoaded = false;
       }
     } catch (error) {
       // JSON parse error or file read error
       const errorMessage = error instanceof Error ? error.message : String(error);
       this.configError = `Failed to parse config at ${this.configPath}: ${errorMessage}`;
-      console.error(`[opus-orchestra] ${this.configError}`);
-      console.error('[opus-orchestra] Using default configuration. Fix the config file or delete it to use defaults.');
+      printError(`[opus-orchestra] ${this.configError}`);
+      printError('[opus-orchestra] Using default configuration. Fix the config file or delete it to use defaults.');
 
       // Keep using defaults
       this.configLoaded = false;
@@ -173,13 +172,13 @@ export class FileConfigAdapter implements ConfigAdapter {
 
       // Handle watcher errors to prevent unhandled exceptions
       this.watcher.on('error', (err) => {
-        console.error(`[opus-orchestra] Config file watcher error: ${err.message}`);
+        printError(`[opus-orchestra] Config file watcher error: ${err.message}`);
       });
     } catch (error) {
-      // Note: We use console.error here because this runs before the logger is initialized
+      // Note: printError writes to stderr directly - appropriate for early startup errors
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error(`[opus-orchestra] Failed to watch config file at ${this.configPath}: ${errorMessage}`);
-      console.error('[opus-orchestra] Config changes will not be detected until restart.');
+      printError(`[opus-orchestra] Failed to watch config file at ${this.configPath}: ${errorMessage}`);
+      printError('[opus-orchestra] Config changes will not be detected until restart.');
     }
   }
 
@@ -192,7 +191,7 @@ export class FileConfigAdapter implements ConfigAdapter {
         callback(key);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        console.error(`[opus-orchestra] Config change callback error for '${key}': ${errorMessage}`);
+        printError(`[opus-orchestra] Config change callback error for '${key}': ${errorMessage}`);
       }
     }
   }
@@ -215,8 +214,8 @@ export class FileConfigAdapter implements ConfigAdapter {
       fs.writeFileSync(this.configPath, JSON.stringify(this.config, null, 2));
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error(`[opus-orchestra] Failed to save config to ${this.configPath}: ${errorMessage}`);
-      console.error('[opus-orchestra] Configuration changes may not persist.');
+      printError(`[opus-orchestra] Failed to save config to ${this.configPath}: ${errorMessage}`);
+      printError('[opus-orchestra] Configuration changes may not persist.');
     }
   }
 
