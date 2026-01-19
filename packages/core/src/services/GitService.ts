@@ -11,7 +11,6 @@
  * - Callers can distinguish between "no data" and "error getting data"
  */
 
-import pRetry from 'p-retry';
 import { DiffStats } from '../types/agent';
 import { Result, ok, err, GitErrorCode } from '../types/result';
 import { ILogger } from './Logger';
@@ -74,6 +73,7 @@ export class GitService implements IGitService {
     operation: () => Promise<T>,
     operationName: string
   ): Promise<T> {
+    const { default: pRetry } = await import('p-retry');
     return pRetry(operation, {
       retries: RETRY_CONFIG.retries,
       minTimeout: RETRY_CONFIG.minTimeout,

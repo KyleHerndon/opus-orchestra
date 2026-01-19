@@ -80,7 +80,6 @@ export function createTestRepo(suffix?: string): string {
     // Track for cleanup
     createdRepos.push(repoPath);
 
-    console.log(`Created test repository at: ${repoPath}`);
     return repoPath;
 }
 
@@ -118,9 +117,8 @@ function cleanupRepo(repoPath: string): void {
         } else {
             fs.rmSync(repoPath, { recursive: true, force: true });
         }
-        console.log(`Cleaned up test repository at: ${repoPath}`);
-    } catch (error) {
-        console.error(`Failed to cleanup test repo: ${error}`);
+    } catch {
+        // Cleanup failures are non-fatal
     }
 }
 

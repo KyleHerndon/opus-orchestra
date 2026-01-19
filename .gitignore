@@ -7,8 +7,12 @@
 
 # Build outputs
 packages/core/dist/
+packages/terminal/dist/
 packages/vscode/out/
 *.vsix
+
+# Generated files
+**/src/generated/
 
 # Test binaries and cache
 packages/vscode/.vscode-test/

@@ -143,6 +143,11 @@ jobs:
       - name: Build core package
         run: npm run build -w @opus-orchestra/core
 
+      - name: Generate version files
+        run: |
+          node scripts/generate-version.js packages/terminal/src/generated/version.ts
+          node scripts/generate-version.js packages/vscode/src/generated/version.ts
+
       - name: Build for production
         run: npm run vscode:prepublish -w opus-orchestra
 

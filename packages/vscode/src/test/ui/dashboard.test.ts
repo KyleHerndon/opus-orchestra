@@ -216,16 +216,10 @@ describe('Claude Agents Dashboard', function () {
         it('should show container options in empty state dropdown', async function () {
             // Only test if we're in empty state
             if (!(await page.hasEmptyState())) {
-                console.log('Skipping: agents already exist');
                 this.skip();
             }
 
-            // Debug: capture current state
             const debug = await page.debugContainerDiscovery();
-            console.log('=== Container Options Debug ===');
-            console.log('Select exists:', debug.selectExists);
-            console.log('innerHTML:', debug.innerHTML);
-            console.log('Options:', JSON.stringify(debug.options, null, 2));
 
             // Basic assertions
             expect(debug.selectExists).to.be.true;
@@ -245,14 +239,11 @@ describe('Claude Agents Dashboard', function () {
             await driver.sleep(2000);
 
             const debug = await page.debugContainerDiscovery();
-            console.log('=== After Wait - Container Options ===');
-            console.log('Options:', JSON.stringify(debug.options, null, 2));
 
             // Check for repo configs (should have dev, ui-tests, etc.)
             const repoOptions = debug.options.filter(o =>
                 o.value.startsWith('repo:') || o.group?.includes('repo')
             );
-            console.log('Repo options found:', repoOptions.length);
 
             // This test will fail if configs aren't discovered - that's the point
             expect(repoOptions.length,
@@ -267,11 +258,6 @@ describe('Claude Agents Dashboard', function () {
             }
 
             const debug = await page.debugContainerDiscovery();
-
-            // Check for optgroups in HTML
-            const hasOptgroups = debug.innerHTML.includes('<optgroup');
-            console.log('Has optgroups:', hasOptgroups);
-            console.log('Groups found:', [...new Set(debug.options.map(o => o.group).filter(Boolean))]);
 
             if (debug.options.length > 1) {
                 // If we have more than just unisolated, we should have groups
